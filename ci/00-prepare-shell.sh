@@ -12,6 +12,8 @@ if [ "$checks" ] ; then
 check_mandatory_tools xsltproc
 fi
 
+set -x
+
 # These are directories where we want to search for include files, but
 # without any assurance that these directories exist.
 tested_include_paths=(/usr/include /opt/homebrew/include)
