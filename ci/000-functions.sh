@@ -128,7 +128,7 @@ check_optional_file() {
 }
 
 check_optional_nonzero_output_shell() {
-    out="$(eval "$@" 2>/dev/null)"
+    out="$(eval "$@" 2>/dev/null || :)"
     if [ "$out" ] ; then
         echo "ok - $* [$out]"
         return
@@ -138,7 +138,7 @@ check_optional_nonzero_output_shell() {
 }
 
 check_mandatory_nonzero_output_shell() {
-    out="$(eval "$@" 2>/dev/null)"
+    out="$(eval "$@" 2>/dev/null || :)"
     if [ "$out" ] ; then
         echo "ok - $* [$out]"
         return
