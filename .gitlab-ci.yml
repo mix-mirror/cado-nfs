@@ -3,9 +3,8 @@
 stages:
   - build
   - early
-  - various
   - thorough
-# - deploy    # if using pages
+  - deploy    # if using pages
 
 image: gcc
 
@@ -210,9 +209,10 @@ checks with icc:
 
 expensive checks with gcc:
   <<: *common-template
-  stage: various
-  needs:
-    - container for checks with gcc
+  stage: thorough
+  # do not start it prematurely, in case previous jobs failed
+  # needs:
+  #   - container for checks with gcc
   image: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG/gcc
   script:
     - *checks-script
@@ -224,9 +224,10 @@ expensive checks with gcc:
 #
 coverage tests on checks with gcc:
   <<: *common-template
-  stage: various
-  needs:
-    - container for coverage tests on checks with gcc
+  stage: thorough
+  # do not start it prematurely, in case previous jobs failed
+  # needs:
+  #   - container for coverage tests on checks with gcc
   image: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG/coverage
   script:
     - *checks-script
@@ -236,28 +237,38 @@ coverage tests on checks with gcc:
       - coverage-*.json
     expire_in: 1 week
 
-# the build name must match "coverage tests" so that gcovr is installed.
-# the stage must be after the "various" stage.
-# we must import the json coverage reports for different runs. This is
-# apparently done automatically !
+# The json coverage reports for different runs are imported, provided we
+# get the needs/artifacts combination right.
+#
 # https://stackoverflow.com/questions/38140996/how-can-i-pass-artifacts-to-another-stage
-merge coverage tests:
+# https://docs.gitlab.com/ee/ci/yaml/#artifact-downloads-with-needs
+#
+# It's not clear however that we can merge the 'merge coverage tests' and
+# 'pages' jobs like this. Likewise, it's not clear that we can publish to
+# a subdirectory of our main group site.
+pages:
   <<: *common-template
-  stage: thorough
-  dependencies:
-    - coverage tests on checks with gcc
-  # needs:
-  #   - coverage tests on checks with gcc
-  #   # list more of these...
+  stage: deploy
+  needs:
+    - job: coverage tests on checks with gcc
+      artifacts: true
+    # list more of these...
+  # This image has gcovr installed
   image: $CI_REGISTRY_IMAGE/$CI_COMMIT_REF_SLUG/coverage
   script:
     - ci/09-merge-coverage.sh
+    - mkdir -p public/coverage
+    - mv coverage public/coverage/$CI_COMMIT_BRANCH
   artifacts:
     paths:
-      - coverage
+      - public
       - coverage.tar.gz
+    expire_in: 30 days
     reports:
       cobertura: coverage.xml
+
+# trigger:
+#   project: cado-nfs/cado-nfs.gitlabpages.inria.fr
 
 ############################################################################
 # Tests on slow machines and/or shell executors. They depend on nothing.
@@ -284,7 +295,8 @@ merge coverage tests:
 # in fact, this one should be quick !
 checks on osx system:
   <<: *common-template
-  stage: thorough
+  # do it early. It's one of our quickest runners.
+  stage: early
   needs: []
   tags:
     - osx
@@ -298,8 +310,9 @@ checks on freebsd13.0 system with gcc:
   variables:
     GIT_SUBMODULE_STRATEGY: recursive
   <<: *common-template
-  stage: early
-  needs: []
+  stage: thorough
+  # do not start it prematurely, in case previous jobs failed
+  # needs: []
   tags:
     - freebsd-tanker
   script:
@@ -310,8 +323,9 @@ checks on freebsd12.2 system with gcc:
   variables:
     GIT_SUBMODULE_STRATEGY: recursive
   <<: *common-template
-  stage: early
-  needs: []
+  stage: thorough
+  # do not start it prematurely, in case previous jobs failed
+  # needs: []
   tags:
     - freebsd-tanker
   script:
