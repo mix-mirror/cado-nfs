@@ -5,7 +5,7 @@ stages:
   - early
   - various
   - thorough
-# - deploy    # if using pages
+  - deploy    # if using pages
 
 image: gcc
 
@@ -258,6 +258,24 @@ merge coverage tests:
       - coverage.tar.gz
     reports:
       cobertura: coverage.xml
+
+# trigger:
+#   project: cado-nfs/cado-nfs.gitlabpages.inria.fr
+
+pages:
+  stage: deploy
+  dependencies:
+    - merge coverage tests
+  script:
+    - mkdir public
+    - mv coverage public/$CI_COMMIT_BRANCH
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+ 
+# only:
+#   - master
 
 ############################################################################
 # Tests on slow machines and/or shell executors. They depend on nothing.
