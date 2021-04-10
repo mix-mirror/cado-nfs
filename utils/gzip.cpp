@@ -5,6 +5,7 @@
 #include <cstdio> // FILE // IWYU pragma: keep
 #include <cstring>
 #include <sys/types.h>  // pid_t
+#include <sys/wait.h>  // WIFEXITED WEXITSTATUS (on freebsd at least)
 #include <unistd.h>     // close getpid
 #include <sys/stat.h> // stat // IWYU pragma: keep
 #ifdef HAVE_GETRUSAGE
@@ -414,7 +415,8 @@ fclose_maybe_compressed2 (FILE * f, const char * name, void * rr MAYBE_UNUSED)
 #else
             /* What do under MinGW? -1 definitely means an error, but how do
                we parse the other possible ret codes? */
-            return (ret == -1) ? EOF : 0;
+            if (ret == -1)
+                return EOF;
 #endif
 
         } else {
