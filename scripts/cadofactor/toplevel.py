@@ -1146,7 +1146,7 @@ class Cado_NFS_toplevel(object):
         >>> os.environ["NCPUS_FAKE"]="4"
         >>> tempdir=tempfile.mkdtemp()
         >>> slashtmp=tempfile.mkdtemp()
-        >>> t = Cado_NFS_toplevel(args=['-p', os.path.os.devnull, '12345', 'slaves.hostnames=foo,bar', 'tasks.workdir='+tempdir, 'slaves.scriptpath=' + slashtmp])
+        >>> t = Cado_NFS_toplevel(args=['--screenlog', 'DEBUG', '-p', os.path.os.devnull, '12345', 'slaves.hostnames=foo,bar', 'tasks.workdir='+tempdir, 'slaves.scriptpath=' + slashtmp])
         >>> t.setpath("lib", slashtmp)
         >>> t.setpath("data", slashtmp)
         >>> p,db = t.get_cooked_parameters()
