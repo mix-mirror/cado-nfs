@@ -50,12 +50,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #define DEBUG 0
 
 /* Save a sparse matrix to the filesystem. Write column and row weights in
-   companion files. If skip > 0, also create a "dense" part in the same format. */ 
-static unsigned long flushSparse(const char *sparsename, typerow_t ** rows, 
-        index_t nrows, index_t ncols, index_t skip)
+   companion files. If skip > 0, also create a "dense" part in the same format. */
+static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
+                           index_t nrows, index_t ncols, index_t skip, int bin)
 {
 	double tt = seconds();
-	printf("Sparse submatrix: nrows=%" PRIu64 " ncols=%" PRIu64 "\n", 
+	printf("Sparse submatrix: nrows=%" PRIu64 " ncols=%" PRIu64 "\n",
 		(uint64_t) nrows, (uint64_t) ncols);
 	printf("Writing sparse representation to %s\n", sparsename);
 	fflush(stdout);
@@ -71,15 +71,26 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 		const char *dmat;
 		const char *drw;
 		const char *dcw;
-	} suffixes = {
-		 .ext = ".bin",
-		 .smat = "bin",
-		 .srw = "rw.bin",
-		 .scw = "cw.bin",
-		 .dmat = "dense.bin",
-		 .drw = "dense.rw.bin",
-		 .dcw = "dense.cw.bin",
-	};
+	} suffixes[2] = {
+        {
+          .ext = ".txt",
+          .smat = "txt",
+          .srw = "rw.txt",
+          .scw = "cw.txt",
+          .dmat = "dense.txt",
+          .drw = "dense.rw.txt",
+          .dcw = "dense.cw.txt",
+        },
+        {
+          .ext = ".bin",
+          .smat = "bin",
+          .srw = "rw.bin",
+          .scw = "cw.bin",
+          .dmat = "dense.bin",
+          .drw = "dense.rw.bin",
+          .dcw = "dense.cw.bin",
+        },
+        }, * suf = &(suffixes[bin]);
 	unsigned long W = 0;  /* sparse weight */
 	unsigned long DW = 0; /* dense weight */
 	char *zip = NULL;
@@ -91,13 +102,13 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 	 * (Other systems may treat text files and binary files
 	 * differently, and adding the 'b' may  be a good idea if you do
 	 * I/O to a binary file and expect that your program may be ported
-	 * to non-UNIX environments.) 
+	 * to non-UNIX environments.)
 	 * ---- fopen man page */
 	char wmode[3] = "wb";
 
 	/* setup filenames */
 	char *base = strdup(sparsename);
-	if (has_suffix(base, suffixes.ext)) { /* strip suffix if given */
+	if (has_suffix(base, suf->ext)) { /* strip suffix if given */
 		base[strlen(base) - 4] = '\0';
 	}
 	char *smatname = NULL;
@@ -113,11 +124,14 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 	char *dcwname = NULL;
 	FILE *dcwfile = NULL;
 
-	smatname = derived_filename(base, suffixes.smat, zip);
-	srwname = derived_filename(base, suffixes.srw, zip);
-	scwname = derived_filename(base, suffixes.scw, zip);
+	smatname = derived_filename(base, suf->smat, zip);
+	srwname = derived_filename(base, suf->srw, zip);
+	scwname = derived_filename(base, suf->scw, zip);
 	smatfile = fopen(smatname, wmode);
 	srwfile = fopen(srwname, wmode);
+        if (!bin) fprintf(smatfile, "%" PRIu64 " %" PRIu64 "\n",
+                          (uint64_t) nrows,
+                          (uint64_t) ncols - skip);
 
 	if (skip) {
 		/* arrange so that we don't get file names like .sparse.dense */
@@ -125,11 +139,14 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 		char *tmp = strstr(dbase, ".sparse");
 		if (tmp)
 			memmove(tmp, tmp + 7, strlen(tmp + 7) + 1);
-		dmatname = derived_filename(dbase, suffixes.dmat, zip);
-		drwname = derived_filename(dbase, suffixes.drw, zip);
-		dcwname = derived_filename(dbase, suffixes.dcw, zip);
+		dmatname = derived_filename(dbase, suf->dmat, zip);
+		drwname = derived_filename(dbase, suf->drw, zip);
+		dcwname = derived_filename(dbase, suf->dcw, zip);
 		dmatfile = fopen(dmatname, wmode);
 		drwfile = fopen(drwname, wmode);
+                if (!bin)
+                  fprintf(dmatfile, "%" PRIu64 " %" PRIu64 "\n",
+                          (uint64_t) nrows, (uint64_t) skip);
 		free(dbase);
 	}
 
@@ -148,13 +165,18 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 					W++;
 				}
 			}
-			fwrite32_little(&sw, 1, smatfile);
-			if (srwfile)
-				fwrite32_little(&sw, 1, srwfile);
-			if (skip)
-				fwrite32_little(&dw, 1, dmatfile);
-			if (skip)
-				fwrite32_little(&dw, 1, drwfile);
+                        if (bin)
+                        {
+                          fwrite32_little(&sw, 1, smatfile);
+                          if (srwfile) fwrite32_little(&sw, 1, srwfile);
+                          if (skip) fwrite32_little(&dw, 1, dmatfile);
+                          if (skip) fwrite32_little(&dw, 1, drwfile);
+                        } else {
+                          fprintf(smatfile, "%" PRIu32 "", sw);
+                          if (srwfile) fprintf(srwfile, "%" PRIu32 "\n", sw);
+                          if (skip) fprintf(dmatfile, "%" PRIu32 "", dw);
+                          if (skip) fprintf(drwfile, "%" PRIu32 "\n", dw);
+                        }
 
 			for (index_t j = 1; j <= rowLength(rows, i); j++) {
 				ASSERT_ALWAYS(rowCell(rows[i], j) <= (index_t) UINT32_MAX);
@@ -162,20 +184,33 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 				if (srwfile)
 					weights[x]++;
 				if (x < skip) {
-					ASSERT_ALWAYS(skip);
-				fwrite32_little(&x, 1, dmatfile);
+                                  ASSERT_ALWAYS(skip);
+                                  if (bin)
+                                    fwrite32_little(&x, 1, dmatfile);
+                                  else
+                                    fprintf(dmatfile, " %" PRIu32 "", x);
 				} else {
 					x -= skip;
-					fwrite32_little(&x, 1, smatfile);
+                                        if (bin) {
+                                          fwrite32_little(&x, 1, smatfile);
 #ifdef FOR_DL
 					/* exponents are always int32_t */
 					uint32_t e = (uint32_t) rows[i][j].e;
 					fwrite32_little(&e, 1, smatfile);
 #endif
-					
+                                        } else {
+                                          fprintf(smatfile, " %" PRIu32 "", x);
+#ifdef FOR_DL
+                                          fprintf(smatfile, ":%d", sparsemat[i][j].e);
+#endif
+                                        }
 				}
 			}
 		}
+                if (!bin) {
+                  fprintf(smatfile, "\n");
+                  if (skip) fprintf(dmatfile, "\n");
+                }
 	}
 
 	fclose(smatfile);
@@ -183,7 +218,7 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 		fclose(srwfile);
 
 	if (skip) {
-		printf("%lu coeffs (out of %lu total) put into %s (%.1f%%)\n", 
+		printf("%lu coeffs (out of %lu total) put into %s (%.1f%%)\n",
 			DW, DW + W, dmatname, 100.0 * (double)DW / (DW + W + (DW == 0 && W == 0)));
 		fflush(stdout);
 		fclose(dmatfile);
@@ -218,7 +253,6 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 
 	return W;
 }
-
 
 #define STRLENMAX 2048
 
@@ -324,7 +358,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	while (t1 <= k1 && t2 <= k2) {
 		if (r1[t1] == r2[t2]) {
 			t1 += 1;  // cancellation
-			t2 += 1;  
+			t2 += 1;
 		} else if (r1[t1] < r2[t2]) {
 			t += 1;
 			sum[t] = r1[t1];
@@ -460,8 +494,8 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 /* construct the D matrix (n' rows, n columns), where n is the number of rows
    of the original matrix M (output from purge), i.e., nrows */
 static void
-build_left_matrix(const char *matrixname, const char *hisname, index_t nrows, 
-	index_t ncols, int skip, index_t Nmax)
+build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
+                  index_t ncols, int skip, index_t Nmax, int bin)
 {
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
 	ASSERT_ALWAYS(hisfile != NULL);
@@ -485,7 +519,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	 * 2^23 primes after that */
 	stats_data_t stats;	/* struct for printing progress */
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
-	
+
 	int left_nrows = nrows;
 	while (fgets(str, STRLENMAX, hisfile) && nrows >= Nmax) {
 		if (str[0] == '#')
@@ -501,7 +535,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 			fprintf(stderr, " I stop reading and go to the next phase\n");
 			break;
 		}
-		
+
 		index_t j;
 		index_signed_t ind[MERGE_LEVEL_MAX], i0;
 		int destroy;
@@ -521,13 +555,13 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 			heap_destroy_row(rows[i0]);
 			rows[i0] = NULL;
 			left_nrows -= 1;
-		}			
+		}
 	}
 	stats_print_progress(stats, addread, 0, 0, 1);
 	fclose_maybe_compressed(hisfile, hisname);
 
 	/* output left matrix */
-	flushSparse(matrixname, rows, nrows, ncols, skip);
+	flushSparse(matrixname, rows, nrows, ncols, skip, bin);
 }
 
 
@@ -568,6 +602,7 @@ int main(int argc, char *argv[])
         int skip = DEFAULT_MERGE_SKIP;
 	double cpu0 = seconds();
 	double wct0 = wct_seconds();
+        int bin = -1;
 
 #ifdef HAVE_MINGW
 	_fmode = _O_BINARY;	/* Binary open for all files */
@@ -634,7 +669,16 @@ int main(int argc, char *argv[])
 	}
 	ASSERT_ALWAYS(skip == 0);
 #endif
-	printf("# Output matrices will be written in binary format\n");
+        if (has_suffix(sparseLname, ".bin") || has_suffix(sparseLname, ".bin.gz"))
+        {
+          bin = 1;
+          printf("# Output matrices will be written in binary format\n");
+        }
+        else
+        {
+          bin = 0;
+          printf ("# Output matrices will be written in text format\n");
+        }
 
 	set_antebuffer_path(argv0, path_antebuffer);
 
@@ -660,7 +704,7 @@ int main(int argc, char *argv[])
 	/* Read the matrix from purgedfile */
 	if (sparseLname != NULL) {
 		printf("Building left matrix\n");
-		build_left_matrix(sparseLname, hisname, nrows, ncols, skip, Nmax);
+		build_left_matrix(sparseLname, hisname, nrows, ncols, skip, Nmax, bin);
 	}
 
 	/* Read the matrix from purgedfile */
