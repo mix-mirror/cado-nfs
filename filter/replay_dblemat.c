@@ -342,7 +342,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	}
 	while (t2 <= k2) {
 		t += 1;
-		sum[++t] = r2[t2];
+		sum[t] = r2[t2];
 		t2 += 1;
 	}
 	ASSERT(t <= k1 + k2 - 1);
