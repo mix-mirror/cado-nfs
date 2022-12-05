@@ -726,7 +726,7 @@ int main(int argc, char *argv[])
 		eliminated_columns[j] = sum;
 		sum += 1;
 	}
-	printf("non-eliminated columns: %" PRId64 "\n", sum);
+	printf("non-eliminated columns: %" PRId64 "\n", (int64_t) sum);
 	
 	/* 
 	 * here: sum == number of non-eliminated columns.
