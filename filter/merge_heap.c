@@ -172,6 +172,32 @@ heap_setup()
         }
 }
 
+/* deallocate evrything.  The memory is not released */
+void
+heap_reset()
+{
+        current_generation += 1;   // all full pages become "old"
+
+        /* clear all full pages */
+        struct page_t *page = heap_get_full_page();
+        while (page != NULL) {
+                heap_clear_page(page);
+                page = heap_get_full_page();
+        }
+
+        /* clear active pages */
+        int T = omp_get_max_threads ();
+        for (int t = 0 ; t < T ; t++) {
+                heap_clear_page(active_page[t]);
+                active_page[t] = heap_get_free_page();
+                heap_waste[t] = 0;
+        }
+
+        current_generation = 0;
+}
+
+
+/* release all memory */
 void
 heap_clear ()
 {

@@ -35,6 +35,9 @@ void heap_destroy_row (typerow_t *row);
    Must be called outside of a parallel region.  May move rows in memory and update row pointers. */
 void heap_garbage_collection(typerow_t **rows);
 
+/* Deallocate all rows. Does not release memory (it remains available for row allocation) */
+void heap_reset ();
+
 /* release all memory. This is technically not necessary, because the "malloc"
    allocations are internal to the process, and all space allocated to the
    process is reclaimed by the OS on termination. However, doing this enables

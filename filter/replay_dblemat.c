@@ -543,8 +543,8 @@ void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
 	// CB: probably useless...
 	// qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
 	
-	data->rows[rel->num] = mallocRow (nb + 1);       // in sparse.c
-	compressRow (data->rows[rel->num], buf, nb);     // in sparse.c
+	data->rows[rel->num] = heap_alloc_row(rel->num, nb);  // in merge_heap.c
+	compressRow (data->rows[rel->num], buf, nb);              // in sparse.c
   	return NULL;
 }
 
@@ -746,6 +746,8 @@ int main(int argc, char *argv[])
 	/* Read the history */
 	printf("Building left matrix\n");
 	build_left_matrix(sparseLname, hisname, nrows, ncols, column_info, bin);
+
+	heap_reset();
 
 	printf("Building right matrix\n");
 	build_right_matrix(sparseRname, purgedname, nrows, ncols, 
