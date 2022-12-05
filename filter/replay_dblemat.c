@@ -561,7 +561,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	fclose_maybe_compressed(hisfile, hisname);
 
 	/* output left matrix */
-	flushSparse(matrixname, rows, nrows, ncols, skip, bin);
+	flushSparse(matrixname, rows, left_nrows, nrows, 0, bin);
 }
 
 
