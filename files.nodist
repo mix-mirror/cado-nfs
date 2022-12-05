@@ -3,6 +3,7 @@
 # Note that the joint of this file and its companion files.dist must agree
 # with the list of files known to the SCM.  A further word of caution:
 # wildcards are *NOT* recognized (by the fascist sanity check program).
+.gitignore
 .mailmap
 README.nonlinear
 Toolchain-MinGW64.cmake
@@ -10,12 +11,10 @@ dev_docs/
 files.dist
 files.nodist
 files.unknown
-filter/CMakeLists-nodist.txt
 filter/debug-tools.sh
 filter/out-of-core/Makefile
 filter/out-of-core/clique.c
 filter/out-of-core/singleton.c
-filter/replay_dblemat.cpp
 linalg/bwc/CMakeLists-nodist.txt
 linalg/bwc/bcast-file.c
 linalg/bwc/bench_polmatmul.cpp

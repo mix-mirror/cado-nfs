@@ -391,10 +391,13 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
   e2 /= d;
   /* we will multiply row i1 by e2, and row i2 by e1 */
 
+<<<<<<< HEAD
   t1 = 1;
   t2 = 1;
   t = 0;
 
+=======
+>>>>>>> 24d5056a6cf1c0dbdcdbaa9045619da0329c66b7
   /* now perform the real merge */
   typerow_t *sum;
   sum = heap_alloc_row(i1, k1 + k2 - 1);
