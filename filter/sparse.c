@@ -219,7 +219,12 @@ addRowsUpdateIndex(typerow_t **rows, index_data_t index_data,
 #endif
 }
 
-// A line is "[-]i i1 ... ik [#j]"
+/* 
+ * A line is "[-]i i1 ... ik [#j]"
+ * On output, ind[] contains the row indices and j contains the column index.
+ * If no column index is given, j is set to -1.
+ * The return value is the number of integers before "#".
+ */
 int parse_hisfile_line (index_signed_t *ind, const char *t, index_t *j)
 {
   int ni = 0;
