@@ -50,9 +50,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #define DEBUG 0
 
 /* Save a sparse matrix to the filesystem. Write column and row weights in
-   companion files. If skip > 0, also create a "dense" part in the same format. */
+   companion files. If skip > 0, also create a "dense" part in the same format. 
+   rows_size == #entries in rows[].
+   nrows     == #non-NULL entries in rows[]
+*/
 static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
-                           index_t nrows, index_t ncols, index_t skip, int bin)
+                           index_t rows_size, index_t nrows, index_t ncols, index_t skip, int bin)
 {
 	double tt = seconds();
 	printf("Sparse submatrix: nrows=%" PRIu64 " ncols=%" PRIu64 "\n",
@@ -150,7 +153,7 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 		free(dbase);
 	}
 
-	for (index_t i = 0; i < nrows; i++) {
+	for (index_t i = 0; i < rows_size; i++) {
 		if (rows[i] == NULL) {
 			continue; /* row has been deleted */
 		} else {
@@ -488,7 +491,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	fclose_maybe_compressed(hisfile, hisname);
 
 	/* output left matrix */
-	flushSparse(matrixname, rows, left_nrows, nrows, 0, bin);      // skip=0
+	flushSparse(matrixname, rows, nrows, left_nrows, nrows, 0, bin);      // skip=0
 	free(rows);
 }
 
@@ -574,7 +577,7 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	ASSERT_ALWAYS (nread == nrows);
 
 	/* output right matrix */
-	flushSparse(outputname, rows, nrows, nremainingcols, skip, bin);
+	flushSparse(outputname, rows, nrows, nrows, nremainingcols, skip, bin);
 	free(rows);
 }
 
@@ -726,7 +729,7 @@ int main(int argc, char *argv[])
 		eliminated_columns[j] = sum;
 		sum += 1;
 	}
-	printf("remaining (non-eliminated) columns : %" PRId64 "\n", sum);
+	printf("remaining (non-eliminated) columns : %" PRId64 "\n", (uint64_t) sum);
 
 	/* 
 	 * here: sum == number of non-eliminated columns.
