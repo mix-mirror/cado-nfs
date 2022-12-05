@@ -718,7 +718,7 @@ int main(int argc, char *argv[])
 
 	/* renumber the columns (exclusive prefix-sum) */
 	index_t sum = 0;
-	for (uint64_t j = 1; j < ncols; j++) {
+	for (uint64_t j = 0; j < ncols; j++) {
 		if (eliminated_columns[j] == 0) {
 			eliminated_columns[j] = UMAX(index_t);
 			continue;
@@ -726,7 +726,8 @@ int main(int argc, char *argv[])
 		eliminated_columns[j] = sum;
 		sum += 1;
 	}
-
+	printf("non-eliminated columns: %" PRId64 "\n", sum);
+	
 	/* 
 	 * here: sum == number of non-eliminated columns.
 	 *        eliminated_columns[j] == UMAX(...) ---> col j is eliminated
