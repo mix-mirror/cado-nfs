@@ -256,80 +256,6 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 
 #define STRLENMAX 2048
 
-typedef struct {
-	typerow_t **mat;
-	index_t ncols;
-	index_t col0;
-	index_t colmax;
-} replay_read_data_t;
-
-
-void *fill_in_rows(void *context_data, earlyparsed_relation_ptr rel)
-{
-	replay_read_data_t *data = (replay_read_data_t *) context_data;
-	typerow_t buf[UMAX(weight_t)];
-
-	unsigned int nb = 0;
-	for (unsigned int j = 0; j < rel->nb; j++) {
-		index_t h = rel->primes[j].h;
-		if (h < data->col0 || h >= data->colmax)
-			continue;
-		nb++;
-#ifdef FOR_DL
-		exponent_t e = rel->primes[j].e;
-		buf[nb] = (ideal_merge_t) {
-		.id = h,.e = e};
-#else
-		ASSERT_ALWAYS(rel->primes[j].e == 1);
-		buf[nb] = h;
-#endif
-		ASSERT(h < data->ncols);
-	}
-#ifdef FOR_DL
-	buf[0].id = nb;
-#else
-	buf[0] = nb;
-#endif
-
-	qsort(&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
-
-	data->mat[rel->num] = mallocRow(nb + 1);
-	compressRow(data->mat[rel->num], buf, nb);
-
-	return NULL;
-}
-
-/* if for_msieve=1, generate the *.cyc file needed by msieve to construct
-   its matrix, which is of the following (binary) format:
-      small_nrows
-      n1 i1 i2 ... in1
-      n2 j1 j2 ... jn2
-      ...
-      nk ...
-   where each value is stored as a 32-bit integer (no linebreak),
-   small_nrows is the number of relation-sets of the matrix,
-   n1 is the number of relations in the first relation-set,
-   i1 is the index of the first relation in the first relation-set
-   (should correspond to line i1+2 in *.purged.gz), and so on */
-
-MAYBE_UNUSED
-static void read_purgedfile(typerow_t ** mat, const char *filename, index_t nrows, index_t ncols, index_t col0, index_t colmax)
-{
-	index_t nread;
-	printf("Reading sparse matrix from %s\n", filename);
-	fflush(stdout);
-	char *fic[2] = { (char *)filename, NULL };
-	replay_read_data_t tmp = (replay_read_data_t) {
-		.mat = mat,
-		.ncols = ncols,
-		.col0 = col0,
-		.colmax = colmax,
-	};
-	nread = filter_rels(fic, (filter_rels_callback_t) & fill_in_rows, &tmp, EARLYPARSE_NEED_INDEX, NULL, NULL);
-	ASSERT_ALWAYS(nread == nrows);
-}
-
-
 // i1 += i2
 // j is the index of the column that is used for
 // pivoting in the case of DL. Then, the operation is
@@ -427,13 +353,10 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
   e2 /= d;
   /* we will multiply row i1 by e2, and row i2 by e1 */
 
-<<<<<<< HEAD
   t1 = 1;
   t2 = 1;
   t = 0;
 
-=======
->>>>>>> 24d5056a6cf1c0dbdcdbaa9045619da0329c66b7
   /* now perform the real merge */
   typerow_t *sum;
   sum = heap_alloc_row(i1, k1 + k2 - 1);
@@ -492,10 +415,11 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 #endif
 
 /* construct the D matrix (n' rows, n columns), where n is the number of rows
-   of the original matrix M (output from purge), i.e., nrows */
+   of the original matrix M (output from purge), i.e., nrows. 
+   fill eliminated_columns[] from the history file. */
 static void
 build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
-                  index_t ncols MAYBE_UNUSED, int skip MAYBE_UNUSED, index_t Nmax, int bin)
+                  index_t ncols MAYBE_UNUSED, index_t *eliminated_columns, int bin)
 {
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
 	ASSERT_ALWAYS(hisfile != NULL);
@@ -521,7 +445,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
 
 	int left_nrows = nrows;
-	while (fgets(str, STRLENMAX, hisfile) && nrows >= Nmax) {
+	while (fgets(str, STRLENMAX, hisfile)) {
 		if (str[0] == '#')
 			continue;
 
@@ -540,6 +464,9 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 		index_signed_t ind[MERGE_LEVEL_MAX], i0;
 		int destroy;
 		int ni = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
+	
+		eliminated_columns[j] = 1;         // column has been eliminated
+
 		if (ind[0] < 0) {
 			destroy = 0;
 			i0 = -ind[0] - 1;
@@ -552,7 +479,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 			add_row(rows, ind[k], i0, j);
 
 		if (destroy) {
-			heap_destroy_row(rows[i0]);
+			heap_destroy_row(rows[i0]);        // reclaim the memory
 			rows[i0] = NULL;
 			left_nrows -= 1;
 		}
@@ -561,10 +488,97 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	fclose_maybe_compressed(hisfile, hisname);
 
 	/* output left matrix */
-	flushSparse(matrixname, rows, left_nrows, nrows, 0, bin);
+	flushSparse(matrixname, rows, left_nrows, nrows, 0, bin);      // skip=0
+	free(rows);
 }
 
+/******************************************************************************/
+ 
+/*
+ * The following code is very similar to replay.c
+ * It loads the whole matrix in memory, in order to use flushSparse to write it
+ * this is wasteful, each row could be written as soon as it is read
+ */
 
+/* code to read the full purged matrix */
+typedef struct
+{
+	typerow_t **rows;
+	index_t ncols;
+	index_t nremainingcols;
+	index_t *renumbering; 
+} replay_read_data_t;
+
+void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
+{
+  replay_read_data_t *data = (replay_read_data_t *) context_data;
+  typerow_t buf[UMAX(weight_t)];
+
+  unsigned int nb = 0;
+  for (unsigned int j = 0; j < rel->nb; j++)
+  {
+    index_t h = rel->primes[j].h;
+    ASSERT (h < data->ncols);
+    if (data->renumbering[h] == UMAX(index_t))
+    	continue;
+    else
+    	h = data->renumbering[h];
+    ASSERT (h < data->nremainingcols);
+
+    nb++;
+#ifdef FOR_DL
+    exponent_t e = rel->primes[j].e;
+    buf[nb] = (ideal_merge_t) {.id = h, .e = e};
+#else
+    ASSERT_ALWAYS (rel->primes[j].e == 1);
+    buf[nb] = h;
+#endif
+  }
+#ifdef FOR_DL
+  buf[0].id = nb;
+#else
+  buf[0] = nb;
+#endif
+
+  qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
+
+  data->rows[rel->num] = mallocRow (nb + 1);       // in sparse.c
+  compressRow (data->rows[rel->num], buf, nb);     // in sparse.c
+
+  return NULL;
+}
+
+static void
+build_right_matrix (const char *outputname, const char *purgedname, index_t nrows,
+	index_t ncols, index_t nremainingcols, index_t *renumbering, index_t skip,
+	int bin)
+{
+	printf("Reading sparse matrix from %s\n", purgedname);
+	fflush(stdout);
+
+	/* allocate identity matrix */
+	typerow_t ** rows = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rows != NULL);
+	for (index_t i = 0; i < nrows; i++)
+		rows[i] = NULL;
+
+	char *fic[2] = {(char *) purgedname, NULL};
+	replay_read_data_t ctx = {
+		.rows = rows,
+		.ncols = ncols,
+		.nremainingcols = nremainingcols,
+		.renumbering = renumbering
+	};
+	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
+				&ctx, EARLYPARSE_NEED_INDEX, NULL, NULL);
+	ASSERT_ALWAYS (nread == nrows);
+
+	/* output right matrix */
+	flushSparse(outputname, rows, nrows, nremainingcols, skip, bin);
+	free(rows);
+}
+
+/******************************************************************************/
 
 static void declare_usage(param_list pl)
 {
@@ -579,11 +593,7 @@ static void declare_usage(param_list pl)
 	param_list_decl_usage(pl, "ideals", "file containing correspondence between " "ideals and matrix columns");
 	param_list_decl_usage(pl, "force-posix-threads", "force the use of posix threads, do not rely on platform memory semantics");
 	param_list_decl_usage(pl, "path_antebuffer", "path to antebuffer program");
-	param_list_decl_usage(pl, "Nmax", "stop at Nmax number of rows (default 0)");
-#ifndef FOR_DL
-	param_list_decl_usage(pl, "col0", "print only columns with index >= col0");
-	param_list_decl_usage(pl, "colmax", "print only columns with index < colmax");
-#endif
+
 	verbose_decl_usage(pl);
 }
 
@@ -597,7 +607,6 @@ static void usage(param_list pl, char *argv0)
 int main(int argc, char *argv[])
 {
 	char *argv0 = argv[0];
-	uint64_t Nmax = 0;
 	uint64_t nrows, ncols;
         int skip = DEFAULT_MERGE_SKIP;
 	double cpu0 = seconds();
@@ -641,7 +650,6 @@ int main(int argc, char *argv[])
 #ifndef FOR_DL
 	param_list_parse_int(pl, "skip", &skip);
 #endif
-	param_list_parse_uint64(pl, "Nmax", &Nmax);
 	const char *path_antebuffer = param_list_lookup_string(pl, "path_antebuffer");
 
 	/* Some checks on command line arguments */
@@ -658,8 +666,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Error, missing -his command line argument\n");
 		usage(pl, argv0);
 	}
-	if (sparseLname == NULL && sparseRname == NULL) {
-		fprintf(stderr, "Error, at least one of -outL or --outR is required\n");
+	if (sparseLname == NULL || sparseRname == NULL) {
+		fprintf(stderr, "Error, both -outL and --outR are required\n");
 		usage(pl, argv0);
 	}
 #ifdef FOR_DL
@@ -700,23 +708,36 @@ int main(int argc, char *argv[])
 #endif
 
 	heap_setup();
+	index_t *eliminated_columns = malloc(sizeof(*eliminated_columns) * ncols);
+	for (uint64_t i = 0; i < ncols; i++)
+		eliminated_columns[i] = 0;
 
-	/* Read the matrix from purgedfile */
-	if (sparseLname != NULL) {
-		printf("Building left matrix\n");
-		build_left_matrix(sparseLname, hisname, nrows, ncols, skip, Nmax, bin);
+	/* Read the history */
+	printf("Building left matrix\n");
+	build_left_matrix(sparseLname, hisname, nrows, ncols, eliminated_columns, bin);
+
+	/* renumber the columns (exclusive prefix-sum) */
+	index_t sum = 0;
+	for (uint64_t j = 1; j < ncols; j++) {
+		if (eliminated_columns[j] == 0) {
+			eliminated_columns[j] = UMAX(index_t);
+			continue;
+		}
+		eliminated_columns[j] = sum;
+		sum += 1;
 	}
 
-	/* Read the matrix from purgedfile */
-	if (sparseRname != NULL) {
-		// WIP
-		// read_purgedfile(rows, purgedname, nrows, ncols, col0, colmax);
-		printf("The biggest index appearing in a relation is %" PRIu64 "\n", ncols);
-		fflush(stdout);
-	}
+	/* 
+	 * here: sum == number of non-eliminated columns.
+	 *        eliminated_columns[j] == UMAX(...) ---> col j is eliminated
+	 *        eliminated_columns[j] == k ---> col j becomes col k
+	 */
 
-	// fasterVersion(newrows, sparseRname, indexname, hisname, nrows, ncols, skip, idealsfilename, Nmax);
+	printf("Building right matrix\n");
+	build_right_matrix(sparseRname, purgedname, nrows, ncols, sum, 
+		eliminated_columns, skip, bin);
 
+	free(eliminated_columns);
 	param_list_clear(pl);
 	print_timing_and_memory(stdout, cpu0, wct0);
 	return 0;
