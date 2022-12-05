@@ -45,6 +45,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "portability.h"	// strdup  // IWYU pragma: keep
 #include "macros.h"
 #include "merge_heap.h"
+#include "gcd.h"
 
 #define DEBUG 0
 
@@ -358,8 +359,8 @@ static void
 add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 {
   /* first look for the exponents of j in i1 and i2 */
- 	typerow_t *r1 = mat->rows[i1];
-  	typerow_t *r2 = mat->rows[i2];
+ 	typerow_t *r1 = rows[i1];
+  	typerow_t *r2 = rows[i2];
  	index_t k1 = rowLength(rows, i1);
 	index_t k2 = rowLength(rows, i2);
 	index_t t1 = 1;            // index in rows[i1]
@@ -390,7 +391,9 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
   e2 /= d;
   /* we will multiply row i1 by e2, and row i2 by e1 */
 
-  index_t t1 = 1, t2 = 1, t = 0;
+  t1 = 1;
+  t2 = 1;
+  t = 0;
 
   /* now perform the real merge */
   typerow_t *sum;
@@ -439,7 +442,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
       ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
       t++;
       setCell(sum, t, r2[t2].id, e);
-      increase_weight (mat, r2[t2].id);
+      // increase_weight (mat, r2[t2].id);
       t2 ++;
     }
   ASSERT(t <= k1 + k2 - 1);
@@ -449,7 +452,8 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 }
 #endif
 
-
+/* construct the D matrix (n' rows, n columns), where n is the number of rows
+   of the original matrix M (output from purge), i.e., nrows */
 static void
 build_left_matrix(const char *matrixname, const char *hisname, index_t nrows, 
 	index_t ncols, int skip, index_t Nmax)
