@@ -495,7 +495,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
    of the original matrix M (output from purge), i.e., nrows */
 static void
 build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
-                  index_t ncols, int skip, index_t Nmax, int bin)
+                  index_t ncols MAYBE_UNUSED, int skip MAYBE_UNUSED, index_t Nmax, int bin)
 {
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
 	ASSERT_ALWAYS(hisfile != NULL);
