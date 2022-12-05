@@ -468,7 +468,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	ASSERT_ALWAYS(rows != NULL);
 	for (index_t i = 0; i < nrows; i++) {
 		rows[i] = heap_alloc_row(i, 1);
-		rows[i][1] = (ideal_merge_t) i;
+		rows[i][1] = i;
 	}
 
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
