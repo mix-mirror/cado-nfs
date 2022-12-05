@@ -345,7 +345,9 @@ add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 		sum[t] = r2[t2];
 		t2 += 1;
 	}
-	ASSERT(t <= k1 + k2 - 1);
+        /* In the double-matrix code, we don't necessarily have
+           cancellations. */
+	ASSERT(t <= k1 + k2);
 	heap_resize_last_row(sum, t);
 	heap_destroy_row(r1);
 	rows[i1] = sum;
