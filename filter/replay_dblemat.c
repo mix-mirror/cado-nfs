@@ -531,7 +531,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 			stats_print_progress(stats, addread, 0, 0, 0);
 
 		if (str[strlen(str) - 1] != '\n') {
-			fprintf(stderr, "Gasp: not a complete a line!");
+			fprintf(stderr, "Gasp: not a complete line!");
 			fprintf(stderr, " I stop reading and go to the next phase\n");
 			break;
 		}
