@@ -697,7 +697,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "change ind_row from uint32_t to uint64_t in sparse.h\n");
 		exit(EXIT_FAILURE);
 	}
-	printf("Sparse matrix has %" PRIu64 " rows and %" PRIu64 " cols\n", nrows, ncols);
+	printf("Purged matrix has %" PRIu64 " rows and %" PRIu64 " cols\n", nrows, ncols);
 	fflush(stdout);
 
 #if SIZEOF_INDEX == 4
@@ -718,16 +718,16 @@ int main(int argc, char *argv[])
 
 	/* renumber the columns (exclusive prefix-sum) */
 	index_t sum = 0;
-	for (uint64_t j = 0; j < ncols; j++) {
-		if (eliminated_columns[j] == 0) {
+	for (uint64_t j = 1; j < ncols; j++) {
+		if (eliminated_columns[j] == 1) {
 			eliminated_columns[j] = UMAX(index_t);
 			continue;
 		}
 		eliminated_columns[j] = sum;
 		sum += 1;
 	}
-	printf("non-eliminated columns: %" PRId64 "\n", (int64_t) sum);
-	
+	printf("remaining (non-eliminated) columns : %" PRId64 "\n", sum);
+
 	/* 
 	 * here: sum == number of non-eliminated columns.
 	 *        eliminated_columns[j] == UMAX(...) ---> col j is eliminated
