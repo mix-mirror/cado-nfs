@@ -419,10 +419,10 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 
 /* construct the D matrix (n' rows, n columns), where n is the number of rows
    of the original matrix M (output from purge), i.e., nrows. 
-   fill eliminated_columns[] from the history file. */
+   Fill eliminated_columns[] from the history file. */
 static void
 build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
-                  index_t ncols MAYBE_UNUSED, index_t *eliminated_columns, int bin)
+                  index_t ncols MAYBE_UNUSED, index_t *column_info, int bin)
 {
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
 	ASSERT_ALWAYS(hisfile != NULL);
@@ -468,7 +468,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 		int destroy;
 		int ni = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
 	
-		eliminated_columns[j] = 1;         // column has been eliminated
+		column_info[j] = 1;         // column has been eliminated
 
 		if (ind[0] < 0) {
 			destroy = 0;
@@ -499,8 +499,8 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
  
 /*
  * The following code is very similar to replay.c
- * It loads the whole matrix in memory, in order to use flushSparse to write it
- * this is wasteful, each row could be written as soon as it is read
+ * It loads the whole matrix in memory. This is unfortunately required, because
+ * the matrix has (many) empty columns, and we don't know which ones in advance.
  */
 
 /* code to read the full purged matrix */
@@ -509,53 +509,50 @@ typedef struct
 	typerow_t **rows;
 	index_t ncols;
 	index_t nremainingcols;
-	index_t *renumbering; 
+	index_t *column_info; 
 } replay_read_data_t;
 
 void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
 {
-  replay_read_data_t *data = (replay_read_data_t *) context_data;
-  typerow_t buf[UMAX(weight_t)];
+	replay_read_data_t *data = (replay_read_data_t *) context_data;
+	typerow_t buf[UMAX(weight_t)];
 
-  unsigned int nb = 0;
-  for (unsigned int j = 0; j < rel->nb; j++)
-  {
-    index_t h = rel->primes[j].h;
-    ASSERT (h < data->ncols);
-    if (data->renumbering[h] == UMAX(index_t))
-    	continue;
-    else
-    	h = data->renumbering[h];
-    ASSERT (h < data->nremainingcols);
+	unsigned int nb = 0;
+	for (unsigned int j = 0; j < rel->nb; j++) {
+		index_t h = rel->primes[j].h;
+		ASSERT (h < data->ncols);
+		if (data->column_info[h] & 1)
+			continue;      // column has been eliminated, skip entry
+		data->column_info[h] |= 2;                // column is not empty
 
-    nb++;
-#ifdef FOR_DL
-    exponent_t e = rel->primes[j].e;
-    buf[nb] = (ideal_merge_t) {.id = h, .e = e};
-#else
-    ASSERT_ALWAYS (rel->primes[j].e == 1);
-    buf[nb] = h;
-#endif
-  }
-#ifdef FOR_DL
-  buf[0].id = nb;
-#else
-  buf[0] = nb;
-#endif
+		nb++;
+		#ifdef FOR_DL
+			exponent_t e = rel->primes[j].e;
+			buf[nb] = (ideal_merge_t) {.id = h, .e = e};
+		#else
+			ASSERT_ALWAYS (rel->primes[j].e == 1);
+			buf[nb] = h;
+		#endif
+	}
+	#ifdef FOR_DL
+		buf[0].id = nb;
+	#else
+		buf[0] = nb;
+	#endif
 
-  qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
-
-  data->rows[rel->num] = mallocRow (nb + 1);       // in sparse.c
-  compressRow (data->rows[rel->num], buf, nb);     // in sparse.c
-
-  return NULL;
+	// CB: probably useless...
+	// qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
+	
+	data->rows[rel->num] = mallocRow (nb + 1);       // in sparse.c
+	compressRow (data->rows[rel->num], buf, nb);     // in sparse.c
+  	return NULL;
 }
 
 static void
 build_right_matrix (const char *outputname, const char *purgedname, index_t nrows,
-	index_t ncols, index_t nremainingcols, index_t *renumbering, index_t skip,
-	int bin)
+	index_t ncols, index_t *column_info, index_t skip, int bin)
 {
+	/* here: column_info[j] == 1   <====>   column has been eliminated */ 
 	printf("Reading sparse matrix from %s\n", purgedname);
 	fflush(stdout);
 
@@ -569,15 +566,46 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	replay_read_data_t ctx = {
 		.rows = rows,
 		.ncols = ncols,
-		.nremainingcols = nremainingcols,
-		.renumbering = renumbering
+		.column_info = column_info
 	};
 	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
 				&ctx, EARLYPARSE_NEED_INDEX, NULL, NULL);
 	ASSERT_ALWAYS (nread == nrows);
 
+	/* here: column_info[j] == 1   <====>   column has been eliminated
+	         column_info[j] == 2   <====>   column is non-empty
+                 column_info[j] == 0   <====>   column is empty */
+
+	/* renumber the columns (exclusive prefix-sum) */
+	index_t sum = 0;
+	for (uint64_t j = 1; j < ncols; j++) {
+		if (column_info[j] < 2) {
+			column_info[j] = UMAX(index_t);
+			continue;
+		}
+		column_info[j] = sum;
+		sum += 1;
+	}
+	printf("remaining (non-eliminated) columns : %" PRId64 "\n", (uint64_t) sum);
+
+	/* 
+	 * here: sum == number of non-eliminated columns.
+	 *        column_info[j] == UMAX(...) ---> col j is eliminated
+	 *        column_info[j] == k ---> col j becomes col k
+	 */
+
+	for (index_t i = 0; i < nrows; i++) {
+		if (rows[i] == NULL)
+			continue;                        // row has been deleted
+		for (index_t k = 1; k <= rowLength(rows, i); k++) {
+			index_t j = rowCell(rows[i], k);
+			ASSERT(column_info[j] != UMAX(index_t));
+			setCell(rows[i], k, column_info[j], 0);
+		}
+	}
+
 	/* output right matrix */
-	flushSparse(outputname, rows, nrows, nrows, nremainingcols, skip, bin);
+	flushSparse(outputname, rows, nrows, nrows, sum, skip, bin);
 	free(rows);
 }
 
@@ -711,38 +739,23 @@ int main(int argc, char *argv[])
 #endif
 
 	heap_setup();
-	index_t *eliminated_columns = malloc(sizeof(*eliminated_columns) * ncols);
+	index_t *column_info = malloc(sizeof(*column_info) * ncols);
 	for (uint64_t i = 0; i < ncols; i++)
-		eliminated_columns[i] = 0;
+		column_info[i] = 0;
 
 	/* Read the history */
 	printf("Building left matrix\n");
-	build_left_matrix(sparseLname, hisname, nrows, ncols, eliminated_columns, bin);
-
-	/* renumber the columns (exclusive prefix-sum) */
-	index_t sum = 0;
-	for (uint64_t j = 1; j < ncols; j++) {
-		if (eliminated_columns[j] == 1) {
-			eliminated_columns[j] = UMAX(index_t);
-			continue;
-		}
-		eliminated_columns[j] = sum;
-		sum += 1;
-	}
-	printf("remaining (non-eliminated) columns : %" PRId64 "\n", (uint64_t) sum);
-
-	/* 
-	 * here: sum == number of non-eliminated columns.
-	 *        eliminated_columns[j] == UMAX(...) ---> col j is eliminated
-	 *        eliminated_columns[j] == k ---> col j becomes col k
-	 */
+	build_left_matrix(sparseLname, hisname, nrows, ncols, column_info, bin);
 
 	printf("Building right matrix\n");
-	build_right_matrix(sparseRname, purgedname, nrows, ncols, sum, 
-		eliminated_columns, skip, bin);
+	build_right_matrix(sparseRname, purgedname, nrows, ncols, 
+		column_info, skip, bin);
 
-	free(eliminated_columns);
+	free(column_info);
 	param_list_clear(pl);
 	print_timing_and_memory(stdout, cpu0, wct0);
 	return 0;
 }
+
+
+// TODO : kill empty cols in purged mat
