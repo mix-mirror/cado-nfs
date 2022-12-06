@@ -31,8 +31,10 @@ def read_matrix(f):
          if not j in J:
             J.append(j)
    assert maxcol<ncols, "maxcol<ncols"
+   print ("dimensions:", M[0])
    print ("number of different column elements:", len(J))
    print ("weight:", w)
+   f.close()
    return M
 
 # MM=sparse_mul(L,R)
@@ -77,7 +79,36 @@ def cmp_matrix(M1,M2):
       print ("dimensions differ:", M1[0], M2[0])
       return
    n = M1[0][0]
+   diff = 0
    for i in range(n):
       if M1[i+1] != M2[i+1]:
-         print ("rows ", i, "differ")
-         return
+         if diff == 0:
+          print ("rows ", i, "differ")
+         diff += 1
+   print ("number of different rows:", diff)
+
+# read index file
+# I=read_index("c60.index")
+def read_index(f):
+   f = open(f,"r")
+   s = f.readline()
+   n = ZZ(s)
+   print ("nrows:", n)
+   M = [[n]]
+   w = 0
+   while true:
+      s = f.readline()
+      if s=='':
+         break
+      s = s.split()
+      k = ZZ(s[0])
+      s = s[1:]
+      assert len(s) == k, "len(s) == k"
+      l = []
+      for c in s:
+         l.append(ZZ('0x'+c))
+      M.append(l)
+      w += len(l)
+   f.close()
+   print ("weight:", w)
+   return M
