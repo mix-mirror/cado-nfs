@@ -695,7 +695,8 @@ int main(int argc, char *argv[])
 	setbuf(stderr, NULL);
 
 #ifdef FOR_DL
-	#error "this is not ready. In particular, add_row must find the correct coefficients for linear combinations"
+	fprintf (stderr, "this is not ready. In particular, add_row must find the correct coefficients for linear combinations\n");
+        exit (1);
 #endif
 
 	param_list pl;
