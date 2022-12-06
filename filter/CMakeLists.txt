@@ -45,6 +45,11 @@ target_link_libraries(replay-dblemat utils_with_io)
 set_target_properties(replay-dblemat PROPERTIES
                       COMPILE_FLAGS "${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
+add_executable(replay-dblemat-dl replay_dblemat.c sparse.c merge_heap.c)
+target_link_libraries(replay-dblemat-dl utils_with_io)
+set_target_properties(replay-dblemat-dl PROPERTIES
+                      COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
+
 
 add_executable(reconstructlog-dl reconstructlog.cpp)
 target_link_libraries(reconstructlog-dl utils_with_io)

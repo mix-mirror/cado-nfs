@@ -204,7 +204,7 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
                                         } else {
                                           fprintf(smatfile, " %" PRIu32 "", x);
 #ifdef FOR_DL
-                                          fprintf(smatfile, ":%d", sparsemat[i][j].e);
+                                          fprintf(smatfile, ":%d", rows[i][j].e);
 #endif
                                         }
 				}
@@ -439,7 +439,7 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	ASSERT_ALWAYS(rows != NULL);
 	for (index_t i = 0; i < nrows; i++) {
 		rows[i] = heap_alloc_row(i, 1);
-		rows[i][1] = i;
+		setCell(rows[i], 1, i, 1);
 	}
 
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
@@ -598,7 +598,8 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 			index_t j = rowCell(rows[i], k);
 			ASSERT(column_info[j] != UMAX(index_t));
 			#ifdef FOR_DL
-				#error "not ready yet"
+				int32_t e = rowFullCell(rows[i], k).e; 
+				setCell(rows[i], k, column_info[j], e);
 			#else
 				setCell(rows[i], k, column_info[j], 0);
 			#endif
