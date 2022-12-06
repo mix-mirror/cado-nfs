@@ -507,8 +507,6 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 typedef struct
 {
 	typerow_t **rows;
-	index_t ncols;
-	index_t nremainingcols;
 	index_t *column_info; 
 } replay_read_data_t;
 
@@ -520,10 +518,9 @@ void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
 	unsigned int nb = 0;
 	for (unsigned int j = 0; j < rel->nb; j++) {
 		index_t h = rel->primes[j].h;
-		ASSERT (h < data->ncols);
-		if (data->column_info[h] & 1)
-			continue;      // column has been eliminated, skip entry
-		data->column_info[h] |= 2;                // column is not empty
+		if (data->column_info[h] == 1)
+			continue;                       // column has been eliminated, skip entry
+		data->column_info[h] = 2;         // column is not empty
 
 		nb++;
 		#ifdef FOR_DL
@@ -568,18 +565,19 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 		.ncols = ncols,
 		.column_info = column_info
 	};
+
 	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
 				&ctx, EARLYPARSE_NEED_INDEX, NULL, NULL);
 	ASSERT_ALWAYS (nread == nrows);
 
 	/* here: column_info[j] == 1   <====>   column has been eliminated
-	         column_info[j] == 2   <====>   column is non-empty
-                 column_info[j] == 0   <====>   column is empty */
+	         column_info[j] == 2   <====>   column is non-empty (not eliminated)
+           column_info[j] == 0   <====>   column is empty (not eliminated) */
 
-	/* renumber the columns (exclusive prefix-sum) */
+	/* renumber the remaining non-empty columns (exclusive prefix-sum) */
 	index_t sum = 0;
 	for (uint64_t j = 1; j < ncols; j++) {
-		if (column_info[j] < 2) {
+		if (column_info[j] != 2) {
 			column_info[j] = UMAX(index_t);
 			continue;
 		}
@@ -590,7 +588,7 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 
 	/* 
 	 * here: sum == number of non-eliminated columns.
-	 *        column_info[j] == UMAX(...) ---> col j is eliminated
+	 *        column_info[j] == UMAX(...) ---> col j is out of the game
 	 *        column_info[j] == k ---> col j becomes col k
 	 */
 
@@ -600,7 +598,11 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 		for (index_t k = 1; k <= rowLength(rows, i); k++) {
 			index_t j = rowCell(rows[i], k);
 			ASSERT(column_info[j] != UMAX(index_t));
-			setCell(rows[i], k, column_info[j], 0);
+			#ifdef FOR_DL
+				#error "not ready yet"
+			#else
+				setCell(rows[i], k, column_info[j], 0);
+			#endif
 		}
 	}
 
