@@ -56,8 +56,9 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 
 /* purged matrix */
 typerow_t **rows;
-index_t nrows;        
-index_t ncols;
+index_t nrows;          // #rows for the purged matrix
+index_t ncols;          // #cols for the purged matrix
+index_t nrows_small;    // #rows for the purged matrix once 2-merges are performed        
 
 /* global state */
 index_t *column_info;
@@ -570,7 +571,10 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	stats_data_t stats;	/* struct for printing progress */
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
 
-	int left_nrows = nrows;
+	nrows_small = nrows;
+	int twomerge_mode = 1;
+	uint64_t ntwomerge = 0;
+	index_t left_nrows = nrows;
 	while (fgets(str, STRLENMAX, hisfile)) {
 		if (str[0] == '#')
 			continue;
@@ -601,9 +605,22 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			i0 = ind[0];
 		}
 
-		for (int k = 1; k < ni; k++)
-			add_row(rowsL, ind[k], i0, j);
+		int twomerge = (ni == 2) && destroy;
+		if (!twomerge)
+			twomerge_mode = 0;
 
+		if (twomerge_mode) {
+			/* initial run of two merges: do them on R */
+			add_row(rows, ind[1], i0, j);
+			heap_destroy_row(rows[i0]);        // reclaim the memory
+			rows[i0] = NULL;
+			ntwomerge += 1;
+			nrows_small -= 1;
+		} else {
+			/* normal case: history replayed on L */
+			for (int k = 1; k < ni; k++)
+				add_row(rowsL, ind[k], i0, j);
+		}
 		if (destroy) {
 			heap_destroy_row(rowsL[i0]);        // reclaim the memory
 			rowsL[i0] = NULL;
@@ -612,6 +629,37 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	}
 	stats_print_progress(stats, addread, 0, 0, 1);
 	fclose_maybe_compressed(hisfile, hisname);
+	printf("%" PRId64 " 2-merges done directly on R\n", ntwomerge);
+
+	/* renumber columns of L to account for two-merges */
+	index_t *renumber = malloc(nrows * sizeof(*renumber));
+	ASSERT_ALWAYS(renumber != NULL);
+	index_t acc = 0;
+	for (index_t i = 0; i < nrows; i++) {
+		if (rows[i] == NULL) {
+			renumber[i] = UMAX(index_t);
+		} else {
+			renumber[i] = acc;
+			acc += 1;
+		}
+	}
+
+	/* similar code below --- factorize? */
+	for (index_t i = 0; i < nrows; i++) {            // renumber the columns
+		if (rowsL[i] == NULL)
+			continue;                        // row has been deleted
+		for (index_t k = 1; k <= rowLength(rowsL, i); k++) {
+			index_t j = rowCell(rowsL[i], k);
+			ASSERT(column_info[j] != UMAX(index_t));
+			#ifdef FOR_DL
+				int32_t e = rowFullCell(rowsL[i], k).e; 
+				setCell(rowsL[i], k, renumber[j], e);
+			#else
+				setCell(rowsL[i], k, renumber[j], 0);
+			#endif
+		}
+	}
+	free(renumber);
 
 	/* output left matrix */
 	flushSparse(outputname, rowsL, nrows, left_nrows, nrows, 0, bin);    // skip=0
@@ -675,7 +723,7 @@ build_right_matrix (const char *outputname, const char *idealsfilename, index_t 
 	}
 
 	/* output right matrix */
-	flushSparse(outputname, rows, nrows, nrows, sum, skip, bin);
+	flushSparse(outputname, rows, nrows, nrows_small, sum, skip, bin);
 }
 
 /******************************************************************************/
