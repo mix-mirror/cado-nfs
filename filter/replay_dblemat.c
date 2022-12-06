@@ -1,7 +1,7 @@
-/* replay --- replaying history of merges to build the sparse matriCES in
+/* replay --- replaying history of merges to build the sparse matrices in
               Kleinjung's "double matrix" idea.
 
-Copyright 2008-2019 Francois Morain, Emmanuel Thome, Paul Zimmermann,
+Copyright 2008-2022 Francois Morain, Emmanuel Thome, Paul Zimmermann,
           Cyril Bouvier, Pierrick Gaudry, Charles Bouillaguet
 
 This file is part of CADO-NFS.
@@ -519,7 +519,7 @@ void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
 	for (unsigned int j = 0; j < rel->nb; j++) {
 		index_t h = rel->primes[j].h;
 		if (data->column_info[h] == 1)
-			continue;                       // column has been eliminated, skip entry
+                  continue;           // column has been eliminated, skip entry
 		data->column_info[h] = 2;         // column is not empty
 
 		nb++;
@@ -575,7 +575,7 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 
 	/* renumber the remaining non-empty columns (exclusive prefix-sum) */
 	index_t sum = 0;
-	for (uint64_t j = 1; j < ncols; j++) {
+	for (uint64_t j = 0; j < ncols; j++) {
 		if (column_info[j] != 2) {
 			column_info[j] = UMAX(index_t);
 			continue;
