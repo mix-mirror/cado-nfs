@@ -1,3 +1,9 @@
+/* TODO:
+ * verify that replay_dblemat works with a positive value of skip
+ * put the 2-merges into the right matrix R (should reduce the total weight)
+ * modify merge to give a termination criteria in the double matrix case
+ */
+
 /* replay --- replaying history of merges to build the sparse matrices in
               Kleinjung's "double matrix" idea.
 
