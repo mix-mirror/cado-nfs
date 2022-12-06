@@ -1363,7 +1363,7 @@ main (int argc, char *argv[])
 {
     char *argv0 = argv[0];
 
-    filter_matrix_t mat[1];
+    filter_matrix_t mat[1], L[1];
     FILE * history;
 
     int nthreads = 1, cbound_incr;
@@ -1458,6 +1458,19 @@ main (int argc, char *argv[])
 
     /* initialize the matrix structure */
     initMat (mat, skip);
+
+    /* Set L to the identity matrix. This matrix will contain the combinations
+       of rows of the initial matrix M, so that the output matrix M' of merge
+       equals to L*M (up to removed rows and columns).
+    */
+    L->nrows = L->ncols = mat->nrows;
+    initMat (L, 0); // no skip in L, since skip only concerns columns
+    for (index_t i = 0; i < L->nrows; i++)
+    {
+      L->rows[i] = reallocRow (L->rows[i], 2);
+      setCell(L->rows[i], 0, 1, 1); // only one non-zero element in row
+      setCell(L->rows[i], 1, i, 1); // L[i,i] = 1
+    }
 
     /* Read all rels and fill-in the mat structure */
     tt = seconds ();
@@ -1719,6 +1732,7 @@ main (int argc, char *argv[])
     free (mat->Rqinv);
 
     clearMat (mat);
+    clearMat (L);
 
     param_list_clear (pl);
 
