@@ -330,7 +330,7 @@ renumber (index_t small_ncols, index_t *colweight, index_t ncols,
           MAYBE_UNUSED const char *idealsfilename)
 {
     index_t k, nb;
-    index_signed_t j;
+    index_t j;
     index_t *tmp;
 
 #ifdef FOR_DL
@@ -360,11 +360,13 @@ renumber (index_t small_ncols, index_t *colweight, index_t ncols,
             (uint64_t) small_ncols);
     fflush (stdout);
     /* PZ: for now, we don't sort the columns, to compare with
-       replay_dblemat */
+       replay_dblemat. If restore the sort, also restore the order of
+       the for loop below. */
     // qsort (tmp, small_ncols, 2*sizeof(index_t), cmp_index2);
     memset (colweight, 0, ncols * sizeof(index_t));
     // useful for BW + skipping heavy part only...
-    for (j = nb - 1, k = 1; j >= 0; j -= 2)
+    // for (j = nb - 1, k = 1; j >= 0; j -= 2)
+    for (j = 1, k = 1; j < nb; j += 2)
       {
         colweight[tmp[j]] = k++; // always this +1 trick
 #ifdef FOR_DL
