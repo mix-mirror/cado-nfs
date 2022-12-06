@@ -562,7 +562,6 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	char *fic[2] = {(char *) purgedname, NULL};
 	replay_read_data_t ctx = {
 		.rows = rows,
-		.ncols = ncols,
 		.column_info = column_info
 	};
 
