@@ -507,7 +507,8 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 typedef struct
 {
 	typerow_t **rows;
-	index_t *column_info; 
+	index_t *column_info;
+	int32_t *scratch;
 } replay_read_data_t;
 
 void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
@@ -515,12 +516,24 @@ void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
 	replay_read_data_t *data = (replay_read_data_t *) context_data;
 	typerow_t buf[UMAX(weight_t)];
 
+	// 1st pass, set scratch
+	for (unsigned int j = 0; j < rel->nb; j++) {
+		index_t h = rel->primes[j].h;
+		if (data->column_info[h] == 1)
+			continue;                 // column has been eliminated, skip entry
+		data->scratch[h] ^= 1;
+	}
+
+	// 2nd pass, read and reset scratch
 	unsigned int nb = 0;
 	for (unsigned int j = 0; j < rel->nb; j++) {
 		index_t h = rel->primes[j].h;
 		if (data->column_info[h] == 1)
-                  continue;           // column has been eliminated, skip entry
+			continue;                 // column has been eliminated, skip entry
+		if (data->scratch[h] == 0)
+			continue;                 // ideal appeared an even number of times 
 		data->column_info[h] = 2;         // column is not empty
+		data->scratch[h] = 0;             // reset scratch
 
 		nb++;
 		#ifdef FOR_DL
@@ -559,10 +572,16 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	for (index_t i = 0; i < nrows; i++)
 		rows[i] = NULL;
 
+	int32_t *scratch =  malloc(ncols * sizeof(*scratch));
+	ASSERT_ALWAYS(scratch != NULL);
+	for (index_t j = 0; j < ncols; j++)
+		scratch[j] = 0;
+
 	char *fic[2] = {(char *) purgedname, NULL};
 	replay_read_data_t ctx = {
 		.rows = rows,
-		.column_info = column_info
+		.column_info = column_info,
+		.scratch = scratch
 	};
 
 	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
@@ -668,6 +687,10 @@ int main(int argc, char *argv[])
 
 	setbuf(stdout, NULL);   // CB: where is setbuf? what's the purpose?
 	setbuf(stderr, NULL);
+
+#ifdef FOR_DL
+	#error "this is not ready. In particular, add_row must find the correct coefficients for linear combinations"
+#endif
 
 	param_list pl;
 	param_list_init(pl);
