@@ -587,7 +587,8 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
 				&ctx, EARLYPARSE_NEED_INDEX, NULL, NULL);
 	ASSERT_ALWAYS (nread == nrows);
-
+	free(scratch);
+	
 	/* here: column_info[j] == 1   <====>   column has been eliminated
 		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
 		 column_info[j] == 0   <====>   column is empty (not eliminated) */
