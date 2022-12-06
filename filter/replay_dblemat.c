@@ -643,6 +643,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			acc += 1;
 		}
 	}
+	ASSERT(acc == nrows_small);
 
 	/* similar code below --- factorize? */
 	for (index_t i = 0; i < nrows; i++) {            // renumber the columns
@@ -662,7 +663,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	free(renumber);
 
 	/* output left matrix */
-	flushSparse(outputname, rowsL, nrows, left_nrows, nrows, 0, bin);    // skip=0
+	flushSparse(outputname, rowsL, nrows, left_nrows, nrows_small, 0, bin);    // skip=0
 	free(rowsL);
 }
 
