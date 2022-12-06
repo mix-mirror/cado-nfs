@@ -62,6 +62,8 @@ index_t nrows_small;    // #rows for the purged matrix once 2-merges are perform
 
 /* global state */
 index_t *column_info;
+char *scratch;
+
 
 /* Save a sparse matrix to the filesystem. Write column and row weights in
    companion files. If skip > 0, also create a "dense" part in the same format. 
@@ -336,14 +338,25 @@ void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_pt
 {
 	typerow_t buf[UMAX(weight_t)];
 
+	// 1st pass, set scratch
+	for (unsigned int j = 0; j < rel->nb; j++) {
+		index_t h = rel->primes[j].h;
+		if (column_info[h] == 1)          // column was eliminated
+			continue;
+		scratch[h] ^= 1;
+	}
+
+	// 2nd pass, read and reset scratch
 	unsigned int nb = 0;
 	for (unsigned int j = 0; j < rel->nb; j++) {
 		index_t h = rel->primes[j].h;
 		if (column_info[h] == 1)          // column was eliminated
 			continue;
+		if (scratch[h] == 0)
+			continue; // ideal appeared an even number of times
+		scratch[h] = 0;             // reset scratch
 		column_info[h] = 2;         // column is not empty
-
-		nb++;
+		nb += 1;
 		#ifdef FOR_DL
 			exponent_t e = rel->primes[j].e;
 			buf[nb] = (ideal_merge_t) {.id = h, .e = e};
@@ -357,6 +370,9 @@ void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_pt
 	#else
 		buf[0] = nb;
 	#endif
+	
+	/* required because of add_rows (2-merges) on the relations */
+	qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
 
 	rows[rel->num] = heap_alloc_row(rel->num, nb);  // in merge_heap.c
 	compressRow (rows[rel->num], buf, nb);              // in sparse.c
@@ -380,11 +396,15 @@ read_purgedfile (const char* purgedname)
 		rows[i] = NULL;
 
 	char *fic[2] = {(char *) purgedname, NULL};
+	scratch = malloc(ncols * sizeof(*scratch));
+	ASSERT_ALWAYS(scratch != NULL);
+	for (index_t i = 0; i < ncols; i++)
+		scratch[i] = 0;
 
 	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
 				NULL, EARLYPARSE_NEED_INDEX, NULL, NULL);
 	ASSERT_ALWAYS (nread == nrows);
-
+	free(scratch);
 	/* here: column_info[j] == 1   <====>   column has been eliminated
 		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
 		 column_info[j] == 0   <====>   column is empty (not eliminated) */
