@@ -1,3 +1,8 @@
+/* TODO:
+ * put the 2-merges into the right matrix R (should reduce the total weight)
+ * modify merge to give a termination criteria in the double matrix case
+ */
+
 /* replay --- replaying history of merges to build the sparse matrices in
               Kleinjung's "double matrix" idea.
 
@@ -716,7 +721,8 @@ int main(int argc, char *argv[])
 	setbuf(stderr, NULL);
 
 #ifdef FOR_DL
-	#error "this is not ready. In particular, add_row must find the correct coefficients for linear combinations"
+	fprintf (stderr, "this is not ready. In particular, add_row must find the correct coefficients for linear combinations\n");
+        exit (1);
 #endif
 
 	param_list pl;
