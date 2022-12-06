@@ -49,6 +49,14 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 
 #define DEBUG 0
 
+/* purged matrix */
+typerow_t **rows;
+index_t nrows;        
+index_t ncols;
+
+/* global state */
+index_t *column_info;
+
 /* Save a sparse matrix to the filesystem. Write column and row weights in
    companion files. If skip > 0, also create a "dense" part in the same format. 
    rows_size == #entries in rows[].
@@ -265,6 +273,118 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 //   i1 = e2*i1 + e1*i2
 // where e1 and e2 are adjusted so that the j-th column is zero in i1.
 
+/******************************************************************************/
+
+
+/*  Set eliminated_columns[j] == 1 if column j is eliminated */
+static void
+preread_history(const char *hisname)
+{
+	printf("Reading history file %s (1st pass)\n", hisname);
+	fflush(stdout);
+
+	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
+	ASSERT_ALWAYS(hisfile != NULL);
+
+	/* allocate auxiliary data (per column) */
+	column_info = malloc(sizeof(*column_info) * ncols);
+	ASSERT_ALWAYS(column_info != NULL);
+	for (index_t i = 0; i < ncols; i++)
+		column_info[i] = 0;
+
+	uint64_t addread = 0;
+	char str[STRLENMAX];
+	stats_data_t stats;	/* struct for printing progress */
+	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
+	uint64_t n_elim = 0;
+	while (fgets(str, STRLENMAX, hisfile)) {
+		if (str[0] == '#')
+			continue;
+		addread++;
+		if (stats_test_progress(stats))
+			stats_print_progress(stats, addread, 0, 0, 0);
+		if (str[strlen(str) - 1] != '\n') {
+			fprintf(stderr, "Gasp: not a complete line!");
+			fprintf(stderr, " I stop reading and go to the next phase\n");
+			break;
+		}
+		index_t j;
+		index_signed_t ind[MERGE_LEVEL_MAX];
+		int MAYBE_UNUSED _ = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
+		if (column_info[j] != 1)
+			n_elim += 1;
+		column_info[j] = 1;         // column has been eliminated
+	}
+	stats_print_progress(stats, addread, 0, 0, 1);
+	fclose_maybe_compressed(hisfile, hisname);
+	printf("%" PRId64 " eliminated columns\n", n_elim);
+}
+
+
+/*
+ * The following code is very similar to replay.c
+ * It loads the whole matrix in memory.
+ */
+
+void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_ptr rel)
+{
+	typerow_t buf[UMAX(weight_t)];
+
+	unsigned int nb = 0;
+	for (unsigned int j = 0; j < rel->nb; j++) {
+		index_t h = rel->primes[j].h;
+		if (column_info[h] == 1)          // column was eliminated
+			continue;
+		column_info[h] = 2;         // column is not empty
+
+		nb++;
+		#ifdef FOR_DL
+			exponent_t e = rel->primes[j].e;
+			buf[nb] = (ideal_merge_t) {.id = h, .e = e};
+		#else
+			ASSERT_ALWAYS (rel->primes[j].e == 1);
+			buf[nb] = h;
+		#endif
+	}
+	#ifdef FOR_DL
+		buf[0].id = nb;
+	#else
+		buf[0] = nb;
+	#endif
+
+	rows[rel->num] = heap_alloc_row(rel->num, nb);  // in merge_heap.c
+	compressRow (rows[rel->num], buf, nb);              // in sparse.c
+  	return NULL;
+}
+
+/* update rows, column_info. 
+ * Set column_info[j] == 2 if column j is non-empty 
+ * Set column_info[j] == 0 otherwise 
+ */
+static void
+read_purgedfile (const char* purgedname)
+{
+	printf("Reading purged matrix from %s\n", purgedname);
+	fflush(stdout);
+
+	/* allocate purged matrix */
+	rows = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rows != NULL);
+	for (index_t i = 0; i < nrows; i++)
+		rows[i] = NULL;
+
+	char *fic[2] = {(char *) purgedname, NULL};
+
+	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
+				NULL, EARLYPARSE_NEED_INDEX, NULL, NULL);
+	ASSERT_ALWAYS (nread == nrows);
+
+	/* here: column_info[j] == 1   <====>   column has been eliminated
+		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
+		 column_info[j] == 0   <====>   column is empty (not eliminated) */
+}
+
+
 /* COPIED-PASTED from merge.c. REFACTORING PLAN: take rows[] and weights[] as
    arugments, update weights only if not NULL */
 
@@ -419,27 +539,25 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 
 /* construct the D matrix (n' rows, n columns), where n is the number of rows
    of the original matrix M (output from purge), i.e., nrows. 
-   Fill eliminated_columns[] from the history file. */
+   Set eliminated_columns[j] == 1 if column j is eliminated */
 static void
-build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
-                  index_t ncols MAYBE_UNUSED, index_t *column_info, int bin)
+build_left_matrix(const char *outputname, const char *hisname, int bin)
 {
+	printf("Reading history file %s (2nd pass) and building left matrix\n", hisname);
+	fflush(stdout);
+
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
 	ASSERT_ALWAYS(hisfile != NULL);
 
-	/* read merges in the *.merge.his file and replay them */
 	uint64_t addread = 0;
 	char str[STRLENMAX];
 
-	printf("Reading row additions\n");
-	fflush(stdout);
-
 	/* allocate identity matrix */
-	typerow_t ** rows = malloc(nrows * sizeof(*rows));
-	ASSERT_ALWAYS(rows != NULL);
+	typerow_t ** rowsL = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rowsL != NULL);
 	for (index_t i = 0; i < nrows; i++) {
-		rows[i] = heap_alloc_row(i, 1);
-		setCell(rows[i], 1, i, 1);
+		rowsL[i] = heap_alloc_row(i, 1);
+		setCell(rowsL[i], 1, i, 1);
 	}
 
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
@@ -479,11 +597,11 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 		}
 
 		for (int k = 1; k < ni; k++)
-			add_row(rows, ind[k], i0, j);
+			add_row(rowsL, ind[k], i0, j);
 
 		if (destroy) {
-			heap_destroy_row(rows[i0]);        // reclaim the memory
-			rows[i0] = NULL;
+			heap_destroy_row(rowsL[i0]);        // reclaim the memory
+			rowsL[i0] = NULL;
 			left_nrows -= 1;
 		}
 	}
@@ -491,104 +609,15 @@ build_left_matrix(const char *matrixname, const char *hisname, index_t nrows,
 	fclose_maybe_compressed(hisfile, hisname);
 
 	/* output left matrix */
-	flushSparse(matrixname, rows, nrows, left_nrows, nrows, 0, bin);      // skip=0
-	free(rows);
+	flushSparse(outputname, rowsL, nrows, left_nrows, nrows, 0, bin);    // skip=0
+	free(rowsL);
 }
 
 /******************************************************************************/
  
-/*
- * The following code is very similar to replay.c
- * It loads the whole matrix in memory. This is unfortunately required, because
- * the matrix has (many) empty columns, and we don't know which ones in advance.
- */
-
-/* code to read the full purged matrix */
-typedef struct
-{
-	typerow_t **rows;
-	index_t *column_info;
-	int32_t *scratch;
-} replay_read_data_t;
-
-void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
-{
-	replay_read_data_t *data = (replay_read_data_t *) context_data;
-	typerow_t buf[UMAX(weight_t)];
-
-	// 1st pass, set scratch
-	for (unsigned int j = 0; j < rel->nb; j++) {
-		index_t h = rel->primes[j].h;
-		if (data->column_info[h] == 1)
-			continue;                 // column has been eliminated, skip entry
-		data->scratch[h] ^= 1;
-	}
-
-	// 2nd pass, read and reset scratch
-	unsigned int nb = 0;
-	for (unsigned int j = 0; j < rel->nb; j++) {
-		index_t h = rel->primes[j].h;
-		if (data->column_info[h] == 1)
-			continue;                 // column has been eliminated, skip entry
-		if (data->scratch[h] == 0)
-			continue;                 // ideal appeared an even number of times 
-		data->column_info[h] = 2;         // column is not empty
-		data->scratch[h] = 0;             // reset scratch
-
-		nb++;
-		#ifdef FOR_DL
-			exponent_t e = rel->primes[j].e;
-			buf[nb] = (ideal_merge_t) {.id = h, .e = e};
-		#else
-			ASSERT_ALWAYS (rel->primes[j].e == 1);
-			buf[nb] = h;
-		#endif
-	}
-	#ifdef FOR_DL
-		buf[0].id = nb;
-	#else
-		buf[0] = nb;
-	#endif
-
-	// CB: probably useless...
-	// qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
-	
-	data->rows[rel->num] = heap_alloc_row(rel->num, nb);  // in merge_heap.c
-	compressRow (data->rows[rel->num], buf, nb);              // in sparse.c
-  	return NULL;
-}
-
 static void
-build_right_matrix (const char *outputname, const char *purgedname, index_t nrows,
-	index_t ncols, index_t *column_info, const char *idealsfilename, index_t skip, int bin)
+build_right_matrix (const char *outputname, const char *idealsfilename, index_t skip, int bin)
 {
-	/* here: column_info[j] == 1   <====>   column has been eliminated */ 
-	printf("Reading sparse matrix from %s\n", purgedname);
-	fflush(stdout);
-
-	/* allocate identity matrix */
-	typerow_t ** rows = malloc(nrows * sizeof(*rows));
-	ASSERT_ALWAYS(rows != NULL);
-	for (index_t i = 0; i < nrows; i++)
-		rows[i] = NULL;
-
-	int32_t *scratch =  malloc(ncols * sizeof(*scratch));
-	ASSERT_ALWAYS(scratch != NULL);
-	for (index_t j = 0; j < ncols; j++)
-		scratch[j] = 0;
-
-	char *fic[2] = {(char *) purgedname, NULL};
-	replay_read_data_t ctx = {
-		.rows = rows,
-		.column_info = column_info,
-		.scratch = scratch
-	};
-
-	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
-				&ctx, EARLYPARSE_NEED_INDEX, NULL, NULL);
-	ASSERT_ALWAYS (nread == nrows);
-	free(scratch);
-	
 	/* here: column_info[j] == 1   <====>   column has been eliminated
 		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
 		 column_info[j] == 0   <====>   column is empty (not eliminated) */
@@ -610,8 +639,7 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	 *        column_info[j] == UMAX(...) ---> col j is out of the game
 	 *        column_info[j] == k ---> col j becomes col k
 	 */
-
-	for (index_t i = 0; i < nrows; i++) {
+	for (index_t i = 0; i < nrows; i++) {            // renumber the columns
 		if (rows[i] == NULL)
 			continue;                        // row has been deleted
 		for (index_t k = 1; k <= rowLength(rows, i); k++) {
@@ -643,7 +671,6 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 
 	/* output right matrix */
 	flushSparse(outputname, rows, nrows, nrows, sum, skip, bin);
-	free(rows);
 }
 
 /******************************************************************************/
@@ -676,7 +703,6 @@ static void usage(param_list pl, char *argv0)
 int main(int argc, char *argv[])
 {
 	char *argv0 = argv[0];
-	uint64_t nrows, ncols;
         int skip = DEFAULT_MERGE_SKIP;
 	double cpu0 = seconds();
 	double wct0 = wct_seconds();
@@ -762,39 +788,44 @@ int main(int argc, char *argv[])
 	set_antebuffer_path(argv0, path_antebuffer);
 
 	/* Read number of rows and cols on first line of purged file */
-	purgedfile_read_firstline(purgedname, &nrows, &ncols);
-	if (nrows >= 4294967296UL) {
+	uint64_t __nr, __nc;
+	purgedfile_read_firstline(purgedname, &__nr, &__nc);  // uint64_t args
+	if (__nr >= 4294967296UL) {
 		fprintf(stderr, "Error, cannot handle 2^32 rows or more after purge\n");
 		fprintf(stderr, "change ind_row from uint32_t to uint64_t in sparse.h\n");
 		exit(EXIT_FAILURE);
 	}
-	printf("Purged matrix has %" PRIu64 " rows and %" PRIu64 " cols\n", nrows, ncols);
+	printf("Purged matrix has %" PRIu64 " rows and %" PRIu64 " cols\n", __nr, __nc);
 	fflush(stdout);
+	nrows = __nr;
+	ncols = __nc;
 
 #if SIZEOF_INDEX == 4
-	if (ncols >= UINT32_MAX) {
+	if (__nc >= UINT32_MAX) {
 		fprintf(stderr, "You must recompile with -DSIZEOF_INDEX=8\n");
 		exit(EXIT_FAILURE);
 	}
 #endif
 
 	heap_setup();
-	index_t *column_info = malloc(sizeof(*column_info) * ncols);
-	for (uint64_t i = 0; i < ncols; i++)
-		column_info[i] = 0;
+	preread_history(hisname);
+
+	/* load the relations in memory */
+	read_purgedfile(purgedname);
 
 	/* Read the history */
 	printf("Building left matrix\n");
-	build_left_matrix(sparseLname, hisname, nrows, ncols, column_info, bin);
+	build_left_matrix(sparseLname, hisname, bin);
 
 	heap_reset();
 
 	printf("Building right matrix\n");
-	build_right_matrix(sparseRname, purgedname, nrows, ncols, 
-		column_info, idealsfilename, skip, bin);
+	build_right_matrix(sparseRname, idealsfilename, skip, bin);
 
+	printf("Cleaning up\n");
+ 	heap_clear();
 	free(column_info);
-	heap_clear();
+	free(rows);
 	param_list_clear(pl);
 	print_timing_and_memory(stdout, cpu0, wct0);
 	return 0;
