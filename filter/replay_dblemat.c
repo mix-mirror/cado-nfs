@@ -547,7 +547,7 @@ void * read_purged_row (void *context_data, earlyparsed_relation_ptr rel)
 
 static void
 build_right_matrix (const char *outputname, const char *purgedname, index_t nrows,
-	index_t ncols, index_t *column_info, index_t skip, int bin)
+	index_t ncols, index_t *column_info, const char *idealsfilename, index_t skip, int bin)
 {
 	/* here: column_info[j] == 1   <====>   column has been eliminated */ 
 	printf("Reading sparse matrix from %s\n", purgedname);
@@ -570,8 +570,8 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 	ASSERT_ALWAYS (nread == nrows);
 
 	/* here: column_info[j] == 1   <====>   column has been eliminated
-	         column_info[j] == 2   <====>   column is non-empty (not eliminated)
-           column_info[j] == 0   <====>   column is empty (not eliminated) */
+		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
+		 column_info[j] == 0   <====>   column is empty (not eliminated) */
 
 	/* renumber the remaining non-empty columns (exclusive prefix-sum) */
 	index_t sum = 0;
@@ -605,6 +605,21 @@ build_right_matrix (const char *outputname, const char *purgedname, index_t nrow
 		}
 	}
 
+	if (idealsfilename != NULL) {
+		FILE *renumberfile = fopen_maybe_compressed (idealsfilename, "w");
+		if (renumberfile == NULL) {
+			fprintf (stderr, "Error while opening file to save permutation of ideals\n");
+			exit(EXIT_FAILURE);
+		}
+		for (index_t j = 0; j < ncols; j++)
+			if (column_info[j] == UMAX(index_t))
+				fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
+			else
+				fprintf (renumberfile, "%" PRIu64 " %" PRIx64 "\n",
+					(uint64_t) column_info[j], (uint64_t) j);
+		fclose(renumberfile);
+	}
+
 	/* output right matrix */
 	flushSparse(outputname, rows, nrows, nrows, sum, skip, bin);
 	free(rows);
@@ -625,6 +640,7 @@ static void declare_usage(param_list pl)
 	param_list_decl_usage(pl, "ideals", "file containing correspondence between " "ideals and matrix columns");
 	param_list_decl_usage(pl, "force-posix-threads", "force the use of posix threads, do not rely on platform memory semantics");
 	param_list_decl_usage(pl, "path_antebuffer", "path to antebuffer program");
+	param_list_decl_usage(pl, "ideals", "file containing correspondence between ideals and matrix columns");
 
 	verbose_decl_usage(pl);
 }
@@ -678,10 +694,8 @@ int main(int argc, char *argv[])
 	const char *sparseLname = param_list_lookup_string(pl, "outL");
 	const char *sparseRname = param_list_lookup_string(pl, "outR");
 	// const char *indexname = param_list_lookup_string(pl, "index");
-	// const char *idealsfilename = param_list_lookup_string(pl, "ideals");
-#ifndef FOR_DL
+	const char *idealsfilename = param_list_lookup_string(pl, "ideals");
 	param_list_parse_int(pl, "skip", &skip);
-#endif
 	const char *path_antebuffer = param_list_lookup_string(pl, "path_antebuffer");
 
 	/* Some checks on command line arguments */
@@ -752,9 +766,10 @@ int main(int argc, char *argv[])
 
 	printf("Building right matrix\n");
 	build_right_matrix(sparseRname, purgedname, nrows, ncols, 
-		column_info, skip, bin);
+		column_info, idealsfilename, skip, bin);
 
 	free(column_info);
+	heap_clear();
 	param_list_clear(pl);
 	print_timing_and_memory(stdout, cpu0, wct0);
 	return 0;
