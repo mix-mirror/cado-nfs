@@ -570,7 +570,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 
 /* construct the D matrix (n' rows, n columns), where n is the number of rows
    of the original matrix M (output from purge), i.e., nrows. 
-   Set eliminated_columns[j] == 1 if column j is eliminated */
+*/
 static void
 build_left_matrix(const char *outputname, const char *hisname, int bin)
 {
@@ -620,7 +620,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 		int destroy;
 		int ni = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
 	
-		column_info[j] = 1;         // column has been eliminated
+		ASSERT(column_info[j] == 1);           // column has been eliminated
 
 		if (ind[0] < 0) {
 			destroy = 0;
@@ -676,7 +676,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			continue;                        // row has been deleted
 		for (index_t k = 1; k <= rowLength(rowsL, i); k++) {
 			index_t j = rowCell(rowsL[i], k);
-			ASSERT(column_info[j] != UMAX(index_t));
+			ASSERT(renumber[j] != UMAX(index_t));
 			#ifdef FOR_DL
 				int32_t e = rowFullCell(rowsL[i], k).e; 
 				setCell(rowsL[i], k, renumber[j], e);
@@ -698,13 +698,12 @@ static void
 build_right_matrix (const char *outputname, const char *idealsfilename, index_t skip, int bin)
 {
 	/* here: column_info[j] == 1   <====>   column has been eliminated
-		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
-		 column_info[j] == 0   <====>   column is empty (not eliminated) */
+		 column_info[j] == 0   <====>   column has not been eliminated */
 
-	/* renumber the remaining non-empty columns (exclusive prefix-sum) */
+	/* renumber the remaining non-empty columns (exclusive scan) */
 	index_t sum = 0;
 	for (uint64_t j = 0; j < ncols; j++) {
-		if (column_info[j] != 2) {
+		if (column_info[j] == 1) {
 			column_info[j] = UMAX(index_t);
 			continue;
 		}
@@ -716,7 +715,7 @@ build_right_matrix (const char *outputname, const char *idealsfilename, index_t 
 	/* 
 	 * here: sum == number of non-eliminated columns.
 	 *        column_info[j] == UMAX(...) ---> col j is out of the game
-	 *        column_info[j] == k ---> col j becomes col k
+	 *        column_info[j] == k         ---> col j becomes col k
 	 */
 	for (index_t i = 0; i < nrows; i++) {            // renumber the columns
 		if (rows[i] == NULL)
