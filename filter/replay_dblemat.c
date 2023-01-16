@@ -324,6 +324,11 @@ preread_history(const char *hisname)
 		index_t j;
 		index_signed_t ind[MERGE_LEVEL_MAX];
 		int MAYBE_UNUSED _ = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
+                if (j == (index_t) -1)
+                {
+                  fprintf (stderr, "Error, no #j found in history line\n");
+                  exit (1);
+                }
 		if (column_info[j] != 1)
 			n_elim += 1;
 		column_info[j] = 1;         // column has been eliminated
