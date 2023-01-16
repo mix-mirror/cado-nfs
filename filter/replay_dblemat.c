@@ -635,7 +635,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			i0 = ind[0];
 		}
 
-		int twomerge = (ni == 2) && destroy;
+		int twomerge = (ni <= 2) && destroy;
 		if (!twomerge)
 			twomerge_mode = 0;
 
