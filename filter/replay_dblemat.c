@@ -640,8 +640,9 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			twomerge_mode = 0;
 
 		if (twomerge_mode) {
-			/* initial run of two merges: do them on R */
-			add_row(rows, ind[1], i0, j);
+			/* initial run of (1,2)-merges: do them on R directly */
+			if (ni == 2)
+				add_row(rows, ind[1], i0, j);
 			heap_destroy_row(rows[i0]);        // reclaim the memory
 			rows[i0] = NULL;
 			ntwomerge += 1;
