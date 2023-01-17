@@ -1,5 +1,9 @@
 /* merge --- new merge program, for double-matrix algorithm
 
+TODO:
+* in merge_cost, take into account the - initial_weight(j) term.
+  Since we know R->wt[j] <= 255, it suffices to use BIAS=255 or so.
+
 Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
 This file is part of CADO-NFS.
