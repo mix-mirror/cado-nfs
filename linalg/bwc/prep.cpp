@@ -101,36 +101,12 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
         ASSERT_ALWAYS(nrhs <= mmt->n[!bw->dir]);
     }
 
-    /* we allocate as many vectors as we have matrices, plus one if the
-     * number of matrices is odd (so we always have an even number of
-     * vectors). If the number of matrices is odd, then
-     * the first vector may be shared.  Otherwise, I believe it cannot
-     * (but I'm not really sure)
-     *
-     * Storage for vectors need actually not be present at all times.
-     * This could be improved.
-     *
-     * Interleaving could defined twice as many interleaved levels as we
-     * have matrices. It is probably not relevant.
-     */
+    mmt_vec ymy[2];
+    mmt_vec_ptr y = ymy[0];
+    mmt_vec_ptr my = ymy[1];
 
-    int nmats_odd = mmt->nmatrices & 1;
-
-    mmt_vec * ymy = new mmt_vec[mmt->nmatrices + nmats_odd];
-    matmul_top_matrix_ptr mptr;
-    mptr = (matmul_top_matrix_ptr) mmt->matrices + (bw->dir ? (mmt->nmatrices - 1) : 0);
-    for(int i = 0 ; i < mmt->nmatrices ; i++) {
-        int shared = (i == 0) & nmats_odd;
-        mmt_vec_init(mmt,0,0, ymy[i], bw->dir ^ (i&1), shared, mptr->n[bw->dir]);
-        mmt_full_vec_set_zero(ymy[i]);
-
-        mptr += bw->dir ? -1 : 1;
-    }
-    if (nmats_odd) {
-        mmt_vec_init(mmt,0,0, ymy[mmt->nmatrices], !bw->dir, 0, mmt->matrices[0]->n[bw->dir]);
-        mmt_full_vec_set_zero(ymy[mmt->nmatrices]);
-    }
-
+    mmt_vec_init(mmt,0,0, y,   bw->dir, /* shared ! */ 1, mmt->n[bw->dir]);
+    mmt_vec_init(mmt,0,0, my, !bw->dir,                0, mmt->n[!bw->dir]);
 
     unsigned int unpadded = MAX(mmt->n0[0], mmt->n0[1]);
 
@@ -190,7 +166,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
                 /* create it as an extraction from the rhs file */
                 ASSERT_ALWAYS(0);       /* implement me... See GF(p) below. */
             } else {
-                mmt_vec_set_random_through_file(ymy[0], "V%u-%u.0", unpadded, rstate, j * A_width);
+                mmt_vec_set_random_through_file(y, "V%u-%u.0", unpadded, rstate, j * A_width);
             }
             if (tcan_print) {
                 printf("// generated V%u-%u.0 (trial # %u)\n", 
@@ -203,9 +179,9 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
             
             // XXX Note that x^Ty does not count here, because it does not
             // take part to the sequence computed by lingen !
-            mmt_vec_twist(mmt, ymy[0]);
+            mmt_vec_twist(mmt, y);
             matmul_top_mul(mmt, ymy, NULL);
-            mmt_vec_untwist(mmt, ymy[0]);
+            mmt_vec_untwist(mmt, y);
             
 
             /* XXX it's really like x_dotprod, except that we're filling
@@ -215,18 +191,18 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
                     void * where = A->vec_subvec(A, xymats, (r * prep_lookahead_iterations + k) * A_multiplex + j);
                     for(unsigned int t = 0 ; t < my_nx ; t++) {
                         uint32_t row = xvecs[r*my_nx+t];
-                        unsigned int vi0 = ymy[0]->i0 + mmt_my_own_offset_in_items(ymy[0]);
-                        unsigned int vi1 = vi0 + mmt_my_own_size_in_items(ymy[0]);
+                        unsigned int vi0 = y->i0 + mmt_my_own_offset_in_items(y);
+                        unsigned int vi1 = vi0 + mmt_my_own_size_in_items(y);
                         if (row < vi0 || row >= vi1)
                             continue;
 
-                        void * coeff = ymy[0]->abase->vec_subvec(ymy[0]->abase, ymy[0]->v, row - ymy[0]->i0);
+                        void * coeff = y->abase->vec_subvec(y->abase, y->v, row - y->i0);
                         A->add(A, where, where, coeff);
                     }
                 }
-                mmt_vec_twist(mmt, ymy[0]);
+                mmt_vec_twist(mmt, y);
                 matmul_top_mul(mmt, ymy, NULL);
-                mmt_vec_untwist(mmt, ymy[0]);
+                mmt_vec_untwist(mmt, y);
             }
         }
 
@@ -270,10 +246,8 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
 
     gmp_randclear(rstate);
 
-    for(int i = 0 ; i < mmt->nmatrices + nmats_odd ; i++) {
-        mmt_vec_clear(mmt, ymy[i]);
-    }
-    delete[] ymy;
+    mmt_vec_clear(mmt, y);
+    mmt_vec_clear(mmt, my);
     matmul_top_clear(mmt);
 
     /* clean up xy mats stuff */
@@ -320,9 +294,6 @@ void * prep_prog_gfp(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_
             MPFQ_DONE);
 
     matmul_top_init(mmt, A, pi, pl, bw->dir);
-
-    // I don't think this was ever tested.
-    ASSERT_ALWAYS(mmt->nmatrices == 1);
 
     bw_rank_check(mmt, pl);
 
