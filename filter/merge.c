@@ -66,6 +66,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "merge_compute_weights.h"
 #include "read_purgedfile_in_parallel.h"
 
+
 #ifdef DEBUG
 static void
 Print_row (filter_matrix_t *mat, index_t i)
@@ -77,6 +78,7 @@ Print_row (filter_matrix_t *mat, index_t i)
   printf ("\n");
 }
 #endif
+
 
 /*************************** output buffer ***********************************/
 
@@ -251,7 +253,7 @@ insert_rel_into_table (void *context_data, earlyparsed_relation_ptr rel)
   qsort (&(buf[1]), j, sizeof(typerow_t), cmp_typerow_t);
 #endif
 
-  mat->rows[rel->num] = heap_alloc_row(rel->num, j);
+  mat->rows[rel->num] = heap_alloc_row(mat->heap, rel->num, j);
   compressRow (mat->rows[rel->num], buf, j);  /* sparse.c, simple copy loop... */
 
   return NULL;
@@ -730,7 +732,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 #endif
 
 	/* fast-track : don't precompute the size */
-	typerow_t *sum = heap_alloc_row(i1, k1 + k2);
+	typerow_t *sum = heap_alloc_row(mat->heap, i1, k1 + k2);
 
 	while (t1 <= k1 && t2 <= k2) {
 		if (mat->rows[i1][t1] == mat->rows[i2][t2]) {
@@ -758,8 +760,8 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	cancel_cols[cancel] ++;
 #endif
 
-	heap_resize_last_row(sum, t);
-	heap_destroy_row(mat->rows[i1]);
+	heap_resize_last_row(mat->heap, sum, t);
+	heap_destroy_row(mat->heap, mat->rows[i1]);
 	mat->rows[i1] = sum;
 	return;
 }
@@ -807,7 +809,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 
   /* now perform the real merge */
   typerow_t *sum;
-  sum = heap_alloc_row(i1, k1 + k2 - 1);
+  sum = heap_alloc_row(mat->heap, i1, k1 + k2 - 1);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -866,8 +868,8 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 	cancel_cols[cancel] ++;
 #endif
 
-  heap_resize_last_row(sum, t);
-  heap_destroy_row(mat->rows[i1]);
+  heap_resize_last_row(mat->heap, sum, t);
+  heap_destroy_row(mat->heap, mat->rows[i1]);
   mat->rows[i1] = sum;
 }
 #endif
@@ -879,7 +881,7 @@ remove_row (filter_matrix_t *mat, index_t i)
   int32_t w = matLengthRow (mat, i);
   for (int k = 1; k <= w; k++)
     decrease_weight (mat, rowCell(mat->rows[i], k));
-  heap_destroy_row(mat->rows[i]);
+  heap_destroy_row(mat->heap, mat->rows[i]);
   mat->rows[i] = NULL;
 }
 
@@ -1453,7 +1455,6 @@ main (int argc, char *argv[])
       usage (pl, argv0);
     }
 
-    heap_setup();
     set_antebuffer_path (argv0, path_antebuffer);
 
     history = fopen_maybe_compressed (outname, "w");
@@ -1577,7 +1578,7 @@ main (int argc, char *argv[])
 
         if (merge_pass == 2 || mat->cwmax > 2) {
                 double cpu8 = seconds (), wct8 = wct_seconds ();
-                heap_garbage_collection(mat->rows);
+                heap_garbage_collection(mat->heap, mat->rows);
                  cpu8 = seconds () - cpu8;
                 wct8 = wct_seconds () - wct8;
                 print_timings ("   GC took", cpu8, wct8);
@@ -1734,8 +1735,6 @@ main (int argc, char *argv[])
     print_timing_and_memory (stdout, cpu_after_read, wct_after_read);
 
     buffer_clear (Buf, nthreads);
-
-    heap_clear ();
 
 #ifdef FOR_DL
     free (mat->p);
