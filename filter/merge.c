@@ -1,6 +1,6 @@
-/* merge --- new merge program
+/* merge --- new merge program, for double-matrix algorithm
 
-Copyright 2019-2021 Charles Bouillaguet and Paul Zimmermann.
+Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
 This file is part of CADO-NFS.
 
@@ -313,8 +313,9 @@ check_matrix (filter_matrix_t *mat)
     }
 }
 
-/* stack non-empty columns at the begining. Update mat->p (for DL) and jmin */
-static void recompress(filter_matrix_t *mat, index_t *jmin)
+/* Stack non-empty columns at the begining. Update mat->p (for DL) and jmin.
+   We also have to "recompress" R->wt[]. */
+static void recompress(filter_matrix_t *R, filter_matrix_t *mat, index_t *jmin)
 {
 	double cpu = seconds (), wct = wct_seconds ();
 	uint64_t nrows = mat->nrows;
@@ -385,7 +386,10 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
 #pragma omp for schedule(static) /* static is slightly better than guided */
                 for (index_t j = 0; j < ncols; j++)
                     if (0 < mat->wt[j])
-                        nwt[p[j]] = mat->wt[j];
+                    {
+                      nwt[p[j]] = mat->wt[j];
+                      R->wt[p[j]] = R->wt[j];
+                    }
 
             } /* end parallel section */
         }
@@ -872,7 +876,9 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 }
 #endif
 
-
+/* L is the "left" matrix (rows are relations-sets, columns are relations),
+   and mat is the "merged" matrix (rows are relations-sets, columns are ideals)
+*/
 static void
 remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
 {
@@ -911,36 +917,49 @@ printRow (filter_matrix_t *mat, index_t i)
 
 /* classical cost: merge the row of smaller weight with the other ones,
    and return the merge cost (taking account of cancellations).
-   id is the index of a row in R. */
+   id is the index of a row in R.
+   In the double-matrix case, the Markowitz cost is:
+   (w-2)*weight(i0) - initial_weight(j)
+   where i0 is the row of L of smallest weight and initial_weight(j)
+   is the initial weight of the ideal j.
+   We assume R->wt[j] stores the initial weight of the ideal j
+   (after 2-merges have been applied to R if any).
+   Return:
+   * 1 for 1-merges
+   * 2 for 2-merges
+   * a value >= 3 for all k-merges with k >= 3
+   */
 static int32_t
-merge_cost (filter_matrix_t *mat, index_t id)
+merge_cost (filter_matrix_t *L, filter_matrix_t *R MAYBE_UNUSED,
+            filter_matrix_t *mat, index_t j)
 {
-  index_t lo = mat->Rp[id];
-  index_t hi = mat->Rp[id + 1];
-  int w = hi - lo;
+  index_t lo = mat->Rp[j];
+  index_t hi = mat->Rp[j + 1];
+  int w = hi - lo; /* weight of the considered ideal */
 
   if (w == 1)
-    return 0; /* ensure all 1-merges are processed before 2-merges with no
-		 cancellation */
+    return 1; /* ensure all 1-merges are processed before 2-merges */
 
-  if (w > mat->cwmax)
+  if (w == 2)
+    return 2;
+
+  if (w > mat->cwmax) /* discard too heavy ideals for now */
     return INT32_MAX;
 
-  /* find shortest row in the merged column */
+  /* find lightest row in L */
   index_t i = mat->Ri[lo];
-  int32_t c, cmin = matLengthRow (mat, i);
+  int32_t c, cmin = matLengthRow (L, i);
   for (index_t k = lo + 1; k < hi; k++)
     {
       i = mat->Ri[k];
-      c = matLengthRow(mat, i);
+      c = matLengthRow(L, i);
       if (c < cmin)
 	cmin = c;
     }
 
-  /* fill-in formula for Markowitz pivoting: since w >= 2 we have
-     (w - 1) * (cmin - 2) - cmin >= -2, thus adding 3 ensures we
-     get a value >= 1, then 1-merges will be merged first */
-  return (w - 1) * (cmin - 2) - cmin + BIAS;
+  /* FIXME: in principle we should return (w - 2) * cmin - R->wt[j],
+     but there is no way we can bound this by below. */
+  return (w - 2) * (cmin - 1) + BIAS;
 }
 
 /* Output a list of merges to a string.
@@ -1051,7 +1070,8 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
    possible_mergesL is a linear array and the merges appear by increasing cost.
    Returns the size of possible_merges. */
 static int
-compute_merges (index_t *possible_merges, filter_matrix_t *mat, int cbound)
+compute_merges (index_t *possible_merges, filter_matrix_t *L,
+                filter_matrix_t *R, filter_matrix_t *mat, int cbound)
 {
   double cpu = seconds(), wct = wct_seconds();
   index_t Rn = mat->Rn;
@@ -1067,7 +1087,7 @@ compute_merges (index_t *possible_merges, filter_matrix_t *mat, int cbound)
      schedule(guided) for RSA-240 with 112 threads. */
   #pragma omp parallel for schedule(dynamic,128)
   for (index_t i = 0; i < Rn; i++)
-    cost[i] = merge_cost (mat, i);
+    cost[i] = merge_cost (L, R, mat, i);
 
   int s;
 
@@ -1368,7 +1388,7 @@ main (int argc, char *argv[])
 {
     char *argv0 = argv[0];
 
-    filter_matrix_t mat[1], L[1];
+    filter_matrix_t mat[1], L[1], R[1];
     FILE * history;
 
     int nthreads = 1, cbound_incr;
@@ -1476,6 +1496,9 @@ main (int argc, char *argv[])
       setCell(L->rows[i], 1, i, 1); // L[i,i] = 1
     }
 
+    /* Allocate the wt field of R (we don't use the other fields). */
+    R->wt = malloc (mat->ncols * sizeof (col_weight_t));
+
     /* Read all rels and fill-in the mat structure */
     tt = seconds ();
     filter_matrix_read (mat, purgedname);
@@ -1495,7 +1518,11 @@ main (int argc, char *argv[])
 
     compute_weights (mat, jmin);
 
-    recompress (mat, jmin);
+    /* put the initial weights in R->wt[] */
+    for (index_t j = 0; j < mat->ncols; j++)
+      R->wt[j] = mat->wt[j];
+
+    recompress (R, mat, jmin);
 
     // output_matrix (mat, "out.sage");
 
@@ -1605,7 +1632,8 @@ main (int argc, char *argv[])
 
 	index_t *possible_merges = malloc(mat->Rn * sizeof(index_t));
 
-	index_t n_possible_merges = compute_merges(possible_merges, mat, cbound);
+	index_t n_possible_merges = compute_merges(possible_merges, L, R, mat,
+                                                   cbound);
 
 	unsigned long nmerges = apply_merges(possible_merges, n_possible_merges, L, mat, Buf);
 
@@ -1633,7 +1661,7 @@ main (int argc, char *argv[])
 	if (mat->rem_ncols < 0.66 * mat->ncols) {
 	  static int recompress_pass = 0;
 	  printf("============== Recompress %d ==============\n", ++recompress_pass);
-	  recompress(mat, jmin);
+	  recompress (R, mat, jmin);
 	}
 
 	cpu1 = seconds () - cpu1;
@@ -1730,6 +1758,7 @@ main (int argc, char *argv[])
 
     clearMat (mat);
     clearMat (L);
+    free (R->wt);
 
     param_list_clear (pl);
 
