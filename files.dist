@@ -162,6 +162,7 @@ filter/merge_heap.c
 filter/merge_heap.h
 filter/merge_replay_matrix.c
 filter/merge_replay_matrix.h
+filter/merge_types.h
 filter/mst.c
 filter/mst.h
 filter/purge.c
