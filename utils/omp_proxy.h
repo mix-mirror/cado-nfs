@@ -36,6 +36,24 @@ static inline int omp_get_thread_num()
 {
   return 0;
 }
+
+typedef int omp_lock_t;
+
+static inline void omp_init_lock(ompt_lock_t *lock)
+{
+  (void) lock;
+}
+
+static inline void omp_set_lock(ompt_lock_t *lock)
+{
+  (void) lock;
+}
+
+static inline void omp_unset_lock(ompt_lock_t *lock)
+{
+  (void) lock;
+}
+
 #ifdef __cplusplus
 }
 #endif

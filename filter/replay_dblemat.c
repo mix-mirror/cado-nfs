@@ -60,6 +60,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #define DEBUG 0
 
 /* purged matrix */
+heapctx_t heap;
 typerow_t **rows;
 index_t nrows;          // #rows for the purged matrix
 index_t ncols;          // #cols for the purged matrix
@@ -384,7 +385,7 @@ void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_pt
 	/* required because of add_rows (2-merges) on the relations */
 	qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
 
-	rows[rel->num] = heap_alloc_row(rel->num, nb);  // in merge_heap.c
+	rows[rel->num] = heap_alloc_row(heap, rel->num, nb);  // in merge_heap.c
 	compressRow (rows[rel->num], buf, nb);              // in sparse.c
   	return NULL;
 }
@@ -438,7 +439,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	index_t t = 0;             // index in the sum
 
 	/* fast-track : don't precompute the size */
-	typerow_t *sum = heap_alloc_row(i1, k1 + k2);
+	typerow_t *sum = heap_alloc_row(heap, i1, k1 + k2);
 
 	while (t1 <= k1 && t2 <= k2) {
 		if (r1[t1] == r2[t2]) {
@@ -467,8 +468,8 @@ add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
         /* In the double-matrix code, we don't necessarily have
            cancellations. */
 	ASSERT(t <= k1 + k2);
-	heap_resize_last_row(sum, t);
-	heap_destroy_row(r1);
+	heap_resize_last_row(heap, sum, t);
+	heap_destroy_row(heap, r1);
 	rows[i1] = sum;
 	return;
 }
@@ -518,7 +519,7 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 
   /* now perform the real merge */
   typerow_t *sum;
-  sum = heap_alloc_row(i1, k1 + k2 - 1);
+  sum = heap_alloc_row(heap, i1, k1 + k2 - 1);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -567,8 +568,8 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
       t2 ++;
     }
   ASSERT(t <= k1 + k2 - 1);
-  heap_resize_last_row(sum, t);
-  heap_destroy_row(rows[i1]);
+  heap_resize_last_row(heap, sum, t);
+  heap_destroy_row(heap, rows[i1]);
   rows[i1] = sum;
 }
 #endif
@@ -592,7 +593,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	typerow_t ** rowsL = malloc(nrows * sizeof(*rows));
 	ASSERT_ALWAYS(rowsL != NULL);
 	for (index_t i = 0; i < nrows; i++) {
-		rowsL[i] = heap_alloc_row(i, 1);
+		rowsL[i] = heap_alloc_row(heap, i, 1);
 		setCell(rowsL[i], 1, i, 1);
 	}
 
@@ -643,7 +644,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			/* initial run of (1,2)-merges: do them on R directly */
 			if (ni == 2)
 				add_row(rows, ind[1], i0, j);
-			heap_destroy_row(rows[i0]);        // reclaim the memory
+			heap_destroy_row(heap, rows[i0]);        // reclaim the memory
 			rows[i0] = NULL;
 			ntwomerge += 1;
 			nrows_small -= 1;
@@ -653,7 +654,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 				add_row(rowsL, ind[k], i0, j);
 		}
 		if (destroy) {
-			heap_destroy_row(rowsL[i0]);        // reclaim the memory
+			heap_destroy_row(heap, rowsL[i0]);        // reclaim the memory
 			rowsL[i0] = NULL;
 			left_nrows -= 1;
 		}
@@ -892,7 +893,7 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-	heap_setup();
+	heap_setup(heap);
 	preread_history(hisname);
 
 	/* load the relations in memory */
@@ -902,13 +903,13 @@ int main(int argc, char *argv[])
 	printf("Building left matrix\n");
 	build_left_matrix(sparseLname, hisname, bin);
 
-	heap_reset();
+	heap_reset(heap);
 
 	printf("Building right matrix\n");
 	build_right_matrix(sparseRname, idealsfilename, skip, bin);
 
 	printf("Cleaning up\n");
- 	heap_clear();
+ 	heap_clear(heap);
 	free(column_info);
 	free(rows);
 	param_list_clear(pl);
