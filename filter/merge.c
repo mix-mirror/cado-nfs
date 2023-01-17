@@ -66,6 +66,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "merge_compute_weights.h"
 #include "read_purgedfile_in_parallel.h"
 
+int twomerge_mode = 1;   // stays true until we do the first k-merge with
 
 #ifdef DEBUG
 static void
@@ -749,7 +750,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	    increase_weight(mat, mat->rows[i2][t2]);
 	    sum[++t] = mat->rows[i2][t2++];
 	}
-	ASSERT(t <= k1 + k2 - 1);
+	ASSERT(t <= k1 + k2);
 
 #ifdef CANCEL
 	int cancel = (t1 - 1) + (t2 - 1) - (t - 1);
@@ -807,7 +808,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 
   /* now perform the real merge */
   typerow_t *sum;
-  sum = heap_alloc_row(mat->heap, i1, k1 + k2 - 1);
+  sum = heap_alloc_row(mat->heap, i1, k1 + k2);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -856,7 +857,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
       increase_weight (mat, r2[t2].id);
       t2 ++;
     }
-  ASSERT(t <= k1 + k2 - 1);
+    ASSERT(t <= k1 + k2);
 
 
 #ifdef CANCEL
@@ -972,7 +973,7 @@ sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
    history[][]). */
 static int
 addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
-		 filter_matrix_t *mat, int m, index_t *ind, index_t j,
+		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind, index_t j,
 		 int *father, int *sons)
 {
   int i, s, t;
@@ -989,6 +990,8 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
       else
 	history[i][1] = -(ind[s] + 1);
       add_row (mat, ind[t], ind[s], j);
+      if (!twomerge_mode)
+        add_row (L, ind[t], ind[s], j);
       history[i][2] = ind[t];
       history[i][0] = 2;
     }
@@ -1007,8 +1010,7 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
 
   ASSERT (1 <= w && w <= mat->cwmax);
 
-  if (w == 1)
-    {
+  if (w == 1) {             // eliminate a singleton column
       char s[MERGE_CHAR_MAX];
       int n MAYBE_UNUSED;
       index_signed_t i = mat->Ri[t]; /* only row containing j */
@@ -1024,16 +1026,16 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
   char s[MERGE_CHAR_MAX];
   int n = 0; /* number of characters written to s (except final \0) */
   int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
-  fillRowAddMatrix (A, mat, w, ind, j);
+  fillRowAddMatrix (A, mat, w, ind, j);          // mst.c. ---> Replace mat by L here to determine the linear combinations that are optimal for L
   /* mimic MSTWithA */
   int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
   c = minimalSpanningTree (start, end, w, A);
   /* c is the weight of the minimal spanning tree, we have to remove
      the weights of the initial relations */
   for (int k = 0; k < w; k++)
-    c -= matLengthRow (mat, ind[k]);
+    c -= matLengthRow (mat, ind[k]);             // replace mat by L here
   index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
-  int hmax = addFatherToSons (history, mat, w, ind, j, start, end);
+  int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end);
   for (int i = hmax; i >= 0; i--)
     {
       n += sreportn (s + n, MERGE_CHAR_MAX - n,
@@ -1623,8 +1625,10 @@ main (int argc, char *argv[])
 
 	/* settings for next pass */
   	if (mat->cwmax == 2) { /* we first process all 2-merges */
-		if (nmerges == n_possible_merges)
+		if (nmerges == 0) {
+                        twomerge_mode = 0;    // stop special treatment of the initial run of 2-merges
 			mat->cwmax++;
+                }
 	} else {
 		if (mat->cwmax < MERGE_LEVEL_MAX)
 			mat->cwmax ++;
@@ -1718,6 +1722,28 @@ main (int argc, char *argv[])
 	    mat->rem_nrows - mat->rem_ncols, mat->tot_weight);
     fflush (stdout);
 
+    /* stats on L (mostly for debugging for now) */
+    uint64_t Lweight = 0;
+    uint64_t Ln = 0;
+    for (index_t i = 0; i < L->nrows; i++)
+        if (L->rows[i] != NULL) {
+                Ln += 1;
+                Lweight += rowLength(L->rows, i);
+        }
+
+    printf ("L has N=%" PRIu64 " W=%" PRIu64 "\n", Ln, Lweight);
+    fflush (stdout);
+
+/*
+    FILE *f = fopen("Ldump.txt", "w");
+    for (index_t i = 0; i < L->nrows; i++) 
+        if (L->rows[i] != NULL) {
+                for (index_t j = 0; j <= rowLength(L->rows, i); j++)
+                        fprintf(f, "%d ", rowCell(L->rows[i], j));
+                fprintf(f, "\n");
+        }
+    fclose(f);
+*/
     printf ("Before cleaning memory:\n");
     print_timing_and_memory (stdout, cpu_after_read, wct_after_read);
 

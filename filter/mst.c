@@ -68,7 +68,7 @@ fillRowAddMatrix(int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX], filter_matrix_t *mat,
     /* A[i][i] is not used, thus we don't initialize it. */
     for(i = 0; i < m; i++)
 	for(j = i+1; j < m; j++){
-	    A[i][j] = weightSum (mat, ind[i], ind[j], ideal);
+	    A[i][j] = weightSum (mat, ind[i], ind[j], ideal);   // merge_replay_matrix.c
 	    A[j][i] = A[i][j];
 	}
 }
