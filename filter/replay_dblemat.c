@@ -1,13 +1,3 @@
-/* TODO:
- * modify merge to give a termination criteria in the double matrix case:
-   we suggest to use the average density of the left matrix L
-   (-target_density 100 would mean that we stop when the average density
-   of the rows of L reaches 100)
- * maybe modify the criteria use in merge to choose the next merge to perform.
-   Currently we use the merge that minimizes the fill-in in M = L*R, but in
-   the double matrix case, we want to minimize the fill-in in L.
- */
-
 /* replay --- replaying history of merges to build the sparse matrices in
               Kleinjung's "double matrix" idea.
 
