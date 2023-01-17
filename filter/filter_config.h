@@ -33,7 +33,7 @@
 /*********/
 
 /* Maximum level for a merge. */
-#define MERGE_LEVEL_MAX 32
+#define MERGE_LEVEL_MAX 64
 /* Maximum number of characters of a merge in the history file.
    For a k-merge, we have up to k-1 lines written in the same string.
    Each line is of the following form:

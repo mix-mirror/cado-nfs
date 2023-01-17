@@ -3,6 +3,10 @@
 
 #include "typedefs.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef FOR_DL
 #define typerow_t index_t
 #define cmp_typerow_t cmp_index
@@ -12,5 +16,9 @@
 #endif
 
 #define col_weight_t unsigned char
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
