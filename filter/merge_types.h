@@ -1,11 +1,11 @@
 #ifndef MERGE_TYPES_H_
 #define MERGE_TYPES_H_
 
+#include "typedefs.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include "typedefs.h"
 
 #ifndef FOR_DL
 #define typerow_t index_t
@@ -19,5 +19,6 @@ extern "C" {
 
 #ifdef __cplusplus
 }
+#endif
 
 #endif
