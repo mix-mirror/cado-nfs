@@ -1,6 +1,10 @@
 #ifndef MERGE_TYPES_H_
 #define MERGE_TYPES_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "typedefs.h"
 
 #ifndef FOR_DL
@@ -12,5 +16,8 @@
 #endif
 
 #define col_weight_t unsigned char
+
+#ifdef __cplusplus
+}
 
 #endif
