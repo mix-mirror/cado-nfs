@@ -874,13 +874,16 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 
 
 static void
-remove_row (filter_matrix_t *mat, index_t i)
+remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
 {
   int32_t w = matLengthRow (mat, i);
   for (int k = 1; k <= w; k++)
     decrease_weight (mat, rowCell(mat->rows[i], k));
   heap_destroy_row(mat->heap, mat->rows[i]);
   mat->rows[i] = NULL;
+  // replicate on L
+  heap_destroy_row(L->heap, L->rows[i]);
+  L->rows[i] = NULL;
 }
 
 #ifdef DEBUG
@@ -995,7 +998,7 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 /* perform the merge described by the id-th row of R,
    computing the full spanning tree */
 static int32_t
-merge_do (filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
+merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
 {
   int32_t c;
   index_t j = mat->Rqinv[id];
@@ -1012,7 +1015,7 @@ merge_do (filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
       n = sreportn (s, MERGE_CHAR_MAX, &i, 1, mat->p[j]);
       ASSERT(n < MERGE_CHAR_MAX);
       buffer_add (buf, s);
-      remove_row (mat, i);
+      remove_row (L, mat, i);
       return -3;
     }
 
@@ -1039,16 +1042,16 @@ merge_do (filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
       ASSERT(n < MERGE_CHAR_MAX);
     }
   buffer_add (buf, s);
-  remove_row (mat, ind[0]);
+  remove_row (L, mat, ind[0]);
   return c;
 }
 
-/* accumulate in L all merges of (biased) cost <= cbound.
-   L must be preallocated.
-   L is a linear array and the merges appear by increasing cost.
-   Returns the size of L. */
+/* accumulate in possible_merges all merges of (biased) cost <= cbound.
+   possible_mergesL must be preallocated.
+   possible_mergesL is a linear array and the merges appear by increasing cost.
+   Returns the size of possible_merges. */
 static int
-compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
+compute_merges (index_t *possible_merges, filter_matrix_t *mat, int cbound)
 {
   double cpu = seconds(), wct = wct_seconds();
   index_t Rn = mat->Rn;
@@ -1110,7 +1113,7 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
       int c = cost[i];
       if (c > cbound)
 	continue;
-      L[tcount[c]++] = i;
+      possible_merges[tcount[c]++] = i;
     }
   } /* end parallel section */
 
@@ -1134,8 +1137,8 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
 
 /* return the number of merges applied */
 static unsigned long
-apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
-	      buffer_struct_t *Buf)
+apply_merges (index_t *possible_merges, index_t total_merges, filter_matrix_t *L, 
+                filter_matrix_t *mat, buffer_struct_t *Buf)
 {
   double cpu3 = seconds (), wct3 = wct_seconds ();
   char * busy_rows = malloc(mat->nrows * sizeof (char));
@@ -1156,7 +1159,7 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
   {
     #pragma omp for schedule(guided)
     for (index_t it = 0; it < total_merges; it++) {
-      index_t id = L[it];
+      index_t id = possible_merges[it];
       index_t lo = mat->Rp[id];
       index_t hi = mat->Rp[id + 1];
       int tid = omp_get_thread_num ();
@@ -1200,7 +1203,7 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
 	  }
       }
       if (ok) {
-	fill_in += merge_do(mat, id, Buf + tid);
+	fill_in += merge_do(L, mat, id, &Buf[tid]);
 	nmerges ++;
         ASSERT(hi - lo <= MERGE_LEVEL_MAX);
       }
@@ -1458,7 +1461,7 @@ main (int argc, char *argv[])
     sanity_check_matrix_sizes(mat);
 
     /* initialize the matrix structure */
-    initMat (mat, skip);
+    initMat (mat, skip); // merge_replay_matrix.c
 
     /* Set L to the identity matrix. This matrix will contain the combinations
        of rows of the initial matrix M, so that the output matrix M' of merge
@@ -1468,7 +1471,7 @@ main (int argc, char *argv[])
     initMat (L, 0); // no skip in L, since skip only concerns columns
     for (index_t i = 0; i < L->nrows; i++)
     {
-      L->rows[i] = reallocRow (L->rows[i], 2);
+      L->rows[i] = heap_alloc_row(L->heap, i, 2);  // sparse.c
       setCell(L->rows[i], 0, 1, 1); // only one non-zero element in row
       setCell(L->rows[i], 1, i, 1); // L[i,i] = 1
     }
@@ -1511,9 +1514,6 @@ main (int argc, char *argv[])
 
     printf ("Using MERGE_LEVEL_MAX=%d, cbound_incr=%d",
 	    MERGE_LEVEL_MAX, cbound_incr);
-#ifdef USE_ARENAS
-    printf (", M_ARENA_MAX=%d", arenas);
-#endif
     printf (", PAGE_DATA_SIZE=%d", heap_config_get_PAGE_DATA_SIZE());
 #ifdef HAVE_OPENMP
     /* https://stackoverflow.com/questions/38281448/how-to-check-the-version-of-openmp-on-windows
@@ -1534,8 +1534,6 @@ main (int argc, char *argv[])
     fflush (stdout);
 
     mat->cwmax = 2;
-
-    // copy_matrix (mat);
 
 #if defined(DEBUG) && defined(FOR_DL)
     /* compute the minimum/maximum coefficients */
@@ -1565,15 +1563,15 @@ main (int argc, char *argv[])
 	double cpu1 = seconds (), wct1 = wct_seconds ();
 	merge_pass++;
 
-        if (merge_pass == 2 || mat->cwmax > 2) {
-                double cpu8 = seconds (), wct8 = wct_seconds ();
-                heap_garbage_collection(mat->heap, mat->rows);
-                 cpu8 = seconds () - cpu8;
-                wct8 = wct_seconds () - wct8;
-                print_timings ("   GC took", cpu8, wct8);
-                cpu_t[GC] += cpu8;
-                wct_t[GC] += wct8;
-        }
+    if (merge_pass == 2 || mat->cwmax > 2) {
+            double cpu8 = seconds (), wct8 = wct_seconds ();
+            heap_garbage_collection(mat->heap, mat->rows);
+             cpu8 = seconds () - cpu8;
+            wct8 = wct_seconds () - wct8;
+            print_timings ("   GC took", cpu8, wct8);
+            cpu_t[GC] += cpu8;
+            wct_t[GC] += wct8;
+    }
 
 	/* Once cwmax >= 3, tt each pass, we increase cbound to allow more
 	   merges. If one decreases cbound_incr, the final matrix will be
@@ -1605,14 +1603,14 @@ main (int argc, char *argv[])
 
 	compute_R (mat, jmin[mat->cwmax]);
 
-	index_t *L = malloc(mat->Rn * sizeof(index_t));
+	index_t *possible_merges = malloc(mat->Rn * sizeof(index_t));
 
-	index_t n_possible_merges = compute_merges(L, mat, cbound);
+	index_t n_possible_merges = compute_merges(possible_merges, mat, cbound);
 
-	unsigned long nmerges = apply_merges(L, n_possible_merges, mat, Buf);
+	unsigned long nmerges = apply_merges(possible_merges, n_possible_merges, L, mat, Buf);
 
 	buffer_flush (Buf, nthreads, history);
-	free(L);
+	free(possible_merges);
 
 	free_aligned (mat->Ri);
 
