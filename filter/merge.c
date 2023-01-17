@@ -1045,14 +1045,14 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
   char s[MERGE_CHAR_MAX];
   int n = 0; /* number of characters written to s (except final \0) */
   int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
-  fillRowAddMatrix (A, mat, w, ind, j);          // mst.c. ---> Replace mat by L here to determine the linear combinations that are optimal for L
+  fillRowAddMatrix (A, L, w, ind, j);          // mst.c. ---> Replace mat by L here to determine the linear combinations that are optimal for L
   /* mimic MSTWithA */
   int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
   c = minimalSpanningTree (start, end, w, A);
   /* c is the weight of the minimal spanning tree, we have to remove
      the weights of the initial relations */
   for (int k = 0; k < w; k++)
-    c -= matLengthRow (mat, ind[k]);             // replace mat by L here
+    c -= matLengthRow (L, ind[k]);             // replace mat by L here
   index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
   int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end);
   for (int i = hmax; i >= 0; i--)
