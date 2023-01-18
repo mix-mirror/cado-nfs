@@ -136,8 +136,8 @@ def read_purged(f,skip=0):
    return M
 
 # M = read_purged("c60.purged",skip=32)
-# Mprime = merge(M,"c60.history")
-def merge(M,history):
+# Mprime = replay(M,"c60.history")
+def replay(M,history):
    M = [copy(l) for l in M]
    f = open(history,"r")
    N = len(M)
@@ -168,8 +168,6 @@ def merge(M,history):
       if remove:
          M[i1] = []
          N -= 1
-         if N in [18723,17509,17382,17376,17375,15167,13665,12611,11817,11203]:
-            print (N, weight(M))
    f.close()
    return M
 
