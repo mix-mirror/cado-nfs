@@ -778,7 +778,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 #define INT32_MIN_64 (int64_t) INT32_MIN
 #define INT32_MAX_64 (int64_t) INT32_MAX
 
-static void
+static int
 add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 {
 #ifdef CANCEL
@@ -880,6 +880,8 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
   heap_resize_last_row(mat->heap, sum, t);
   heap_destroy_row(mat->heap, mat->rows[i1]);
   mat->rows[i1] = sum;
+
+  return t - k1;
 }
 #endif
 
