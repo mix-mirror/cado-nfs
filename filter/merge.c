@@ -182,9 +182,6 @@ usage (param_list pl, char *argv0)
  */
 void check_invariant(filter_matrix_t *mat)
 {
-    if (sizeof(col_weight_t) == 1)
-        return;
-
     uint64_t tot_weight2 = 0;
     for (index_t i = 0; i < mat->ncols; i++) {
         ASSERT_ALWAYS(mat->wt[i] <= mat->rem_nrows);
@@ -1564,6 +1561,8 @@ main (int argc, char *argv[])
     printf("$$$ start:\n");
 #endif
 
+    check_invariant (mat);
+
     fflush (stdout);
 
     mat->cwmax = 2;
@@ -1694,6 +1693,8 @@ main (int argc, char *argv[])
 		seconds () - cpu0, wct_seconds () - wct0,
 		PeakMemusage () >> 10, merge_pass, mat->cwmax);
 	fflush (stdout);
+
+        check_invariant (mat);
 
 	if (average_density (mat) >= target_density)
 		break;
