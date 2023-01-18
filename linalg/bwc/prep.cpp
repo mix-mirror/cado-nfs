@@ -19,6 +19,8 @@
 #include "cheating_vec_init.h"
 #include "portability.h" // asprintf // IWYU pragma: keep
 #include "macros.h"
+#include "mmt_vector_pair.hpp"
+#include "utils_cxx.hpp"
 
 
 void bw_rank_check(matmul_top_data_ptr mmt, param_list_ptr pl)
@@ -69,7 +71,13 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
             MPFQ_DONE);
     ASSERT_ALWAYS(A->simd_groupsize(A) * A_multiplex == (unsigned int) bw->n);
 
+    /* Use these call_dtor hacks so that our C-like structures play
+     * nicely with the C++ structures */
+    auto clean_A = call_dtor([&]() { A->oo_field_clear(A); });
+
+
     matmul_top_init(mmt, A, pi, pl, bw->dir);
+    auto clean_mmt = call_dtor([&]() { matmul_top_clear(mmt); });
 
     bw_rank_check(mmt, pl);
 
@@ -101,36 +109,8 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
         ASSERT_ALWAYS(nrhs <= mmt->n[!bw->dir]);
     }
 
-    /* we allocate as many vectors as we have matrices, plus one if the
-     * number of matrices is odd (so we always have an even number of
-     * vectors). If the number of matrices is odd, then
-     * the first vector may be shared.  Otherwise, I believe it cannot
-     * (but I'm not really sure)
-     *
-     * Storage for vectors need actually not be present at all times.
-     * This could be improved.
-     *
-     * Interleaving could defined twice as many interleaved levels as we
-     * have matrices. It is probably not relevant.
-     */
 
-    int nmats_odd = mmt->nmatrices & 1;
-
-    mmt_vec * ymy = new mmt_vec[mmt->nmatrices + nmats_odd];
-    matmul_top_matrix_ptr mptr;
-    mptr = (matmul_top_matrix_ptr) mmt->matrices + (bw->dir ? (mmt->nmatrices - 1) : 0);
-    for(int i = 0 ; i < mmt->nmatrices ; i++) {
-        int shared = (i == 0) & nmats_odd;
-        mmt_vec_init(mmt,0,0, ymy[i], bw->dir ^ (i&1), shared, mptr->n[bw->dir]);
-        mmt_full_vec_set_zero(ymy[i]);
-
-        mptr += bw->dir ? -1 : 1;
-    }
-    if (nmats_odd) {
-        mmt_vec_init(mmt,0,0, ymy[mmt->nmatrices], !bw->dir, 0, mmt->matrices[0]->n[bw->dir]);
-        mmt_full_vec_set_zero(ymy[mmt->nmatrices]);
-    }
-
+    mmt_vector_pair ymy(mmt, bw->dir);
 
     unsigned int unpadded = MAX(mmt->n0[0], mmt->n0[1]);
 
@@ -204,7 +184,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
             // XXX Note that x^Ty does not count here, because it does not
             // take part to the sequence computed by lingen !
             mmt_vec_twist(mmt, ymy[0]);
-            matmul_top_mul(mmt, ymy, NULL);
+            matmul_top_mul(mmt, ymy.vectors(), NULL);
             mmt_vec_untwist(mmt, ymy[0]);
             
 
@@ -225,7 +205,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
                     }
                 }
                 mmt_vec_twist(mmt, ymy[0]);
-                matmul_top_mul(mmt, ymy, NULL);
+                matmul_top_mul(mmt, ymy.vectors(), NULL);
                 mmt_vec_untwist(mmt, ymy[0]);
             }
         }
@@ -270,16 +250,10 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
 
     gmp_randclear(rstate);
 
-    for(int i = 0 ; i < mmt->nmatrices + nmats_odd ; i++) {
-        mmt_vec_clear(mmt, ymy[i]);
-    }
-    delete[] ymy;
-    matmul_top_clear(mmt);
 
     /* clean up xy mats stuff */
     cheating_vec_clear(A, &xymats, bw->m * prep_lookahead_iterations * A_multiplex);
 
-    A->oo_field_clear(A);
 
     free(xvecs);
     return NULL;
@@ -318,8 +292,10 @@ void * prep_prog_gfp(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_
             MPFQ_PRIME_MPZ, bw->p,
             MPFQ_SIMD_GROUPSIZE, splitwidth,
             MPFQ_DONE);
+    auto clean_A = call_dtor([&]() { A->oo_field_clear(A); });
 
     matmul_top_init(mmt, A, pi, pl, bw->dir);
+    auto clean_mmt = call_dtor([&]() { matmul_top_clear(mmt); });
 
     // I don't think this was ever tested.
     ASSERT_ALWAYS(mmt->nmatrices == 1);
@@ -328,7 +304,7 @@ void * prep_prog_gfp(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_
 
     if (pi->m->trank || pi->m->jrank) {
         /* as said above, this is *NOT* a parallel program.  */
-        goto leave_prep_prog_gfp;
+        return NULL;
     }
 
     gmp_randstate_t rstate;
@@ -458,10 +434,6 @@ void * prep_prog_gfp(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_
         free(xvecs);
     }
 
-leave_prep_prog_gfp:
-    matmul_top_clear(mmt);
-
-    A->oo_field_clear(A);
     return NULL;
 }
 

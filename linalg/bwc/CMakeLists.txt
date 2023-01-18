@@ -84,6 +84,7 @@ set(bwc_base_sources
     matmul.c
     matmul_top.c
     matmul_top2.cpp
+    mmt_vector_pair.cpp
     random_matrix.c
     mf.c 
     mf_bal.c

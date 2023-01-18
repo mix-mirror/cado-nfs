@@ -631,6 +631,8 @@ linalg/bwc/mf_bal_main.c
 linalg/bwc/mf_scan.c
 linalg/bwc/mf_scan2.cpp
 linalg/bwc/mksol.cpp
+linalg/bwc/mmt_vector_pair.cpp
+linalg/bwc/mmt_vector_pair.hpp
 linalg/bwc/mpfq/Makefile.mpfq
 linalg/bwc/mpfq/asm-constraints.patch
 linalg/bwc/mpfq/binary-dotprods-backends.h
