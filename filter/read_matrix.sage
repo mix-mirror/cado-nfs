@@ -112,3 +112,96 @@ def read_index(f):
    f.close()
    print ("weight:", w)
    return M
+
+# M = read_purged("c60.purged",skip=32)
+def read_purged(f,skip=0):
+   f = open(f,"r")
+   s = f.readline().split()
+   nrows = ZZ(s[1])
+   ncols = ZZ(s[2])
+   M = []
+   while true:
+      s = f.readline()
+      if s=='':
+         break
+      s = s[:-1]
+      s = s.split(':')[1]
+      s = s.split(',')
+      l = [ZZ('0x'+x) for x in s]
+      # remove skipped ideals
+      l = [x for x in l if x >= skip]
+      l.sort()
+      M.append(l)
+   f.close()
+   return M
+
+# M = read_purged("c60.purged",skip=32)
+# Mprime = merge(M,"c60.history")
+def merge(M,history):
+   M = [copy(l) for l in M]
+   f = open(history,"r")
+   N = len(M)
+   while true:
+      s = f.readline()
+      if s=='':
+         break
+      if s[0]=='#':
+         continue
+      s = s[:-1]
+      s = s.split(' ')
+      l = []
+      remove = true
+      for x in s:
+         if x[0]!='#':
+            i = ZZ(x)
+            if i<0:
+               remove = false
+            l.append(i)
+      # A line i1 i2 ... ik means that row i1 is added to i2, ..., ik, and
+      # row i1 is removed afterwards (where row 0 is the first line in
+      # *.purged.gz).
+      i1 = l[0]
+      l1 = M[i1]
+      for i2 in l[1:]:
+         # i2 += i1
+         M[i2] = add_row (l1, M[i2])
+      if remove:
+         M[i1] = []
+         N -= 1
+         if N in [18723,17509,17382,17376,17375,15167,13665,12611,11817,11203]:
+            print (N, weight(M))
+   f.close()
+   return M
+
+def add_row(l1,l2):
+   l = []
+   n1 = len(l1)
+   n2 = len(l2)
+   i1 = i2 = 0
+   while i1 < n1 and i2 < n2:
+      if l1[i1]<l2[i2]:
+         l.append(l1[i1])
+         i1 += 1
+      elif l2[i2]<l1[i1]:
+         l.append(l2[i2])
+         i2 += 1
+      else: # cancellation
+         i1 += 1
+         i2 += 1
+   while i1 < n1:
+      l.append(l1[i1])
+      i1 += 1
+   while i2 < n2:
+      l.append(l2[i2])
+      i2 += 1
+   return l
+   
+def weight(M):
+   return add(len(l) for l in M)
+
+def nrows(M):
+   n = 0
+   for l in M:
+      if l!=[]:
+         n += 1
+   return n
