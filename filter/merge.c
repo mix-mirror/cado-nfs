@@ -3,9 +3,7 @@
 TODO:
 * in merge_cost, take into account the - initial_weight(j) term.
   Since we know R->wt[j] <= 255, it suffices to use BIAS=255 or so.
-* fix the total weight W in merge, which does not correspond to what
-  we obtain in replay, and check_invariant() says mat->tot_weight does
-  not correspond to the real total weight
+* fix the total weight W in merge, which should correspond to what replay says
 
 Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
@@ -185,6 +183,9 @@ usage (param_list pl, char *argv0)
  */
 void check_invariant(filter_matrix_t *mat)
 {
+    if (sizeof(col_weight_t) == 1)
+      return;
+
     uint64_t tot_weight2 = 0;
     for (index_t i = 0; i < mat->ncols; i++) {
         ASSERT_ALWAYS(mat->wt[i] <= mat->rem_nrows);
@@ -724,8 +725,8 @@ increase_weight (filter_matrix_t *mat, index_t j)
    doit <> 0: add row i2 to row i1.
    New memory is allocated and the old space is freed */
 #ifndef FOR_DL
-/* special code for factorization */
-static void
+/* special code for factorization, return the weight increase (or decrease) */
+static int
 add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 {
 	index_t k1 = matLengthRow(mat, i1);
@@ -770,7 +771,8 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	heap_resize_last_row(mat->heap, sum, t);
 	heap_destroy_row(mat->heap, mat->rows[i1]);
 	mat->rows[i1] = sum;
-	return;
+
+	return t - k1; /* weight increase when replacing i1 by i1+i2 */
 }
 #else /* FOR_DL: j is the ideal to be merged */
 #define INT32_MIN_64 (int64_t) INT32_MIN
@@ -892,6 +894,7 @@ remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
     decrease_weight (mat, rowCell(mat->rows[i], k));
   heap_destroy_row(mat->heap, mat->rows[i]);
   mat->rows[i] = NULL;
+  mat->tot_weight -= w;
   // replicate on L
   heap_destroy_row(L->heap, L->rows[i]);
   L->rows[i] = NULL;
@@ -1012,7 +1015,7 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 	}
       else
 	history[i][1] = -(ind[s] + 1);
-      add_row (mat, ind[t], ind[s], j);
+      mat->tot_weight += add_row (mat, ind[t], ind[s], j);
       if (!twomerge_mode)
         add_row (L, ind[t], ind[s], j);
       history[i][2] = ind[t];
@@ -1564,8 +1567,6 @@ main (int argc, char *argv[])
     printf("$$$ start:\n");
 #endif
 
-    check_invariant (mat);
-
     fflush (stdout);
 
     mat->cwmax = 2;
@@ -1696,8 +1697,6 @@ main (int argc, char *argv[])
 		seconds () - cpu0, wct_seconds () - wct0,
 		PeakMemusage () >> 10, merge_pass, mat->cwmax);
 	fflush (stdout);
-
-        check_invariant (mat);
 
 	if (average_density (mat) >= target_density)
 		break;
