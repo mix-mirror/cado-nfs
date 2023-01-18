@@ -3,6 +3,9 @@
 TODO:
 * in merge_cost, take into account the - initial_weight(j) term.
   Since we know R->wt[j] <= 255, it suffices to use BIAS=255 or so.
+* fix the total weight W in merge, which does not correspond to what
+  we obtain in replay, and check_invariant() says mat->tot_weight does
+  not correspond to the real total weight
 
 Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
