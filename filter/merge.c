@@ -4,6 +4,11 @@ TODO:
 * in merge_cost, take into account the - initial_weight(j) term.
   Since we know R->wt[j] <= 255, it suffices to use BIAS=255 or so.
 * fix the total weight W in merge, which should correspond to what replay says
+  (ok for the c60 from README, and for
+  parameters/polynomials/{c70,c80,c90,c100}.poly,
+  but we get a discrepancy for the c110 from
+  parameters/polynomials/c110.poly, where on baguette.loria.fr merge gives
+  W=47179902 but replay gives 47094948).
 
 Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
