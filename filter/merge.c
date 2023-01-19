@@ -75,13 +75,13 @@ int twomerge_mode = 1;   // stays true until we do the first k-merge with
 
 #ifdef DEBUG
 static void
-Print_row (filter_matrix_t *mat, index_t i)
+fprint_row (FILE *fp, filter_matrix_t *mat, index_t i)
 {
   ASSERT_ALWAYS(mat->rows[i] != NULL);
-  printf ("%u:", i);
+  fprintf (fp, "%u", matLengthRow(mat, i));
   for (index_t k = 1; k <= matLengthRow(mat, i); k++)
-    printf (" %u", rowCell(mat->rows[i],k));
-  printf ("\n");
+    fprintf (fp, " %u", rowCell(mat->rows[i],k));
+  fprintf (fp, "\n");
 }
 #endif
 
@@ -721,12 +721,10 @@ increase_weight (filter_matrix_t *mat, index_t j)
   }
 }
 
-/* doit == 0: return the weight of row i1 + row i2
-   doit <> 0: add row i2 to row i1.
-   New memory is allocated and the old space is freed */
+/* add row i2 to i1 (in place), and return the fill-in */
 #ifndef FOR_DL
-/* special code for factorization, return the weight increase (or decrease) */
-static int
+/* special code for factorization */
+static int32_t
 add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 {
 	index_t k1 = matLengthRow(mat, i1);
@@ -778,7 +776,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 #define INT32_MIN_64 (int64_t) INT32_MIN
 #define INT32_MAX_64 (int64_t) INT32_MAX
 
-static int
+static int32_t
 add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 {
 #ifdef CANCEL
@@ -886,9 +884,10 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 #endif
 
 /* L is the "left" matrix (rows are relations-sets, columns are relations),
-   and mat is the "merged" matrix (rows are relations-sets, columns are ideals)
+   and mat is the "merged" matrix (rows are relations-sets, columns are
+   ideals). Return the (negative) fill-in.
 */
-static void
+static int32_t
 remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
 {
   int32_t w = matLengthRow (mat, i);
@@ -896,10 +895,10 @@ remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
     decrease_weight (mat, rowCell(mat->rows[i], k));
   heap_destroy_row(mat->heap, mat->rows[i]);
   mat->rows[i] = NULL;
-  mat->tot_weight -= w;
   // replicate on L
   heap_destroy_row(L->heap, L->rows[i]);
   L->rows[i] = NULL;
+  return -w;
 }
 
 #ifdef DEBUG
@@ -998,11 +997,11 @@ sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
 }
 
 /* Perform the row additions given by the minimal spanning tree (stored in
-   history[][]). */
+   history[][]). Add in c the fill-in in mat. */
 static int
 addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
-		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind, index_t j,
-		 int *father, int *sons)
+		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind,
+                 index_t j, int *father, int *sons, int32_t *c)
 {
   int i, s, t;
 
@@ -1017,7 +1016,7 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 	}
       else
 	history[i][1] = -(ind[s] + 1);
-      mat->tot_weight += add_row (mat, ind[t], ind[s], j);
+      *c += add_row (mat, ind[t], ind[s], j);
       if (!twomerge_mode)
         add_row (L, ind[t], ind[s], j);
       history[i][2] = ind[t];
@@ -1027,11 +1026,11 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 }
 
 /* perform the merge described by the id-th row of R,
-   computing the full spanning tree */
+   computing the full spanning tree, and return the fill-in */
 static int32_t
 merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
 {
-  int32_t c;
+  int32_t c = 0;
   index_t j = mat->Rqinv[id];
   index_t t = mat->Rp[id];
   int w = mat->Rp[id + 1] - t;
@@ -1045,8 +1044,7 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
       n = sreportn (s, MERGE_CHAR_MAX, &i, 1, mat->p[j]);
       ASSERT(n < MERGE_CHAR_MAX);
       buffer_add (buf, s);
-      remove_row (L, mat, i);
-      return -3;
+      return remove_row (L, mat, i);
     }
 
   /* perform the real merge and output to history file */
@@ -1057,13 +1055,9 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
   fillRowAddMatrix (A, L, w, ind, j);          // mst.c.
   /* mimic MSTWithA */
   int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
-  c = minimalSpanningTree (start, end, w, A);
-  /* c is the weight of the minimal spanning tree, we have to remove
-     the weights of the initial relations */
-  for (int k = 0; k < w; k++)
-    c -= matLengthRow (L, ind[k]);
+  minimalSpanningTree (start, end, w, A);
   index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
-  int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end);
+  int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end, &c);
   for (int i = hmax; i >= 0; i--)
     {
       n += sreportn (s + n, MERGE_CHAR_MAX - n,
@@ -1072,7 +1066,7 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
       ASSERT(n < MERGE_CHAR_MAX);
     }
   buffer_add (buf, s);
-  remove_row (L, mat, ind[0]);
+  c += remove_row (L, mat, ind[0]);
   return c;
 }
 
@@ -1165,7 +1159,6 @@ compute_merges (index_t *possible_merges, filter_matrix_t *L,
   return s;
 }
 
-
 /* return the number of merges applied */
 static unsigned long
 apply_merges (index_t *possible_merges, index_t total_merges, filter_matrix_t *L, 
@@ -1234,8 +1227,8 @@ apply_merges (index_t *possible_merges, index_t total_merges, filter_matrix_t *L
 	  }
       }
       if (ok) {
-	fill_in += merge_do(L, mat, id, &Buf[tid]);
-	nmerges ++;
+        fill_in += (uint64_t) merge_do (L, mat, id, &Buf[tid]);
+        nmerges ++;
         ASSERT(hi - lo <= MERGE_LEVEL_MAX);
       }
     }  /* for */
