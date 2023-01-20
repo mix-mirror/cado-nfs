@@ -1399,7 +1399,7 @@ static void
 compute_weights_R (filter_matrix_t *R, filter_matrix_t *mat)
 {
   uint64_t tot_weight = 0;
-#pragma omp parallel reduction(+: tot_weight)
+#pragma omp parallel for reduction(+: tot_weight)
   for (index_t j = 0; j < mat->ncols; j++)
   {
     R->wt[j] = mat->wt[j];
