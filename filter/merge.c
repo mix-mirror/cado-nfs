@@ -1,12 +1,14 @@
 /* merge --- new merge program, for double-matrix algorithm
 
 TODO:
+* fix the discrepancy between the weight of R printed by merge (R has W=...)
+  and that printed by replay-dblemat (Weight of the sparse submatrix: ...)
 * fix the total weight W in merge, which should correspond to what replay says
   (ok for the c60 from README, and for
   parameters/polynomials/{c70,c80,c90,c100}.poly,
   but we get a discrepancy for the c110 from
   parameters/polynomials/c110.poly, where on baguette.loria.fr merge gives
-  W=47179902 but replay gives 47094948).
+  W=48426850 but replay gives 48345848).
 
 Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
