@@ -25,10 +25,8 @@ extern unsigned long cancel_cols[CANCEL_MAX];
 // #define DEBUG
 
 /* cbound_incr is the increment on the maximal cost of merges at each step.
-   Setting it to 1 is optimal in terms of matrix size, but will take a very
-   long time (typically 10 times more than with cbound_incr=10). */
-#define CBOUND_INCR_DEFAULT 8
-
+   Decreasing it does not necessarily give better matrices. */
+#define CBOUND_INCR_DEFAULT 10
 
 /* Note about variables used in the code:
  * cwmax is the (current) maximal weight of columns that will be considered

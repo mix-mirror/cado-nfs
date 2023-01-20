@@ -1,8 +1,6 @@
 /* merge --- new merge program, for double-matrix algorithm
 
 TODO:
-* in merge_cost, take into account the - initial_weight(j) term.
-  Since we know R->wt[j] <= 255, it suffices to use BIAS=255 or so.
 * fix the total weight W in merge, which should correspond to what replay says
   (ok for the c60 from README, and for
   parameters/polynomials/{c70,c80,c90,c100}.poly,
@@ -927,7 +925,7 @@ printRow (filter_matrix_t *mat, index_t i)
 }
 #endif
 
-#define BIAS 3
+#define BIAS (col_weight_t) (-1)
 
 /* classical cost: merge the row of smaller weight with the other ones,
    and return the merge cost (taking account of cancellations).
@@ -944,18 +942,16 @@ printRow (filter_matrix_t *mat, index_t i)
    * a value >= 3 for all k-merges with k >= 3
    */
 static int32_t
-merge_cost (filter_matrix_t *L, filter_matrix_t *R MAYBE_UNUSED,
-            filter_matrix_t *mat, index_t j)
+merge_cost (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
+            index_t j)
 {
   index_t lo = mat->Rp[j];
   index_t hi = mat->Rp[j + 1];
   int w = hi - lo; /* weight of the considered ideal */
 
-  if (w == 1)
-    return 1; /* ensure all 1-merges are processed before 2-merges */
-
-  if (w == 2)
-    return 2;
+  if (w <= 2)
+    return 0; /* ensure all 1-and 2-merges are processed first
+                 (they are done on the R matrix) */
 
   if (w > mat->cwmax) /* discard too heavy ideals for now */
     return INT32_MAX;
@@ -971,9 +967,9 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *R MAYBE_UNUSED,
 	cmin = c;
     }
 
-  /* FIXME: in principle we should return (w - 2) * cmin - R->wt[j],
-     but there is no way we can bound this by below. */
-  return (w - 2) * (cmin - 1) + BIAS;
+  /* since R->wt[j] <= BIAS, and w > 2, the value below is > 0, which
+     ensures those merges will be processed after the 1- and 2-merges */
+  return (w - 2) * cmin + BIAS - R->wt[j];
 }
 
 /* Output a list of merges to a string.
@@ -1033,7 +1029,8 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 /* perform the merge described by the id-th row of R,
    computing the full spanning tree, and return the fill-in */
 static int32_t
-merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
+merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
+          index_t id, buffer_struct_t *buf)
 {
   int32_t c = 0;
   index_t j = mat->Rqinv[id];
@@ -1041,6 +1038,10 @@ merge_do (filter_matrix_t *L, filter_matrix_t *mat, index_t id, buffer_struct_t 
   int w = mat->Rp[id + 1] - t;
 
   ASSERT (1 <= w && w <= mat->cwmax);
+
+  /* update the total weight of R */
+#pragma omp atomic update
+  R->tot_weight -= R->wt[j];
 
   if (w == 1) {             // eliminate a singleton column
       char s[MERGE_CHAR_MAX];
@@ -1166,8 +1167,9 @@ compute_merges (index_t *possible_merges, filter_matrix_t *L,
 
 /* return the number of merges applied */
 static unsigned long
-apply_merges (index_t *possible_merges, index_t total_merges, filter_matrix_t *L, 
-                filter_matrix_t *mat, buffer_struct_t *Buf)
+apply_merges (index_t *possible_merges, index_t total_merges,
+              filter_matrix_t *L,  filter_matrix_t *R,
+              filter_matrix_t *mat, buffer_struct_t *Buf)
 {
   double cpu3 = seconds (), wct3 = wct_seconds ();
   char * busy_rows = malloc(mat->nrows * sizeof (char));
@@ -1232,7 +1234,7 @@ apply_merges (index_t *possible_merges, index_t total_merges, filter_matrix_t *L
 	  }
       }
       if (ok) {
-        fill_in += (uint64_t) merge_do (L, mat, id, &Buf[tid]);
+        fill_in += (uint64_t) merge_do (L, R, mat, id, &Buf[tid]);
         nmerges ++;
         ASSERT(hi - lo <= MERGE_LEVEL_MAX);
       }
@@ -1392,6 +1394,20 @@ void sanity_check_matrix_sizes(filter_matrix_t * mat MAYBE_UNUSED)
 #endif
 }
 
+/* put the initial weights (after the initial 2-merges) in R->wt[] */
+static void
+compute_weights_R (filter_matrix_t *R, filter_matrix_t *mat)
+{
+  uint64_t tot_weight = 0;
+#pragma omp parallel reduction(+: tot_weight)
+  for (index_t j = 0; j < mat->ncols; j++)
+  {
+    R->wt[j] = mat->wt[j];
+    tot_weight += mat->wt[j];
+  }
+  R->tot_weight = tot_weight;
+}
+
 int
 main (int argc, char *argv[])
 {
@@ -1527,10 +1543,6 @@ main (int argc, char *argv[])
 
     compute_weights (mat, jmin);
 
-    /* put the initial weights in R->wt[] */
-    for (index_t j = 0; j < mat->ncols; j++)
-      R->wt[j] = mat->wt[j];
-
     recompress (R, mat, jmin);
 
     // output_matrix (mat, "out.sage");
@@ -1592,7 +1604,7 @@ main (int argc, char *argv[])
 
     unsigned long lastN, lastW;
     double lastWoverN;
-    int cbound = BIAS; /* bound for the (biased) cost of merges to apply */
+    int cbound = 0; /* bound for the (biased) cost of merges to apply */
 
     /****** begin main loop ******/
     while (1) {
@@ -1609,7 +1621,7 @@ main (int argc, char *argv[])
             wct_t[GC] += wct8;
     }
 
-	/* Once cwmax >= 3, tt each pass, we increase cbound to allow more
+	/* Once cwmax >= 3, at each pass, we increase cbound to allow more
 	   merges. If one decreases cbound_incr, the final matrix will be
 	   smaller, but merge will take more time.
 	   If one increases cbound_incr, merge will be faster, but the final
@@ -1644,7 +1656,8 @@ main (int argc, char *argv[])
 	index_t n_possible_merges = compute_merges(possible_merges, L, R, mat,
                                                    cbound);
 
-	unsigned long nmerges = apply_merges(possible_merges, n_possible_merges, L, mat, Buf);
+	unsigned long nmerges = apply_merges (possible_merges,
+                                            n_possible_merges, L, R, mat, Buf);
 
 	buffer_flush (Buf, nthreads, history);
 	free(possible_merges);
@@ -1662,11 +1675,16 @@ main (int argc, char *argv[])
   	if (mat->cwmax == 2) { /* we first process all 2-merges */
 		if (nmerges == 0) {
                         twomerge_mode = 0;    // stop special treatment of the initial run of 2-merges
+                        compute_weights_R (R, mat);
 			mat->cwmax++;
                 }
 	} else {
-		if (mat->cwmax < MERGE_LEVEL_MAX)
-			mat->cwmax ++;
+#define INCREASE_RATIO 0.0035
+          /* we only increase cwmax when nmerges is below a given proportion
+             of the matrix size */
+          if (mat->cwmax < MERGE_LEVEL_MAX &&
+              (nmerges < INCREASE_RATIO * (double) mat->ncols))
+              mat->cwmax ++;
 	}
 
 	if (mat->rem_ncols < 0.66 * mat->ncols) {
@@ -1767,6 +1785,9 @@ main (int argc, char *argv[])
         }
 
     printf ("L has N=%" PRIu64 " W=%" PRIu64 "\n", Ln, Lweight);
+    printf ("R has W=%" PRIu64 "\n", R->tot_weight);
+    printf ("Theoretical linalg cost N*(|L|+|R|)=%.2e\n",
+            (double) Ln * ((double) Lweight + (double) R->tot_weight));
     fflush (stdout);
 
 /*
