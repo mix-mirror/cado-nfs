@@ -308,7 +308,7 @@ Some more internal parameters.
   vector multiples against the check data computed by the ``secure''
   step. The default is to do the check. If it is not done, it must be
   done externally (by a program which would be trivial to write but which
-  incidetally has never been written).
+  incidentally has never been written).
 * save_submatrices=[0|1] save the sub-matrices used by each node in
   simple binary files. These files are not used by the computation, so
   this option is not enabled by default.
