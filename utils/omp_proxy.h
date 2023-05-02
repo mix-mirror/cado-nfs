@@ -39,17 +39,17 @@ static inline int omp_get_thread_num()
 
 typedef int omp_lock_t;
 
-static inline void omp_init_lock(ompt_lock_t *lock)
+static inline void omp_init_lock(omp_lock_t *lock)
 {
   (void) lock;
 }
 
-static inline void omp_set_lock(ompt_lock_t *lock)
+static inline void omp_set_lock(omp_lock_t *lock)
 {
   (void) lock;
 }
 
-static inline void omp_unset_lock(ompt_lock_t *lock)
+static inline void omp_unset_lock(omp_lock_t *lock)
 {
   (void) lock;
 }
