@@ -20,6 +20,7 @@ cado-nfs.supp
 cado.h
 cado_config_h.in
 cado_mpi_config_h.in
+chart.tex
 ci/00-docker-build.sh
 ci/00-dockerfile.sh
 ci/00-prepare-docker.sh
@@ -826,6 +827,7 @@ misc/explain_indexed_relation.cpp
 misc/indexed_relations_to_density.cpp
 misc/smooth_detect.c
 misc/smooth_detect.h
+output_to_tikz_timechart.pl
 parameters/dlp/Joux-Lercier/params.p100
 parameters/dlp/Joux-Lercier/params.p30
 parameters/dlp/Joux-Lercier/params.p35
