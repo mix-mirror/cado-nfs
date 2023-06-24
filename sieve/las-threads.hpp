@@ -5,6 +5,7 @@
 #include <array>           // for array
 #include <vector>          // for vector
 #include "bucket.hpp"      // for bucket_array_t, emptyhint_t (ptr only)
+#include "verbose.h"
 #include "las-bkmult.hpp"  // for bkmult_specifier
 #include "las-config.h"    // for FB_MAX_PARTS
 #include "threadpool.hpp"  // for thread_pool (ptr only), condition_variable
@@ -14,7 +15,10 @@ class nfs_aux;
 /* A set of n bucket arrays, all of the same type, and methods to reserve one
    of them for exclusive use and to release it again. */
 template <typename T>
-class reservation_array : private monitor {
+class reservation_array :
+    public buckets_are_full::callback_base,
+    private monitor
+{
     /* typically, T is here bucket_array_t<LEVEL, HINT>. It's a
      * non-copy-able object. Yet, it's legit to use std::vectors's on
      * such objects in c++11, provided that we limit ourselves to the
@@ -49,6 +53,17 @@ public:
 
   T &reserve(int);
   void release(T &BA);
+  void diagnosis(int side, fb_factorbase::slicing const & fbs) const override {
+      int LEVEL = T::level;
+      typedef typename T::hint_type HINT;
+      verbose_output_print(0, 2, "# diagnosis for %d%c buckets on side %d (%zu arrays defined)\n",
+              LEVEL, HINT::rtti[0], side, BAs.size());
+      for(auto const & A : BAs) {
+          /* Tell which slices have been processed using this array
+           * exactly */
+          A.diagnosis(side, &A - &BAs[0], fbs);
+      }
+    }
 };
 
 /* A group of reservation arrays, one for each possible update type.
@@ -84,6 +99,23 @@ public:
           std::array<double, FB_MAX_PARTS> const &
           fill_ratio, int logI, nfs_aux&, thread_pool&,
           bool);
+  void diagnosis(int side, int level, fb_factorbase::slicing const & fbs) const {
+      switch(level) {
+          case 1:
+              RA1_short.diagnosis(side, fbs);
+              RA1_long.diagnosis(side, fbs);
+              break;
+          case 2:
+              RA2_short.diagnosis(side, fbs);
+              RA2_long.diagnosis(side, fbs);
+              break;
+          case 3:
+              RA3_short.diagnosis(side, fbs);
+              break;
+          default:
+              ASSERT_ALWAYS(0);
+      }
+  }
 };
 
 extern template class reservation_array<bucket_array_t<1, shorthint_t> >;

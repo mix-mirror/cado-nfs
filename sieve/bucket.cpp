@@ -288,6 +288,48 @@ bucket_array_t<LEVEL, HINT>::average_full() const
 
 template <int LEVEL, typename HINT>
 void
+bucket_array_t<LEVEL, HINT>::diagnosis(int side, int idx, fb_factorbase::slicing const & fbs) const {
+    size_t a = 0;
+    for (unsigned int i = 0; i < n_bucket; ++i)
+        a += nb_of_updates (i);
+    verbose_output_print (0, 2, "# side-%d array #%d processed %zu slices, total %zu updates\n",
+            side, idx, nr_slices, a);
+    ASSERT_ALWAYS(side >= 0);
+    std::vector<size_t> nupdates_per_slice(nr_slices, 0);
+
+    update_t ** fence = bucket_write;
+    for(size_t i = nr_slices ; i-- ; ) {
+        update_t ** previous = get_slice_pointers(i);
+        for(unsigned int j = 0 ; j < n_bucket ; j++) {
+            nupdates_per_slice[i] += fence[j] - previous[j];
+        }
+        fence = previous;
+    }
+
+    for(size_t i = 0 ; i < nr_slices ; i++) {
+        double w = 
+            slice_index[i] < nr_slices ? fbs[slice_index[i]].get_weight() : -1;
+
+        size_t hits = nupdates_per_slice[i];
+
+        std::ostringstream os;
+
+        os << LEVEL << HINT::rtti[0]
+            << " side " << side
+            << " B " << idx
+            << " slice "
+            << std::make_signed<slice_index_t>::type(slice_index[i])
+            // << " thread " << T.thread
+            << " ecost " << w
+            << " hits " << hits
+            << " hratio " << hits/w;
+
+        verbose_output_print (0, 2, "#  %s\n", os.str().c_str());
+    }
+}
+
+template <int LEVEL, typename HINT>
+void
 bucket_array_t<LEVEL, HINT>::log_this_update (
     const update_t update MAYBE_UNUSED,
     const uint64_t offset MAYBE_UNUSED,

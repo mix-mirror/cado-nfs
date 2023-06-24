@@ -4,6 +4,8 @@
 #include <map>
 #include <string>
 #include <sstream>
+#include <array>
+#include <vector>
 #include <pthread.h>
 #include "timing.h"
 #include <cstddef>   // for NULL
@@ -541,7 +543,50 @@ namespace tdict {
 
 // timer_seconds_thread_and_wct is not satisfactory.
 // typedef tdict::tree<tdict::timer_seconds_thread_and_wct> timetree_t;
-typedef tdict::tree<tdict::timer_seconds_thread> timetree_t;
+// typedef tdict::tree<tdict::timer_seconds_thread> timetree_t;
+struct time_bubble_chaser {
+    static int enable;
+    struct timeval tv_get;
+    struct timeval tv_put;
+    int thread;
+    enum kind_t { INIT, SKEWGAUSS, ADJUST, SLICING, ALLOC, SSS, FIB, AB, DS, PBR, PCLAT, ECM, BOTCHED };
+    kind_t kind;
+    typedef std::array<int, 4> id_t;
+    id_t id;
+    /* for FIB, DS: side, level, bucket index */
+    double on_cpu;
+    time_bubble_chaser(int thread, kind_t kind, id_t const & id);
+    time_bubble_chaser& put();
+};
+
+struct timetree_t : public tdict::tree<tdict::timer_seconds_thread> {
+    typedef tdict::tree<tdict::timer_seconds_thread> super;
+    timetree_t() = default;
+    timetree_t(timetree_t const&) = default;
+    timetree_t& operator=(timetree_t const&) = default;
+    timetree_t(timetree_t &&) = default;
+    timetree_t(super const& s) : super(s) {}
+    std::vector<time_bubble_chaser> chart;
+    void display_chart() const;
+    timetree_t& append_chart(timetree_t const& o) {
+        chart.insert(chart.end(), o.chart.begin(), o.chart.end());
+        return *this;
+    }
+    timetree_t& append_botched_chart(timetree_t const& o) {
+        size_t os = chart.size();
+        chart.insert(chart.end(), o.chart.begin(), o.chart.end());
+        for( ; os < chart.size() ; ++os) {
+            chart[os].kind = time_bubble_chaser::BOTCHED;
+        }
+        return *this;
+    }
+    timetree_t& operator+=(timetree_t const& o) {
+        super::operator+=((super const&) o);
+        append_chart(o);
+        return *this;
+    }
+};
+
 
 /* The fast_timetree_t promises to make no system call whatsoever, and to
  * do what it can to get _some_ sense of a timing value, with no pretense

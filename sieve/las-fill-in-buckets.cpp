@@ -317,6 +317,7 @@ inline bool discard_power_for_bucket_sieving<fb_entry_general>(fb_entry_general 
 
 template<int LEVEL>
 struct make_lattice_bases_parameters_base: public task_parameters {
+  // nfs_aux &aux;
   int side;
   nfs_work & ws;
   typename precomp_plattice_t<LEVEL>::vec_type & V;

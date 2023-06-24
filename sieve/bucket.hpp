@@ -16,6 +16,7 @@
 #include <exception>
 #include <cstdio>
 #include <limits>
+#include <array>
 #include <string>
 #include <functional>
 #endif
@@ -154,7 +155,6 @@ public:
     : p(p) {}
 };
 
-
 /* A bucket update type has two template parameters: the level of the bucket
    sieving where the update was created, and the type of factor base prime
    hint it stores, used to speed up factoring of survivors.
@@ -208,6 +208,7 @@ template <int LEVEL, typename HINT> struct bucket_update_t; // IWYU pragma: keep
             public bare_bucket_update_t<LEVEL>                          \
     {                                           			\
       typedef bare_bucket_update_t<LEVEL> bare_t;                       \
+      typedef HINT hint_type;                                           \
       static inline int level() { return LEVEL; }                       \
       bucket_update_t(){};						\
       bucket_update_t(const uint64_t x,                                 \
@@ -309,6 +310,7 @@ class bucket_array_t : private NonCopyable {
     public:
   static const int level = LEVEL;
   typedef bucket_update_t<LEVEL, HINT> update_t;
+  typedef HINT hint_type;
     private:
   update_t *big_data = 0;
   size_t big_size = 0;                  // size of bucket update memory
@@ -471,6 +473,7 @@ public:
       update_t update(offset & ((UINT64_C(1) << logB) - 1), logp);
       push_update(bucket_number, update);
   }
+  void diagnosis(int side, int idx, fb_factorbase::slicing const & fbs) const;
 };
 
 /* Downsort sorts the updates in the bucket_index-th bucket of a level-n

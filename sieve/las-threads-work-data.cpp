@@ -214,6 +214,8 @@ nfs_work::buckets_max_full()
                 os.str().c_str());
 
         throw buckets_are_full(
+                &(sides[side].group.cget<LEVEL,HINT>()),
+                side,
                 k,
                 maxfull_index,
                 maxfull_updates,

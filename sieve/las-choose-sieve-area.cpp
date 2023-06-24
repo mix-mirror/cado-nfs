@@ -28,9 +28,10 @@ static bool choose_sieve_area(las_info const & las,
         uint32_t & J)
 {
     sieve_range_adjust Adj;
-
     int adjust_strategy = las.adjust_strategy;
     {
+    time_bubble_chaser tt(0, time_bubble_chaser::SKEWGAUSS, {0,0,0,0});
+    auto tt_put = call_dtor([&]() { if (ptimer) ptimer->chart.push_back(tt.put());});
 
     /* Our business: find an appropriate siever_config, that is
      * appropriate for this special-q. Different special-q's may lead to
@@ -76,6 +77,8 @@ static bool choose_sieve_area(las_info const & las,
     Adj.Q.sublat.m = conf.sublat_bound;
 
     {
+    time_bubble_chaser tt(0, time_bubble_chaser::ADJUST, {0,0,0,0});
+    auto tt_put = call_dtor([&]() { if (ptimer) ptimer->chart.push_back(tt.put());});
 
     /* Try strategies for adopting the sieving range */
 

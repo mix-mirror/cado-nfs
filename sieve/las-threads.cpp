@@ -40,7 +40,9 @@ reservation_array<T>::allocate_buckets(las_memory_accessor & memory, int n_bucke
             timetree_t::accounting_sibling dummy(timer, tdict_slot_for_alloc_buckets);
 #endif
             TIMER_CATEGORY(timer, bookkeeping());
+            time_bubble_chaser tt(worker->rank(), time_bubble_chaser::ALLOC, {-1,-1,-1,-1});
             B.allocate_memory(memory, n_bucket, ratio / n, logI);
+            timer.chart.push_back(tt.put());
               }, i, 2, cost);
       /* queue 2. Joined in nfs_work::allocate_buckets */
   }
@@ -104,7 +106,8 @@ T &reservation_array<T>::reserve(int wish)
     verbose_output_print(0, 1, "# Error: %s buckets are full (least avg %f), throwing exception\n",
             bkmult_specifier::printkey(k).c_str(),
             least_full);
-    throw buckets_are_full(k, -1, least_full * 1e6, 1 * 1e6); 
+    /* We don't know which side we are, yet, but our caller knows */
+    throw buckets_are_full(this, -1, k, -1, least_full * 1e6, 1 * 1e6); 
   }
 happy:
   in_use[i] = true;
