@@ -45,6 +45,10 @@ detached_cofac_result * detached_cofac_inner(worker_thread * worker, detached_co
 
     nfs_aux::rel_hash_t& rel_hash(aux.get_rel_hash());
 
+    time_bubble_chaser tt(worker->rank(), time_bubble_chaser::ECM,
+            { 0,0,0,0 });
+    auto tt_put = call_dtor([&]() { timer.chart.push_back(tt.put()); });
+
     cofac_standalone & cur(*param);
 
     int nsides = las.cpoly->nb_polys;

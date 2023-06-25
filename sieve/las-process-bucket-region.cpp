@@ -783,6 +783,9 @@ void process_bucket_region_run::operator()() {/*{{{*/
         }
     }
 
+    time_bubble_chaser tt(worker->rank(), time_bubble_chaser::PBR,
+            {-1,int(first_region0_index / ws.nb_buckets[1]),(int) bucket_relative_index,-1});
+
     for (int side = 0; side < nsides; side++) {
         WHERE_AM_I_UPDATE(w, side, side);
         nfs_work::side_data & wss(ws.sides[side]);
@@ -848,6 +851,8 @@ void process_bucket_region_run::operator()() {/*{{{*/
 #endif
 
     cofactoring_sync(survivors);
+
+    timer.chart.push_back(tt.put());
 }/*}}}*/
 
 

@@ -1233,9 +1233,12 @@ static void downsort_aux(
             MARK_TIMER_FOR_SIDE(timer, side);
             taux.w = w;
             CHILD_TIMER(timer, TEMPLATE_INST_NAME(downsort, LEVEL));
+            time_bubble_chaser tt(worker->rank(), time_bubble_chaser::DS,
+                    {side,LEVEL,bucket_index,-1});
             auto & BAout(wss.reserve_BA<LEVEL, longhint_t>(wss.rank_BA(BAin)));
             downsort<LEVEL+1>(fbs, BAout, BAin, bucket_index, taux.w);
             wss.template release_BA<LEVEL,longhint_t>(BAout);
+            timer.chart.push_back(tt.put());
         }, bucket_index, 0);
     }
 }
@@ -1309,6 +1312,8 @@ downsort_tree_inner(
                 ENTER_THREAD_TIMER(timer);
                 MARK_TIMER_FOR_SIDE(timer, side);
                 CHILD_TIMER(timer, TEMPLATE_INST_NAME(downsort, LEVEL));
+                time_bubble_chaser tt(worker->rank(), time_bubble_chaser::DS,
+                        {side,LEVEL,bucket_index,-1});
                 auto & BAout(wss.reserve_BA<LEVEL, my_longhint_t>(wss.rank_BA(BAin)));
                 // This is a fake slice_index. For a longhint_t bucket,
                 // each update contains its own slice_index, directly
@@ -1319,6 +1324,7 @@ downsort_tree_inner(
                         std::numeric_limits<slice_index_t>::max());
                 downsort<LEVEL+1>(fbs, BAout, BAin, bucket_index, taux.w);
                 wss.template release_BA<LEVEL,my_longhint_t>(BAout);
+                timer.chart.push_back(tt.put());
             }, bucket_index, 0);
         }
         // What comes from already downsorted data above. We put this in
@@ -1371,6 +1377,8 @@ downsort_tree_inner(
                   ENTER_THREAD_TIMER(timer);
                   MARK_TIMER_FOR_SIDE(timer, side);
                   SIBLING_TIMER(timer, "prepare small sieve");
+                  time_bubble_chaser tt(worker->rank(), time_bubble_chaser::SSS,
+                          {side,1,-1,-1});
                   nfs_work::side_data & wss(ws.sides[side]);
                   // if (wss.no_fb()) return;
                   SIBLING_TIMER(timer, "small sieve start positions");
@@ -1384,6 +1392,7 @@ downsort_tree_inner(
                           std::min(SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE, ws.nb_buckets[1]),
                           ws.conf.logI, ws.Q.sublat);
                   small_sieve_activate_many_start_positions(wss.ssd);
+                  timer.chart.push_back(tt.put());
                   },0);
       }
 

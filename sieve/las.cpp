@@ -118,6 +118,7 @@ static void configure_switches(cxx_param_list & pl)
     param_list_configure_switch(pl, "-sync", &sync_at_special_q);
     param_list_configure_switch(pl, "-never-discard", &never_discard);
     param_list_configure_switch(pl, "-production", &las_production_mode);
+    param_list_configure_switch(pl, "-gantt", &time_bubble_chaser::enable);
 }
 
 static void declare_usage(cxx_param_list & pl)/*{{{*/
@@ -162,6 +163,9 @@ static void declare_usage(cxx_param_list & pl)/*{{{*/
     param_list_decl_usage(pl, "never-discard", "Disable the discarding process for special-q's. This is dangerous. See bug #15617");
 
     param_list_decl_usage(pl, "production", "Sort of an opposite to -v. Disable all diagnostics except the cheap or critical ones. See #21688 and #21825.");
+
+    param_list_decl_usage(pl, "gantt", "With -v -v, output data to generate a time chart of fill_in_buckets");
+
     verbose_decl_usage(pl);
 }/*}}}*/
 
@@ -724,6 +728,14 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
         {
             /* allocate_bucket_regions is probably ridiculously cheap in
              * comparison to allocate_buckets */
+
+            // FIXME: do we want to make any of these appear in the
+            // chronogram? Around allocate_bucket_regions(), the original
+            // chronograms branch had:
+            // time_bubble_chaser tt(0, time_bubble_chaser::ALLOC, {-1,-1,-1,-1});
+            // timer_special_q.chart.push_back(tt.put());
+
+
             // ws.allocate_bucket_regions();
             ws.allocate_buckets(*aux_p, pool);
         }
@@ -754,6 +766,9 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
                     SIBLING_TIMER(timer, "prepare small sieve");
 
+                    time_bubble_chaser tt(worker->rank(), time_bubble_chaser::SSS,
+                            {side, ws.toplevel,-1,-1});
+
                     nfs_work::side_data & wss(ws.sides[side]);
                     // if (wss.no_fb()) return;
 
@@ -779,6 +794,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
                                 ws.conf.logI, ws.Q.sublat);
                         small_sieve_activate_many_start_positions(wss.ssd);
                     }
+                    timer.chart.push_back(tt.put());
             },0);
         }
 
@@ -862,7 +878,11 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
 
     BOOKKEEPING_TIMER(timer_special_q);
 
-    ws.prepare_for_new_q(las);
+    {
+        time_bubble_chaser tt(0, time_bubble_chaser::INIT, {-1,-1,-1,-1});
+        ws.prepare_for_new_q(las);
+        timer_special_q.chart.push_back(tt.put());
+    }
 
     /* the where_am_I structure is store in nfs_aux. We have a few
      * adjustments to make, and we want to make sure that the threads,
@@ -883,6 +903,7 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
     std::shared_ptr<nfs_work_cofac> wc_p;
 
     {
+        time_bubble_chaser tt(0, time_bubble_chaser::INIT, {-1,-1,-1,-1});
         wc_p = std::make_shared<nfs_work_cofac>(las, ws);
 
         rep.total_logI += ws.conf.logI;
@@ -907,6 +928,7 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
                     "# Warning, q=%Zd is not prime\n",
                     (mpz_srcptr) ws.Q.doing.p);
         }
+        timer_special_q.chart.push_back(tt.put());
     }
 
     unsigned int sublat_bound = ws.Q.sublat.m;
@@ -1271,6 +1293,14 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
         global_rt.rep.nwaste += nwaste;
         global_rt.rep.cumulated_wait_time += cumulated_wait_time;
         global_rt.rep.waste += botched.timer.total_counted_time();
+    }
+
+    // not entirely sure that we should do that.
+    global_rt.timer.append_botched_chart(botched.timer);
+
+    if (time_bubble_chaser::enable) {
+        verbose_output_print (0, 2, "# displaying time chart for %d threads\n", las.number_of_threads_total());
+        global_rt.timer.display_chart();
     }
 
     verbose_output_print(0, 1, "# subjob %d done (%d special-q's), now waiting for other jobs\n", subjob, nq);
