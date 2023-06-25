@@ -58,6 +58,7 @@ void fill_in_buckets_toplevel(
 
 void fill_in_buckets_prepare_plattices(
         nfs_work & ws,
+        nfs_aux &aux,
         thread_pool &pool,
         int side,
         multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS> & precomp_plattice);

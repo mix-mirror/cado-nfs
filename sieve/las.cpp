@@ -734,7 +734,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
             fill_in_buckets_toplevel(ws, aux, pool, side, w);
 
-            fill_in_buckets_prepare_plattices(ws, pool, side, precomp_plattice);
+            fill_in_buckets_prepare_plattices(ws, aux, pool, side, precomp_plattice);
 
         }
 

@@ -317,13 +317,17 @@ inline bool discard_power_for_bucket_sieving<fb_entry_general>(fb_entry_general 
 
 template<int LEVEL>
 struct make_lattice_bases_parameters_base: public task_parameters {
-  // nfs_aux &aux;
   int side;
   nfs_work & ws;
+  nfs_aux &aux;
   typename precomp_plattice_t<LEVEL>::vec_type & V;
-  make_lattice_bases_parameters_base(int side, nfs_work & ws,
+  make_lattice_bases_parameters_base(
+          int side, nfs_work & ws,
+          nfs_aux &aux,
           typename precomp_plattice_t<LEVEL>::vec_type & V) :
-      side(side), ws(ws), V(V)
+      side(side), ws(ws),
+      aux(aux),
+      V(V)
     {}
 };
 template <int LEVEL, class FB_ENTRY_TYPE>
@@ -344,6 +348,10 @@ make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
 {
     const make_lattice_bases_parameters<LEVEL, FB_ENTRY_TYPE> *param = static_cast<const make_lattice_bases_parameters<LEVEL, FB_ENTRY_TYPE> *>(_param);
 
+   int id = worker->rank();
+   nfs_aux::thread_data & taux(param->aux.th[id]);
+   timetree_t & timer(taux.timer);
+
     nfs_work & ws(param->ws);
     qlattice_basis const &Q(ws.Q);
     int logI = ws.conf.logI;
@@ -352,6 +360,8 @@ make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
     fb_slice<FB_ENTRY_TYPE> const & slice(param->slice);
 
    slice_index_t index = slice.get_index();
+
+   time_bubble_chaser tt(worker->rank(), time_bubble_chaser::PCLAT, { param->side, LEVEL, 0, (int) index});
 
   typename FB_ENTRY_TYPE::transformed_entry_t transformed;
   /* Create a transformed vector and store the index of the fb_slice we
@@ -386,6 +396,7 @@ make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
   }
   /* This is moved, not copied. Note that V is a reference. */
   V[result.get_index()] = std::move(result);
+  timer.chart.push_back(tt.put());
   delete param;
   return new task_result;
 }
@@ -409,9 +420,10 @@ struct push_make_bases_to_task_list {
 struct helper_functor_prepare_precomp_plattice
 {
     nfs_work & ws;
+    nfs_aux & aux;
     thread_pool &pool;
     int side;
-    helper_functor_prepare_precomp_plattice(nfs_work & ws, thread_pool &pool, int side) : ws(ws), pool(pool), side(side) {}
+    helper_functor_prepare_precomp_plattice(nfs_work & ws, nfs_aux & aux, thread_pool &pool, int side) : ws(ws), aux(aux), pool(pool), side(side) {}
 
     template<typename T>        /* T is precomp_plattice_t<n> for some level n */
         void operator()(T & precomp_plattice)
@@ -428,15 +440,15 @@ struct helper_functor_prepare_precomp_plattice
              * done with their job.
              */
             V.assign(P.nslices(), plattices_vector_t<T::level>());
-            make_lattice_bases_parameters_base<T::level> model { side, ws, V };
+            make_lattice_bases_parameters_base<T::level> model { side, ws, aux, V };
             push_make_bases_to_task_list<T::level> F { pool, model };
             P.foreach_slice(F);
         }
 };
 
-void fill_in_buckets_prepare_plattices(nfs_work & ws, thread_pool &pool, int side, multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS> & precomp_plattice)
+void fill_in_buckets_prepare_plattices(nfs_work & ws, nfs_aux & aux, thread_pool &pool, int side, multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS> & precomp_plattice)
 {
-    helper_functor_prepare_precomp_plattice H(ws, pool, side);
+    helper_functor_prepare_precomp_plattice H(ws, aux, pool, side);
 
     /* this will *not* do anything for level==ws.toplevel, by design */
     multityped_array_foreach(H, precomp_plattice);
@@ -894,6 +906,15 @@ fill_in_buckets_one_slice_internal(worker_thread * worker, task_parameters * _pa
         bucket_array_t<LEVEL, TARGET_HINT> &BA =
             wss.reserve_BA<LEVEL, TARGET_HINT>(-1);
 
+        time_bubble_chaser tt(worker->rank(), time_bubble_chaser::FIB,
+                {
+                param->side,
+                LEVEL,
+                param->ws.sides[param->side].rank_BA(BA),
+                (int) param->plattices_vector->get_index()
+                }
+            );
+
         /* Fill the buckets */
         try {
             fill_in_buckets_lowlevel<LEVEL>(BA,
@@ -901,12 +922,15 @@ fill_in_buckets_one_slice_internal(worker_thread * worker, task_parameters * _pa
                     *param->plattices_vector,
                     (param->first_region0_index == 0), w);
         } catch(buckets_are_full & e) {
+            timer.chart.push_back(tt.put());
             wss.release_BA(BA);
             throw e;
         }
         /* Release bucket array again */
+        timer.chart.push_back(tt.put());
         wss.release_BA(BA);
     } catch(buckets_are_full & e) {
+        e.side = param->side;
         delete param;
         throw e;
     }
@@ -958,16 +982,28 @@ fill_in_buckets_toplevel_wrapper(worker_thread * worker MAYBE_UNUSED, task_param
         ASSERT(param->slice);
         fb_slice<FB_ENTRY_TYPE> const * sl = dynamic_cast<fb_slice<FB_ENTRY_TYPE> const *>(param->slice);
         ASSERT_ALWAYS(sl != NULL);
+        time_bubble_chaser tt(worker->rank(), time_bubble_chaser::FIB,
+                {
+                side,
+                LEVEL,
+                param->ws.sides[param->side].rank_BA(BA),
+                (int) param->slice->get_index()
+                }
+                );
         fill_in_buckets_toplevel<LEVEL,FB_ENTRY_TYPE,TARGET_HINT>(BA,
                 ws,
                 *sl,
                 param->plattices_dense_vector,
                 w);
         /* Release bucket array again */
+        timer.chart.push_back(tt.put());
         wss.release_BA(BA);
         delete param;
         return new task_result;
-    } catch (buckets_are_full const& e) {
+    } catch (buckets_are_full & e) {
+        e.side = param->side;
+        /* release_BA not needed, because failures in reserve() release
+         * the lock before throwing */
         delete param;
         throw e;
     }
@@ -1008,16 +1044,26 @@ fill_in_buckets_toplevel_sublat_wrapper(worker_thread * worker MAYBE_UNUSED, tas
     try {
         /* Get an unused bucket array that we can write to */
         bucket_array_t<LEVEL, TARGET_HINT> &BA = wss.reserve_BA<LEVEL, TARGET_HINT>(-1);
+        time_bubble_chaser tt(worker->rank(), time_bubble_chaser::FIB,
+                {
+                side,
+                LEVEL,
+                param->ws.sides[param->side].rank_BA(BA),
+                (int) param->slice->get_index()
+                }
+                );
         ASSERT(param->slice);
         fill_in_buckets_toplevel_sublat<LEVEL,FB_ENTRY_TYPE>(BA,
                 ws,
                 *dynamic_cast<fb_slice<FB_ENTRY_TYPE> const *>(param->slice),
                 param->plattices_dense_vector, w);
         /* Release bucket array again */
+        timer.chart.push_back(tt.put());
         wss.release_BA(BA);
         delete param;
         return new task_result;
-    } catch (buckets_are_full const& e) {
+    } catch (buckets_are_full & e) {
+        e.side = param->side;
         delete param;
         throw e;
     }
@@ -1348,6 +1394,13 @@ downsort_tree_inner(
        */
 
       ws.check_buckets_max_full();
+
+#if 1
+      /* It may make sense to print a diagnosis of the fill ratio of the
+       * different buckets. It's quite verbose, though */
+      ws.diagnosis(LEVEL);
+#endif
+
       auto exc = pool.get_exceptions<buckets_are_full>(0);
       if (!exc.empty()) {
           throw *std::max_element(exc.begin(), exc.end());

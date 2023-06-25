@@ -186,9 +186,27 @@ class nfs_work {
             bucket_arrays() const {return group.cget<LEVEL, HINT>().bucket_arrays();}
 
         dumpfile_t dumpfile;
+
+        /* the side index gets passed only for pretty printing. We could
+         * conceivably do away with it. At this point, for an
+         * nfs_work::side_data object, there's obviously only one side to
+         * speak of (and the object could possibly keep track of its
+         * "name", perhaps).
+         */
+        void diagnosis(int side, int level) const {
+            group.diagnosis(side, level, *fbs);
+        }
     };
 
     std::array<side_data, 2> sides;
+
+    void diagnosis(int level) const {
+        for(decltype(sides)::size_type side = 0 ; side < sides.size() ; side++) {
+            sides[side].diagnosis(side, level);
+        }
+    }
+
+
 
     /* All of this exists _for each thread_ */
     struct thread_data {
