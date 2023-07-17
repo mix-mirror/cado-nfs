@@ -149,7 +149,7 @@ static inline void zeropad_transform(
 // Some constants related to Cantor's algorithm
 // Beta_i are such that Beta_{i-1} = Beta_i^2 + Beta_i
 // and { Beta_i : i in [1..128] } is a GF(2)-basis of GF(2^128).
-// The following is (the begining of) a solution.
+// The following is (the beginning of) a solution.
 // NB: the defining polynomial for GF(2^128) is x^128 + x^7 + x^2 + x + 1
 //
 //

@@ -16,7 +16,7 @@
   active page is FULL, the thread grabs an EMPTY page that becomes its new
   active page.  
 
-  In each page, there is a pointer [[ptr]] to the begining of the free space.
+  In each page, there is a pointer [[ptr]] to the beginning of the free space.
   To allocate [[b]] bytes for a new row, it suffices to note the current
   value of[[ptr]] and then to increase it by [[b]] --- if this would overflow
   the current page, then it is marked as FULL and a new active page is

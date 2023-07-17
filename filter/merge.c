@@ -324,7 +324,7 @@ check_matrix (filter_matrix_t *mat)
     }
 }
 
-/* Stack non-empty columns at the begining. Update mat->p (for DL) and jmin.
+/* Stack non-empty columns at the beginning. Update mat->p (for DL) and jmin.
    We also have to "recompress" R->wt[]. */
 static void recompress(filter_matrix_t *R, filter_matrix_t *mat, index_t *jmin)
 {
@@ -399,7 +399,7 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
                     if (0 < mat->wt[j])
                     {
                       nwt[p[j]] = mat->wt[j];
-                      R->wt[p[j]] = R->wt[j];
+                      R->wt[p[j]] = mat->wt[j];
                     }
 
             } /* end parallel section */
@@ -1786,8 +1786,14 @@ main (int argc, char *argv[])
                 Lweight += rowLength(L->rows, i);
         }
 
+    /* stats on R (mostly for debugging for now) */
+    uint64_t Rweight = 0;
+    for (index_t j = 0; j < mat->rem_ncols; j++)
+      Rweight += R->wt[j];
+
     printf ("L has N=%" PRIu64 " W=%" PRIu64 "\n", Ln, Lweight);
-    printf ("R has W=%" PRIu64 "\n", R->tot_weight);
+    printf ("R has N=%" PRIu64 " W=%" PRIu64 "\n",
+            mat->rem_ncols, Rweight);
     printf ("Theoretical linalg cost N*(|L|+|R|)=%.2e\n",
             (double) Ln * ((double) Lweight + (double) R->tot_weight));
     fflush (stdout);
