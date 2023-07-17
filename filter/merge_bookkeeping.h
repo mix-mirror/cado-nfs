@@ -77,8 +77,6 @@ extern "C" {
 void
 print_timings (char *s, double cpu, double wct);
 
-extern int merge_pass;
-
 #ifdef __cplusplus
 }
 #endif
