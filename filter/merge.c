@@ -393,13 +393,18 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
                         matCell(mat, i, l) = p[matCell(mat, i, l)];
                 }
 
-                /* update mat->wt */
+                /* update mat->wt and R->wt */
 #pragma omp for schedule(static) /* static is slightly better than guided */
                 for (index_t j = 0; j < ncols; j++)
                     if (0 < mat->wt[j])
                     {
                       nwt[p[j]] = mat->wt[j];
-                      R->wt[p[j]] = mat->wt[j];
+                      /* Note: during the 2-merges, R->wt[] is not
+                         initialized, thus the following is useless
+                         (but does not hurt).
+                         After the 2-merges, we call
+                         compute_weights_R() which initializes R->wt[]. */
+                      R->wt[p[j]] = R->wt[j];
                     }
 
             } /* end parallel section */
