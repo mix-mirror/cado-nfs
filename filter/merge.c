@@ -1035,7 +1035,7 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *mat, index_t j)
 
   /* We return the original Markowitz cost, i.e., we optimize the weight
      increase of the matrix product M=L*R. */
-  return (w - 2) * (cmin - 1) + BIAS;
+  return (w - 1) * (cmin - 2) + BIAS;
 }
 
 /* Output a list of merges to a string.
