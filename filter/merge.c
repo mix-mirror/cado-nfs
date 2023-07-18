@@ -324,6 +324,17 @@ check_matrix (filter_matrix_t *mat)
     }
 }
 
+/* Put the initial weights (after the initial 2-merges) in R->wt[].
+   Warning: these weights are saturated at 255, thus cannot be used
+   to compute the total weight of R. */
+static void
+compute_weights_R (filter_matrix_t *R, filter_matrix_t *mat)
+{
+#pragma omp parallel for
+  for (index_t j = 0; j < mat->ncols; j++)
+    R->wt[j] = mat->wt[j];
+}
+
 /* Stack non-empty columns at the beginning. Update mat->p (for DL) and jmin.
    We also have to "recompress" R->wt[]. */
 static void recompress(filter_matrix_t *R, filter_matrix_t *mat, index_t *jmin)
@@ -932,7 +943,7 @@ printRow (filter_matrix_t *mat, index_t i)
 }
 #endif
 
-#define BIAS (col_weight_t) (-1)
+#define BIAS (int32_t) ((col_weight_t) (-1))
 
 /* classical cost: merge the row of smaller weight with the other ones,
    and return the merge cost (taking account of cancellations).
@@ -954,7 +965,7 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 {
   index_t lo = mat->Rp[j];
   index_t hi = mat->Rp[j + 1];
-  int w = hi - lo; /* weight of the considered ideal */
+  int32_t w = hi - lo; /* weight of the considered ideal */
 
   if (w <= 2)
     return 0; /* ensure all 1-and 2-merges are processed first
@@ -976,6 +987,7 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 
   /* since R->wt[j] <= BIAS, and w > 2, the value below is > 0, which
      ensures those merges will be processed after the 1- and 2-merges */
+  assert ((w - 2) * cmin + BIAS > R->wt[j]);
   return (w - 2) * cmin + BIAS - R->wt[j];
 }
 
@@ -1046,10 +1058,6 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 
   ASSERT (1 <= w && w <= mat->cwmax);
 
-  /* update the total weight of R */
-#pragma omp atomic update
-  R->tot_weight -= R->wt[j];
-
   if (w == 1) {             // eliminate a singleton column
       char s[MERGE_CHAR_MAX];
       int n MAYBE_UNUSED;
@@ -1057,29 +1065,43 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
       n = sreportn (s, MERGE_CHAR_MAX, &i, 1, mat->p[j]);
       ASSERT(n < MERGE_CHAR_MAX);
       buffer_add (buf, s);
-      return remove_row (L, mat, i);
+      c = remove_row (L, mat, i);
     }
-
-  /* perform the real merge and output to history file */
-  index_t *ind = mat->Ri + t;
-  char s[MERGE_CHAR_MAX];
-  int n = 0; /* number of characters written to s (except final \0) */
-  int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
-  fillRowAddMatrix (A, L, w, ind, j);          // mst.c.
-  /* mimic MSTWithA */
-  int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
-  minimalSpanningTree (start, end, w, A);
-  index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
-  int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end, &c);
-  for (int i = hmax; i >= 0; i--)
+  else {
+    /* perform the real merge and output to history file */
+    index_t *ind = mat->Ri + t;
+    char s[MERGE_CHAR_MAX];
+    int n = 0; /* number of characters written to s (except final \0) */
+    int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
+    fillRowAddMatrix (A, L, w, ind, j);          // mst.c.
+    /* mimic MSTWithA */
+    int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
+    minimalSpanningTree (start, end, w, A);
+    index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
+    int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end, &c);
+    for (int i = hmax; i >= 0; i--)
     {
       n += sreportn (s + n, MERGE_CHAR_MAX - n,
 		     (index_signed_t*) (history[i]+1), history[i][0],
 		     mat->p[j]);
       ASSERT(n < MERGE_CHAR_MAX);
     }
-  buffer_add (buf, s);
-  c += remove_row (L, mat, ind[0]);
+    buffer_add (buf, s);
+    c += remove_row (L, mat, ind[0]);
+  }
+
+  /* Update the total weight of R. We check the merged column has not a
+     saturated weight (which should not happen in practice). */
+  ASSERT_ALWAYS (R->wt[j] < (col_weight_t) -1);
+  if (twomerge_mode) // we apply the merge directly to R
+#pragma omp atomic update
+    R->tot_weight += c;
+  else        // we remove column j from R
+#pragma omp atomic update
+    /* Warning: R->wt[j] (the weight of column j after the 2-merges)
+       might differ from w (the current weight of column j). */
+    R->tot_weight -= R->wt[j];
+
   return c;
 }
 
@@ -1401,20 +1423,6 @@ void sanity_check_matrix_sizes(filter_matrix_t * mat MAYBE_UNUSED)
 #endif
 }
 
-/* put the initial weights (after the initial 2-merges) in R->wt[] */
-static void
-compute_weights_R (filter_matrix_t *R, filter_matrix_t *mat)
-{
-  uint64_t tot_weight = 0;
-#pragma omp parallel for reduction(+: tot_weight)
-  for (index_t j = 0; j < mat->ncols; j++)
-  {
-    R->wt[j] = mat->wt[j];
-    tot_weight += mat->wt[j];
-  }
-  R->tot_weight = tot_weight;
-}
-
 int
 main (int argc, char *argv[])
 {
@@ -1549,6 +1557,9 @@ main (int argc, char *argv[])
     index_t jmin[MERGE_LEVEL_MAX + 1] = {0,};
 
     compute_weights (mat, jmin);
+    /* Initially, R=mat, thus they have the same weights. */
+    compute_weights_R (R, mat);
+    R->tot_weight = mat->tot_weight;
 
     recompress (R, mat, jmin);
 
@@ -1725,7 +1736,7 @@ main (int argc, char *argv[])
 	fflush (stdout);
 
 	if (average_density (mat) >= target_density)
-		break;
+          break;
 
         /* With small cbound_incr, in particular cbound_incr=1,
            we might have zero potential merge when cbound is small,
@@ -1733,10 +1744,9 @@ main (int argc, char *argv[])
            merge being proportional to the square of the column weight). */
 	if (nmerges == 0 && mat->cwmax == MERGE_LEVEL_MAX &&
             cbound > mat->cwmax * mat->cwmax)
-		break;
+          break;
     }
     /****** end main loop ******/
-    merge_pass++;
 
 #if defined(DEBUG) && defined(FOR_DL)
     min_exp = 0; max_exp = 0;
@@ -1792,14 +1802,9 @@ main (int argc, char *argv[])
                 Lweight += rowLength(L->rows, i);
         }
 
-    /* stats on R (mostly for debugging for now) */
-    uint64_t Rweight = 0;
-    for (index_t j = 0; j < mat->rem_ncols; j++)
-      Rweight += R->wt[j];
-
     printf ("L has N=%" PRIu64 " W=%" PRIu64 "\n", Ln, Lweight);
     printf ("R has N=%" PRIu64 " W=%" PRIu64 "\n",
-            mat->rem_ncols, Rweight);
+            mat->rem_ncols, R->tot_weight);
     printf ("Theoretical linalg cost N*(|L|+|R|)=%.2e\n",
             (double) Ln * ((double) Lweight + (double) R->tot_weight));
     fflush (stdout);
