@@ -65,8 +65,6 @@ void print_row(filter_matrix_t *mat, index_t i);
 
 #define SPARSE_ITERATE(mat, i, k) for((k)=1; (k)<=lengthRow((mat),(i)); (k)++)
 
-int weightSum(filter_matrix_t *mat, index_t i1, index_t i2, index_t j);
-
 #ifdef __cplusplus
 }
 #endif

@@ -755,6 +755,8 @@ increase_weight (filter_matrix_t *mat, index_t j)
 static int32_t
 add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
 {
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
 	index_t k1 = matLengthRow(L, i1);
 	index_t k2 = matLengthRow(L, i2);
 	index_t t1 = 1, t2 = 1;
@@ -769,21 +771,28 @@ add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MA
 	typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
 
 	while (t1 <= k1 && t2 <= k2) {
-		if (L->rows[i1][t1] == L->rows[i2][t2]) {
-			decrease_weight(L, L->rows[i1][t1]);
-			t1 ++, t2 ++;
-		} else if (L->rows[i1][t1] < L->rows[i2][t2]) {
-			sum[++t] = L->rows[i1][t1++];
+		index_t j1 = r1[t1]; 
+		index_t j2 = r2[t2];
+		if (j1 == j2) {
+			decrease_weight(L, j1);
+			t1++;
+			t2++;
+		} else if (j1 < j2) {
+			t++;
+			sum[t] = j1;
+			t1++;
 		} else {
-			increase_weight(L, L->rows[i2][t2]);
-			sum[++t] = L->rows[i2][t2++];
+			increase_weight(L, j2);
+			t++;
+			sum[t] = j2;
+			t2++;
 		}
 	}
 	while (t1 <= k1)
-	      sum[++t] = L->rows[i1][t1++];
+	      sum[++t] = r1[t1++];
 	while (t2 <= k2) {
-	    increase_weight(L, L->rows[i2][t2]);
-	    sum[++t] = L->rows[i2][t2++];
+	    increase_weight(L, r2[t2]);
+	    sum[++t] = r2[t2++];
 	}
 	ASSERT(t <= k1 + k2);
 
@@ -797,9 +806,41 @@ add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MA
 	heap_resize_last_row(L->heap, sum, t);
 	heap_destroy_row(L->heap, L->rows[i1]);
 	L->rows[i1] = sum;
-
 	return t - k1; /* weight increase when replacing i1 by i1+i2 */
 }
+
+/* return the weight of the relation obtained when adding relations i1 and i2.
+ * This is quite similar to add_row
+ */
+int
+weightSum(const filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
+{
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
+	index_t t1 = 1, t2 = 1;
+	index_t t = 0;
+	while (t1 <= k1 && t2 <= k2) {
+		index_t j1 = r1[t1]; 
+		index_t j2 = r2[t2];
+		if (j1 == j2) {
+			t1++;
+			t2++;
+		} else if (j1 < j2) {
+			t++;
+			t1++;
+		} else {
+			t++;
+			t2++;
+		}
+	}
+	t += (k1 - t1) + (k2 - t2);
+	ASSERT(t <= k1 + k2);
+	return t;
+}
+
+
 #else /* FOR_DL: j is the ideal to be merged */
 #define INT32_MIN_64 (int64_t) INT32_MIN
 #define INT32_MAX_64 (int64_t) INT32_MAX
@@ -817,63 +858,58 @@ add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED i
 	cancel_rows ++;
 #endif
 
-  /* now perform the real merge on L */
-  index_t t1 = 1, t2 = 1, t = 0;
-  typerow_t *r1 = L->rows[i1];
-  typerow_t *r2 = L->rows[i2];
-  index_t k1 = matLengthRow(L, i1);
-  index_t k2 = matLengthRow(L, i2);
-  typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
+	/* now perform the real merge on L */
+	index_t t1 = 1, t2 = 1, t = 0;
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
+	typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
 
-  int64_t e;
-  while (t1 <= k1 && t2 <= k2) {
-      if (r1[t1].id == r2[t2].id) {
-	  /* as above, the exponent e below cannot overflow */
-	  e = (int64_t) e2 * (int64_t) r1[t1].e + (int64_t) e1 * (int64_t) r2[t2].e;
-	  if (e != 0) { /* exponents do not cancel */
-	      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-	      t++;
-	      setCell(sum, t, r1[t1].id, e);
-	    }
-	  else
-	    decrease_weight (L, r1[t1].id);
-	  t1 ++, t2 ++;
+	while (t1 <= k1 && t2 <= k2) {
+		if (r1[t1].id == r2[t2].id) {
+			/* as above, the exponent e below cannot overflow */
+			int64_t e = (int64_t) e2 * (int64_t) r1[t1].e + (int64_t) e1 * (int64_t) r2[t2].e;
+			if (e != 0) { /* exponents do not cancel */
+				ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+				t++;
+				setCell(sum, t, r1[t1].id, e);
+			} else {
+				decrease_weight (L, r1[t1].id);
+			}
+	  		t1++;
+	  		t2++;
+		} else if (r1[t1].id < r2[t2].id) {
+			int64_t e = (int64_t) e2 * (int64_t) r1[t1].e;
+			ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+			t++;
+			setCell(sum, t, r1[t1].id, e);
+			t1 ++;
+		} else {
+	  		int64_t e = (int64_t) e1 * (int64_t) r2[t2].e;
+	  		ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+	  		t++;
+	  		setCell(sum, t, r2[t2].id, e);
+	  		increase_weight (L, r2[t2].id);
+	  		t2 ++;
+		}
 	}
-      else if (r1[t1].id < r2[t2].id)
-	{
-	  e = (int64_t) e2 * (int64_t) r1[t1].e;
-	  ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-	  t++;
-	  setCell(sum, t, r1[t1].id, e);
-	  t1 ++;
+	while (t1 <= k1) {
+		int64_t e = (int64_t) e2 * (int64_t) r1[t1].e;
+		ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+		t++;
+		setCell(sum, t, r1[t1].id, e);
+		t1 ++;
 	}
-      else
-	{
-	  e = (int64_t) e1 * (int64_t) r2[t2].e;
-	  ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-	  t++;
-	  setCell(sum, t, r2[t2].id, e);
-	  increase_weight (L, r2[t2].id);
-	  t2 ++;
+	while (t2 <= k2) {
+		int64_t e = (int64_t) e1 * (int64_t) r2[t2].e;
+		ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+		t++;
+		setCell(sum, t, r2[t2].id, e);
+		increase_weight (L, r2[t2].id);
+		t2 ++;
 	}
-    }
-  while (t1 <= k1) {
-      e = (int64_t) e2 * (int64_t) r1[t1].e;
-      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-      t++;
-      setCell(sum, t, r1[t1].id, e);
-      t1 ++;
-    }
-  while (t2 <= k2) {
-      e = (int64_t) e1 * (int64_t) r2[t2].e;
-      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-      t++;
-      setCell(sum, t, r2[t2].id, e);
-      increase_weight (L, r2[t2].id);
-      t2 ++;
-    }
-    ASSERT(t <= k1 + k2);
-
+	ASSERT(t <= k1 + k2);
 
 #ifdef CANCEL
 	int cancel = (t1 - 1) + (t2 - 1) - (t - 1);
@@ -882,12 +918,47 @@ add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED i
 	cancel_cols[cancel] ++;
 #endif
 
-  heap_resize_last_row(L->heap, sum, t);
-  heap_destroy_row(L->heap, L->rows[i1]);
-  L->rows[i1] = sum;
-
-  return t - k1;
+	heap_resize_last_row(L->heap, sum, t);
+	heap_destroy_row(L->heap, L->rows[i1]);
+	L->rows[i1] = sum;
+	return t - k1;
 }
+
+/* return the weight of the relation obtained when adding relations e1*i1 and e2*i2.
+ * This is quite similar to add_row
+ */
+int
+weightSum(const filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
+{
+	ASSERT (e1 != 0 && e2 != 0);
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
+	index_t t1 = 1, t2 = 1;
+	index_t t = 0;
+
+	while (t1 <= k1 && t2 <= k2) {
+		if (r1[t1].id == r2[t2].id) {
+			/* as above, the exponent e below cannot overflow */
+			int64_t e = (int64_t) e2 * (int64_t) r1[t1].e + (int64_t) e1 * (int64_t) r2[t2].e;
+			if (e != 0) 
+				t++;   /* exponents do not cancel */
+			t1++;
+			t2++;
+		} else if (r1[t1].id < r2[t2].id) {
+			t++;
+			t1++;
+		} else {
+			t++;
+			t2++;
+		}
+	}
+	t += (k1 - t1) + (k2 - t2);
+	ASSERT(t <= k1 + k2);
+	return t;
+}
+
 #endif
 
 /* L is the "left" matrix (rows are relations-sets, columns are relations),
@@ -1002,6 +1073,36 @@ sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
   return m;
 }
 
+/* Rows i1, i2 in mat have an entry on column j; Set e1, e2 to the exponent */
+static void locate_columns(MAYBE_UNUSED const filter_matrix_t *mat, 
+	MAYBE_UNUSED index_t i1, MAYBE_UNUSED index_t i2, 
+	MAYBE_UNUSED index_t j, MAYBE_UNUSED int32_t *e1, MAYBE_UNUSED int32_t *e2)
+{
+	#ifdef FOR_DL
+	uint32_t k1 = matLengthRow (mat, i1);
+	uint32_t k2 = matLengthRow (mat, i2);
+	typerow_t *r1 = mat->rows[i1];
+	typerow_t *r2 = mat->rows[i2];
+	*e1 = 0;
+	*e2 = 0;
+		
+	/* search by decreasing ideals as the ideal to be merged is likely large */
+	for (int l = k1; l >= 1; l--)
+		if (r1[l].id == j) {
+			*e1 = r1[l].e;
+			break;
+		}
+	for (int l = k2; l >= 1; l--)
+		if (r2[l].id == j) {
+			*e2 = r2[l].e;
+			break;
+		}
+	int d = (int) gcd_int64 ((int64_t) *e1, (int64_t) *e2);
+	*e1 /= -d;
+	*e2 /= d;
+	#endif
+}
+
 /* Perform the row additions given by the minimal spanning tree (stored in
    history[][]). Add in c the fill-in in mat. */
 static int
@@ -1009,11 +1110,9 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind,
                  MAYBE_UNUSED index_t j, int *father, int *sons, int32_t *c)
 {
-int i, s, t;
-
-	for (i = m - 2; i >= 0; i--) {
-		s = father[i];
-		t = sons[i];
+	for (int i = m - 2; i >= 0; i--) {
+		int s = father[i];
+		int t = sons[i];
 		if (i == 0) {
 			history[i][1] = ind[s];
 			ASSERT(s == 0);
@@ -1027,33 +1126,8 @@ int i, s, t;
 		/* perform the operation on mat, and possibly "record" it in L 
 		 * First determine the coefficients of the linear combination
 		 */
-
-		#ifdef FOR_DL
-		/* THIS CODE IS DUPLICATED in merge_replay_matrix.c, in weightSum() */
-		/* first look for the exponents of j in i1 and i2 in mat */
-		uint32_t k1 = matLengthRow (mat, i1);
-		uint32_t k2 = matLengthRow (mat, i2);
-		typerow_t *r1 = mat->rows[i1];
-		typerow_t *r2 = mat->rows[i2];
-		int32_t e1 = 0, e2 = 0;
-		
-		/* search by decreasing ideals as the ideal to be merged is likely large */
-		for (int l = k1; l >= 1; l--)
-			if (r1[l].id == j) {
-				e1 = r1[l].e;
-				break;
-			}
-		for (int l = k2; l >= 1; l--)
-			if (r2[l].id == j) {
-				e2 = r2[l].e;
-				break;
-			}
-		int d = (int) gcd_int64 ((int64_t) e1, (int64_t) e2);
-		e1 /= -d;
-		e2 /= d;
-		#else
-		int32_t e1 = 1, e2 = 1;
-		#endif
+		int32_t e1, e2;
+		locate_columns(mat, i1, i2, j, &e1, &e2);
 
 		*c += add_row (mat, i1, i2, e1, e2);
 		if (!twomerge_mode)
@@ -1063,6 +1137,28 @@ int i, s, t;
 	}
 	return m - 2;
 }
+
+
+/* given an ideal of weight m, fills the m x m matrix A so that
+   A[i][j] is the weight of the sum of the i-th and j-th rows
+   containing the ideal, for 0 <= i, j < m */
+void
+fillRowAddMatrix(int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX],
+		 const filter_matrix_t *mat, filter_matrix_t *L,
+                 int m, index_t *ind, index_t j)
+{
+	/* A[i][i] is not used, thus we don't initialize it. */
+	for (int u = 0; u < m; u++)
+		for (int v = u+1; v < m; v++) {
+			index_t i1 = ind[u];
+			index_t i2 = ind[v];
+			int32_t e1 = 0, e2 = 0;
+			locate_columns(mat, i1, i2, j, &e1, &e2);
+			A[u][v] = weightSum(L, i1, i2, e1, e2);
+			A[v][u] = A[u][v];
+		}
+}
+
 
 /* perform the merge described by the id-th row of R,
    computing the full spanning tree, and return the fill-in */
@@ -1092,8 +1188,8 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 		int n = 0; /* number of characters written to s (except final \0) */
 		int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
 		/* question: do we want to minimize fill-in in L or in mat */
-		// BUG fillRowAddMatrix (A, L, w, ind, j);            // mst.c. --- target L
-		fillRowAddMatrix (A, mat, w, ind, j);                 // mst.c. --- target mat
+		fillRowAddMatrix (A, mat, mat, w, ind, j);           // target mat
+		// fillRowAddMatrix (A, mat, L, w, ind, j);             // target L
 		int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
 		minimalSpanningTree (start, end, w, A);
 		index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
