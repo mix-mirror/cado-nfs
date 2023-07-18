@@ -348,6 +348,7 @@ static void recompress(filter_matrix_t *R, filter_matrix_t *mat, index_t *jmin)
 
         /* new column weights */
         col_weight_t *nwt = malloc(mat->rem_ncols * sizeof(*nwt));
+        col_weight_t *nwtr = malloc(mat->rem_ncols * sizeof(*nwt));
 
         /* compute the number of non-empty columns */
         {
@@ -415,7 +416,7 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
                          (but does not hurt).
                          After the 2-merges, we call
                          compute_weights_R() which initializes R->wt[]. */
-                      R->wt[p[j]] = R->wt[j];
+                      nwtr[p[j]] = R->wt[j];
                     }
 
             } /* end parallel section */
@@ -459,6 +460,8 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
         
 	free(mat->wt);
 	mat->wt = nwt;
+        free(R->wt);
+        R->wt = nwtr;
 
 	/* update jmin */
 	if (jmin[0] == 1)
