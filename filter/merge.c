@@ -1021,6 +1021,7 @@ printRow (filter_matrix_t *mat, index_t i)
    Return:
    * 0 for 1-merges and 2-merges
    * a value >= 3 for all k-merges with k >= 3
+   * here L might be mat (MERGE_STRATEGY=1) or L (MERGE_STRATEGY=2)
    */
 static int32_t
 merge_cost (filter_matrix_t *L, MAYBE_UNUSED filter_matrix_t *R,
@@ -1051,6 +1052,7 @@ merge_cost (filter_matrix_t *L, MAYBE_UNUSED filter_matrix_t *R,
   /* We return the original Markowitz cost, i.e., we optimize the weight
      increase of the matrix product M=L*R. */
 #if MERGE_STRATEGY == 1
+  ASSERT_ALWAYS(cmin >= 2);
   return (w - 1) * (cmin - 2) + BIAS;
 #else
   return (w - 2) * cmin + BIAS - R->wt[j];
