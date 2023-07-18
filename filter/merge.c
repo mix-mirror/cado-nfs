@@ -76,7 +76,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "merge_compute_weights.h"
 #include "read_purgedfile_in_parallel.h"
 
-int twomerge_mode = 1;   // stays true until we do the first k-merge with
+int twomerge_mode = 1;   // stays true until we do the first k-merge with k > 2
 
 #ifdef DEBUG
 static void
@@ -574,7 +574,10 @@ compute_weights (filter_matrix_t *mat, index_t *jmin)
 }
 
 /* computes the transposed matrix for columns of weight <= cwmax
- * (we only consider columns >= j0) */
+ * (we only consider columns >= j0).
+ *
+ * Careful: "R" is overloaded.  This "R" is not the same as that of the main() function
+ */
 static void
 compute_R (filter_matrix_t *mat, index_t j0)
 {
@@ -733,12 +736,13 @@ increase_weight (filter_matrix_t *mat, index_t j)
 
 /* add row i2 to i1 (in place), and return the fill-in */
 #ifndef FOR_DL
+
 /* special code for factorization */
 static int32_t
-add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
+add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
 {
-	index_t k1 = matLengthRow(mat, i1);
-	index_t k2 = matLengthRow(mat, i2);
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
 	index_t t1 = 1, t2 = 1;
 	index_t t = 0;
 
@@ -748,24 +752,24 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 #endif
 
 	/* fast-track : don't precompute the size */
-	typerow_t *sum = heap_alloc_row(mat->heap, i1, k1 + k2);
+	typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
 
 	while (t1 <= k1 && t2 <= k2) {
-		if (mat->rows[i1][t1] == mat->rows[i2][t2]) {
-			decrease_weight(mat, mat->rows[i1][t1]);
+		if (L->rows[i1][t1] == L->rows[i2][t2]) {
+			decrease_weight(L, L->rows[i1][t1]);
 			t1 ++, t2 ++;
-		} else if (mat->rows[i1][t1] < mat->rows[i2][t2]) {
-			sum[++t] = mat->rows[i1][t1++];
+		} else if (L->rows[i1][t1] < L->rows[i2][t2]) {
+			sum[++t] = L->rows[i1][t1++];
 		} else {
-			increase_weight(mat, mat->rows[i2][t2]);
-			sum[++t] = mat->rows[i2][t2++];
+			increase_weight(L, L->rows[i2][t2]);
+			sum[++t] = L->rows[i2][t2++];
 		}
 	}
 	while (t1 <= k1)
-	      sum[++t] = mat->rows[i1][t1++];
+	      sum[++t] = L->rows[i1][t1++];
 	while (t2 <= k2) {
-	    increase_weight(mat, mat->rows[i2][t2]);
-	    sum[++t] = mat->rows[i2][t2++];
+	    increase_weight(L, L->rows[i2][t2]);
+	    sum[++t] = L->rows[i2][t2++];
 	}
 	ASSERT(t <= k1 + k2);
 
@@ -776,9 +780,9 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	cancel_cols[cancel] ++;
 #endif
 
-	heap_resize_last_row(mat->heap, sum, t);
-	heap_destroy_row(mat->heap, mat->rows[i1]);
-	mat->rows[i1] = sum;
+	heap_resize_last_row(L->heap, sum, t);
+	heap_destroy_row(L->heap, L->rows[i1]);
+	L->rows[i1] = sum;
 
 	return t - k1; /* weight increase when replacing i1 by i1+i2 */
 }
@@ -786,47 +790,26 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 #define INT32_MIN_64 (int64_t) INT32_MIN
 #define INT32_MAX_64 (int64_t) INT32_MAX
 
+/* we will multiply row i1 by e2, and row i2 by e1 */
 static int32_t
-add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
+add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED int32_t e2)
 {
+	/* we always check e1 and e2 are not zero, in order to prevent from zero
+     	 * exponents that would come from exponent overflows in previous merges 
+     	 */
+	ASSERT_ALWAYS (e1 != 0 && e2 != 0);
 #ifdef CANCEL
 	#pragma omp atomic update
 	cancel_rows ++;
 #endif
 
-  /* first look for the exponents of j in i1 and i2 */
-  uint32_t k1 = matLengthRow (mat, i1);
-  uint32_t k2 = matLengthRow (mat, i2);
-  typerow_t *r1 = mat->rows[i1];
-  typerow_t *r2 = mat->rows[i2];
-  int32_t e1 = 0, e2 = 0;
-
-  /* search by decreasing ideals as the ideal to be merged is likely large */
-  for (int l = k1; l >= 1; l--)
-    if (r1[l].id == j) {
-	e1 = r1[l].e;
-	break;
-      }
-  for (int l = k2; l >= 1; l--)
-    if (r2[l].id == j) {
-	e2 = r2[l].e;
-	break;
-      }
-
-  /* we always check e1 and e2 are not zero, in order to prevent from zero
-     exponents that would come from exponent overflows in previous merges */
-  ASSERT_ALWAYS (e1 != 0 && e2 != 0);
-
-  int d = (int) gcd_int64 ((int64_t) e1, (int64_t) e2);
-  e1 /= -d;
-  e2 /= d;
-  /* we will multiply row i1 by e2, and row i2 by e1 */
-
+  /* now perform the real merge on L */
   index_t t1 = 1, t2 = 1, t = 0;
-
-  /* now perform the real merge */
-  typerow_t *sum;
-  sum = heap_alloc_row(mat->heap, i1, k1 + k2);
+  typerow_t *r1 = L->rows[i1];
+  typerow_t *r2 = L->rows[i2];
+  index_t k1 = matLengthRow(L, i1);
+  index_t k2 = matLengthRow(L, i2);
+  typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -839,7 +822,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 	      setCell(sum, t, r1[t1].id, e);
 	    }
 	  else
-	    decrease_weight (mat, r1[t1].id);
+	    decrease_weight (L, r1[t1].id);
 	  t1 ++, t2 ++;
 	}
       else if (r1[t1].id < r2[t2].id)
@@ -856,7 +839,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 	  ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
 	  t++;
 	  setCell(sum, t, r2[t2].id, e);
-	  increase_weight (mat, r2[t2].id);
+	  increase_weight (L, r2[t2].id);
 	  t2 ++;
 	}
     }
@@ -872,7 +855,7 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
       ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
       t++;
       setCell(sum, t, r2[t2].id, e);
-      increase_weight (mat, r2[t2].id);
+      increase_weight (L, r2[t2].id);
       t2 ++;
     }
     ASSERT(t <= k1 + k2);
@@ -885,9 +868,9 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 	cancel_cols[cancel] ++;
 #endif
 
-  heap_resize_last_row(mat->heap, sum, t);
-  heap_destroy_row(mat->heap, mat->rows[i1]);
-  mat->rows[i1] = sum;
+  heap_resize_last_row(L->heap, sum, t);
+  heap_destroy_row(L->heap, L->rows[i1]);
+  L->rows[i1] = sum;
 
   return t - k1;
 }
@@ -1009,28 +992,61 @@ sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
 static int
 addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind,
-                 index_t j, int *father, int *sons, int32_t *c)
+                 MAYBE_UNUSED index_t j, int *father, int *sons, int32_t *c)
 {
-  int i, s, t;
+int i, s, t;
 
-  for (i = m - 2; i >= 0; i--)
-    {
-      s = father[i];
-      t = sons[i];
-      if (i == 0)
-	{
-	  history[i][1] = ind[s];
-	  ASSERT(s == 0);
+	for (i = m - 2; i >= 0; i--) {
+		s = father[i];
+		t = sons[i];
+		if (i == 0) {
+			history[i][1] = ind[s];
+			ASSERT(s == 0);
+		} else {
+			history[i][1] = -(ind[s] + 1);
+		}
+
+		index_t i1 = ind[t];
+		index_t i2 = ind[s];
+		
+		/* perform the operation on mat, and possibly "record" it in L 
+		 * First determine the coefficients of the linear combination
+		 */
+
+		#ifdef FOR_DL
+		/* THIS CODE IS DUPLICATED in merge_replay_matrix.c, in weightSum() */
+		/* first look for the exponents of j in i1 and i2 in mat */
+		uint32_t k1 = matLengthRow (mat, i1);
+		uint32_t k2 = matLengthRow (mat, i2);
+		typerow_t *r1 = mat->rows[i1];
+		typerow_t *r2 = mat->rows[i2];
+		int32_t e1 = 0, e2 = 0;
+		
+		/* search by decreasing ideals as the ideal to be merged is likely large */
+		for (int l = k1; l >= 1; l--)
+			if (r1[l].id == j) {
+				e1 = r1[l].e;
+				break;
+			}
+		for (int l = k2; l >= 1; l--)
+			if (r2[l].id == j) {
+				e2 = r2[l].e;
+				break;
+			}
+		int d = (int) gcd_int64 ((int64_t) e1, (int64_t) e2);
+		e1 /= -d;
+		e2 /= d;
+		#else
+		int32_t e1 = 1, e2 = 1;
+		#endif
+
+		*c += add_row (mat, i1, i2, e1, e2);
+		if (!twomerge_mode)
+      			add_row (L, i1, i2, e1, e2);
+		history[i][2] = i1;
+		history[i][0] = 2;
 	}
-      else
-	history[i][1] = -(ind[s] + 1);
-      *c += add_row (mat, ind[t], ind[s], j);
-      if (!twomerge_mode)
-        add_row (L, ind[t], ind[s], j);
-      history[i][2] = ind[t];
-      history[i][0] = 2;
-    }
-  return m - 2;
+	return m - 2;
 }
 
 /* perform the merge described by the id-th row of R,
@@ -1065,17 +1081,15 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
   char s[MERGE_CHAR_MAX];
   int n = 0; /* number of characters written to s (except final \0) */
   int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
-  fillRowAddMatrix (A, L, w, ind, j);          // mst.c.
-  /* mimic MSTWithA */
+  /* question: do we want to minimize fill-in in L or in mat */
+  // BUG fillRowAddMatrix (A, L, w, ind, j);            // mst.c. --- target L
+  fillRowAddMatrix (A, mat, w, ind, j);                 // mst.c. --- target mat
   int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
   minimalSpanningTree (start, end, w, A);
   index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
   int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end, &c);
-  for (int i = hmax; i >= 0; i--)
-    {
-      n += sreportn (s + n, MERGE_CHAR_MAX - n,
-		     (index_signed_t*) (history[i]+1), history[i][0],
-		     mat->p[j]);
+  for (int i = hmax; i >= 0; i--) {
+      n += sreportn (s + n, MERGE_CHAR_MAX - n, (index_signed_t*) (history[i]+1), history[i][0], mat->p[j]);
       ASSERT(n < MERGE_CHAR_MAX);
     }
   buffer_add (buf, s);
@@ -1523,7 +1537,7 @@ main (int argc, char *argv[])
     initMat (L, 0); // no skip in L, since skip only concerns columns
     for (index_t i = 0; i < L->nrows; i++)
     {
-      L->rows[i] = heap_alloc_row(L->heap, i, 2);  // sparse.c
+      L->rows[i] = heap_alloc_row(L->heap, i, 2);  // merge_heap.c
       setCell(L->rows[i], 0, 1, 1); // only one non-zero element in row
       setCell(L->rows[i], 1, i, 1); // L[i,i] = 1
     }
@@ -1622,7 +1636,7 @@ main (int argc, char *argv[])
     if (merge_pass == 2 || mat->cwmax > 2) {
             double cpu8 = seconds (), wct8 = wct_seconds ();
             heap_garbage_collection(mat->heap, mat->rows);
-             cpu8 = seconds () - cpu8;
+            cpu8 = seconds () - cpu8;
             wct8 = wct_seconds () - wct8;
             print_timings ("   GC took", cpu8, wct8);
             cpu_t[GC] += cpu8;
