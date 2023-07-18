@@ -409,6 +409,12 @@ read_purgedfile (const char* purgedname)
 				NULL, EARLYPARSE_NEED_INDEX, NULL, NULL);
 	ASSERT_ALWAYS (nread == nrows);
 	free(scratch);
+
+	uint64_t empty_cols = 0;
+	for (index_t j = 0; j < ncols; j++)
+		if (column_info[j] == 0)
+			empty_cols += 1;
+	printf("Found %" PRId64 " empty columns in the purged matrix\n", empty_cols);
 }
 
 
