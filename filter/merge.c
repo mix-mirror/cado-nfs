@@ -929,7 +929,7 @@ printRow (filter_matrix_t *mat, index_t i)
 }
 #endif
 
-#define BIAS (int32_t) ((col_weight_t) (-1))
+#define BIAS 3
 
 /* classical cost: merge the row of smaller weight with the other ones,
    and return the merge cost (taking account of cancellations).
@@ -971,10 +971,9 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 	cmin = c;
     }
 
-  /* since R->wt[j] <= BIAS, and w > 2, the value below is > 0, which
-     ensures those merges will be processed after the 1- and 2-merges */
-  assert ((w - 2) * cmin + BIAS > R->wt[j]);
-  return (w - 2) * cmin + BIAS - R->wt[j];
+  /* We return the original Markowitz cost, i.e., we optimize the weight
+     increase of the matrix product M=L*R. */
+  return (w - 2) * (cmin - 1) + BIAS;
 }
 
 /* Output a list of merges to a string.
