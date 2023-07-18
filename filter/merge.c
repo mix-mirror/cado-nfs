@@ -1000,25 +1000,16 @@ printRow (filter_matrix_t *mat, index_t i)
 }
 #endif
 
-#define BIAS (int32_t) ((col_weight_t) (-1))
+#define BIAS 3
 
 /* classical cost: merge the row of smaller weight with the other ones,
-   and return the merge cost (taking account of cancellations).
-   id is the index of a row in R.
-   In the double-matrix case, the Markowitz cost is:
-   (w-2)*weight(i0) - initial_weight(j)
-   where i0 is the row of L of smallest weight and initial_weight(j)
-   is the initial weight of the ideal j.
-   We assume R->wt[j] stores the initial weight of the ideal j
-   (after 2-merges have been applied to R if any).
+   and return the merge cost (partially taking account of cancellations).
    Return:
-   * 1 for 1-merges
-   * 2 for 2-merges
+   * 0 for 1-merges and 2-merges
    * a value >= 3 for all k-merges with k >= 3
    */
 static int32_t
-merge_cost (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
-            index_t j)
+merge_cost (filter_matrix_t *L, filter_matrix_t *mat, index_t j)
 {
   index_t lo = mat->Rp[j];
   index_t hi = mat->Rp[j + 1];
@@ -1042,10 +1033,9 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 	cmin = c;
     }
 
-  /* since R->wt[j] <= BIAS, and w > 2, the value below is > 0, which
-     ensures those merges will be processed after the 1- and 2-merges */
-  assert ((w - 2) * cmin + BIAS > R->wt[j]);
-  return (w - 2) * cmin + BIAS - R->wt[j];
+  /* We return the original Markowitz cost, i.e., we optimize the weight
+     increase of the matrix product M=L*R. */
+  return (w - 2) * (cmin - 1) + BIAS;
 }
 
 /* Output a list of merges to a string.
@@ -1227,7 +1217,7 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
    Returns the size of possible_merges. */
 static int
 compute_merges (index_t *possible_merges, filter_matrix_t *L,
-                filter_matrix_t *R, filter_matrix_t *mat, int cbound)
+                filter_matrix_t *mat, int cbound)
 {
   double cpu = seconds(), wct = wct_seconds();
   index_t Rn = mat->Rn;
@@ -1243,7 +1233,7 @@ compute_merges (index_t *possible_merges, filter_matrix_t *L,
      schedule(guided) for RSA-240 with 112 threads. */
   #pragma omp parallel for schedule(dynamic,128)
   for (index_t i = 0; i < Rn; i++)
-    cost[i] = merge_cost (L, R, mat, i);
+    cost[i] = merge_cost (L, mat, i);
 
   int s;
 
@@ -1788,7 +1778,7 @@ main (int argc, char *argv[])
 
 	index_t *possible_merges = malloc(mat->Rn * sizeof(index_t));
 
-	index_t n_possible_merges = compute_merges(possible_merges, L, R, mat,
+	index_t n_possible_merges = compute_merges(possible_merges, L, mat,
                                                    cbound);
 
 	unsigned long nmerges = apply_merges (possible_merges,
