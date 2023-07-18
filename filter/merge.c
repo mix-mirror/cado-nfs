@@ -76,6 +76,16 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "merge_compute_weights.h"
 #include "read_purgedfile_in_parallel.h"
 
+/* MERGE_STRATEGY=1: classical strategy, where we optimize the weight increase
+   in the matrix product M = L*R
+   MERGE_STRATEGY=2: alternate strategy, where we optimize the weight increase
+   in both L and R */
+#define MERGE_STRATEGY 1
+
+#if !(MERGE_STRATEGY == 1 || MERGE_STRATEGY == 2)
+#error "MERGE_STRATEGY should be 1 or 2"
+#endif
+
 int twomerge_mode = 1;   // stays true until we do the first k-merge with k > 2
 
 #ifdef DEBUG
@@ -1000,7 +1010,11 @@ printRow (filter_matrix_t *mat, index_t i)
 }
 #endif
 
+#if MERGE_STRATEGY == 1
 #define BIAS 3
+#else
+#define BIAS (int32_t) ((col_weight_t) (-1))
+#endif
 
 /* classical cost: merge the row of smaller weight with the other ones,
    and return the merge cost (partially taking account of cancellations).
@@ -1009,7 +1023,8 @@ printRow (filter_matrix_t *mat, index_t i)
    * a value >= 3 for all k-merges with k >= 3
    */
 static int32_t
-merge_cost (filter_matrix_t *L, filter_matrix_t *mat, index_t j)
+merge_cost (filter_matrix_t *L, MAYBE_UNUSED filter_matrix_t *R,
+            filter_matrix_t *mat, index_t j)
 {
   index_t lo = mat->Rp[j];
   index_t hi = mat->Rp[j + 1];
@@ -1035,7 +1050,11 @@ merge_cost (filter_matrix_t *L, filter_matrix_t *mat, index_t j)
 
   /* We return the original Markowitz cost, i.e., we optimize the weight
      increase of the matrix product M=L*R. */
+#if MERGE_STRATEGY == 1
   return (w - 1) * (cmin - 2) + BIAS;
+#else
+  return (w - 2) * cmin + BIAS - R->wt[j];
+#endif
 }
 
 /* Output a list of merges to a string.
@@ -1177,9 +1196,11 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 		char s[MERGE_CHAR_MAX];
 		int n = 0; /* number of characters written to s (except final \0) */
 		int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
-		/* question: do we want to minimize fill-in in L or in mat */
+#if MERGE_STRATEGY == 1
 		fillRowAddMatrix (A, mat, mat, w, ind, j);           // target mat
-		// fillRowAddMatrix (A, mat, L, w, ind, j);             // target L
+#else
+		fillRowAddMatrix (A, mat, L, w, ind, j);             // target L
+#endif
 		int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
 		minimalSpanningTree (start, end, w, A);
 		index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
@@ -1216,7 +1237,8 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
    possible_mergesL is a linear array and the merges appear by increasing cost.
    Returns the size of possible_merges. */
 static int
-compute_merges (index_t *possible_merges, filter_matrix_t *L,
+compute_merges (index_t *possible_merges, MAYBE_UNUSED filter_matrix_t *L,
+                MAYBE_UNUSED filter_matrix_t *R,
                 filter_matrix_t *mat, int cbound)
 {
   double cpu = seconds(), wct = wct_seconds();
@@ -1233,7 +1255,11 @@ compute_merges (index_t *possible_merges, filter_matrix_t *L,
      schedule(guided) for RSA-240 with 112 threads. */
   #pragma omp parallel for schedule(dynamic,128)
   for (index_t i = 0; i < Rn; i++)
-    cost[i] = merge_cost (L, mat, i);
+#if MERGE_STRATEGY == 1
+    cost[i] = merge_cost (mat, R, mat, i);
+#else
+    cost[i] = merge_cost (L, R, mat, i);
+#endif
 
   int s;
 
@@ -1778,7 +1804,7 @@ main (int argc, char *argv[])
 
 	index_t *possible_merges = malloc(mat->Rn * sizeof(index_t));
 
-	index_t n_possible_merges = compute_merges(possible_merges, L, mat,
+	index_t n_possible_merges = compute_merges(possible_merges, L, R, mat,
                                                    cbound);
 
 	unsigned long nmerges = apply_merges (possible_merges,
