@@ -73,6 +73,7 @@ fillRowAddMatrix(int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX], filter_matrix_t *mat,
 	}
 }
 
+#if 0
 int
 minCostUsingMST (filter_matrix_t *mat, int m, index_t *ind, index_t j)
 {
@@ -88,6 +89,7 @@ minCostUsingMST (filter_matrix_t *mat, int m, index_t *ind, index_t j)
       w -= matLengthRow(mat, ind[i]);
     return w;
 }
+#endif
 
 #ifdef DEBUG
 void
