@@ -280,7 +280,9 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 /******************************************************************************/
 
 
-/*  Set eliminated_columns[j] == 1 if column j is eliminated */
+/*  Set column_info[j] == { 1 if column j is eliminated 
+ *                        { 0  otherwise
+ */
 static void
 preread_history(const char *hisname)
 {
@@ -381,8 +383,9 @@ void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_pt
 }
 
 /* update rows, column_info. 
- * Set column_info[j] == 2 if column j is non-empty 
- * Set column_info[j] == 0 otherwise 
+ * set column_info[j] == 1   <====>   column has been eliminated
+ *     column_info[j] == 2   <====>   column is non-empty (not eliminated)
+ *     column_info[j] == 0   <====>   column is empty (not eliminated) 
  */
 static void
 read_purgedfile (const char* purgedname)
@@ -406,9 +409,6 @@ read_purgedfile (const char* purgedname)
 				NULL, EARLYPARSE_NEED_INDEX, NULL, NULL);
 	ASSERT_ALWAYS (nread == nrows);
 	free(scratch);
-	/* here: column_info[j] == 1   <====>   column has been eliminated
-		 column_info[j] == 2   <====>   column is non-empty (not eliminated)
-		 column_info[j] == 0   <====>   column is empty (not eliminated) */
 }
 
 
@@ -695,19 +695,21 @@ static void
 build_right_matrix (const char *outputname, const char *idealsfilename, index_t skip, int bin)
 {
 	/* here: column_info[j] == 1   <====>   column has been eliminated
-		 column_info[j] == 0   <====>   column has not been eliminated */
+	 *       column_info[j] == 0   <====>   column is empty (not eliminated) 
+	 *       column_info[j] == 2   <====>   column is non-empty (not eliminated) 
+	 */
 
 	/* renumber the remaining non-empty columns (exclusive scan) */
 	index_t sum = 0;
 	for (uint64_t j = 0; j < ncols; j++) {
-		if (column_info[j] == 1) {
+		if (column_info[j] != 2) {
 			column_info[j] = UMAX(index_t);
 			continue;
 		}
 		column_info[j] = sum;
 		sum += 1;
 	}
-	printf("remaining (non-eliminated) columns : %" PRId64 "\n", (uint64_t) sum);
+	printf("remaining (non-eliminated, non-empty) columns : %" PRId64 "\n", (uint64_t) sum);
 
 	/* 
 	 * here: sum == number of non-eliminated columns.
@@ -773,6 +775,7 @@ static void usage(param_list pl, char *argv0)
 	param_list_print_usage(pl, argv0, stderr);
 	exit(EXIT_FAILURE);
 }
+
 
 // We start from M_purged which is nrows x ncols;
 int main(int argc, char *argv[])
