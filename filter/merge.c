@@ -1148,6 +1148,9 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
   print_timings ("   compute_merges took", cpu2, wct2);
   cpu_t[COMPUTE_M] += cpu2;
   wct_t[COMPUTE_M] += wct2;
+  if (s < 10)
+  for (int i = 0; i < s; i++)
+    printf ("L[%u]=%u cost=%u\n", i, L[i], merge_cost (mat, i));
   return s;
 }
 
@@ -1160,6 +1163,11 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
   double cpu3 = seconds (), wct3 = wct_seconds ();
   char * busy_rows = malloc(mat->nrows * sizeof (char));
   memset (busy_rows, 0, mat->nrows * sizeof (char));
+
+  int bug = total_merges < 10;
+  if (bug)
+    for (int i = 0; i < (int) total_merges; i++)
+      printf ("apply: L[%u]=%u cost=%u\n", i, L[i], merge_cost (mat, i));
 
   unsigned long nmerges = 0;
   int64_t fill_in = 0;
@@ -1183,9 +1191,15 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
 
       /* merge is possible if all its rows are "available" */
       int ok = 1;
+      if (bug)
+#pragma omp critical
+        printf ("considering merge it=%u id=%u lo=%u hi=%u\n", it, id, lo, hi);
       for (index_t k = lo; k < hi; k++) {
 	index_t i = mat->Ri[k];
 	if (busy_rows[i]) {
+          if (bug)
+#pragma omp critical
+            printf ("merge it=%u: row i=%u is busy, discarded early\n", it, i);
 	  ok = 0;
 #ifdef BIG_BROTHER
           discarded_early++;
@@ -1200,7 +1214,7 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
 	    char not_ok = 0;
 	    /* we could use __sync_bool_compare_and_swap here,
 	       but this is more portable and as efficient */
-            #if defined(HAVE_OPENMP) && _OPENMP > 201107
+            #if defined(HAVE_OPENMPxxx) && _OPENMP > 201107
 	    /* the form of atomic capture below does not seem to be
 	       recognized by OpenMP 3.5 (_OPENMP = 201107), see
 	       https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-centos-6-i386/165 */
@@ -1208,12 +1222,15 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
 	    #else
 	    #pragma omp critical
 	    #endif
-	    { not_ok = busy_rows[i]; busy_rows[i] = 1; }
+	    { not_ok = busy_rows[i]; busy_rows[i] = 1; if (bug) printf ("row %u marked busy by it=%u\n", i, it); }
 	    if (not_ok)
 	      {
 #ifdef BIG_BROTHER
                 discarded_late++;
 #endif
+          if (bug)
+#pragma omp critical
+            printf ("merge it=%u i=%u: discarded late\n", it, i);
 		ok = 0;
 		break;
 	      }
@@ -1633,7 +1650,7 @@ main (int argc, char *argv[])
 
         if (nmerges == 0 && n_possible_merges > 0)
           {
-            fprintf (stderr, "Error, no merge done while n_possible_merges > 0\n");
+	    fprintf (stderr, "Error, no merge done while n_possible_merges=%u > 0\n", n_possible_merges);
             fprintf (stderr, "Please check the entries in your purged file are sorted\n");
             exit (EXIT_FAILURE);
           }
