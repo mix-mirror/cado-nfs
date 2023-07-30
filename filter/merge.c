@@ -1271,6 +1271,11 @@ compute_merges (index_t *possible_merges, MAYBE_UNUSED filter_matrix_t *L,
    */
   int T = omp_get_max_threads();
   index_t count[T][cbound + 1];
+  /* initialize array to zero */
+#pragma omp for schedule(static)
+  for (int t = 0; t < T; t++)
+    for (int c = 0; c <= cbound; c++)
+      count[t][c] = 0;
 
   /* Yet Another Bucket Sort (sigh): sort the candidate merges by cost. Check if worth parallelizing */
 #pragma omp parallel
