@@ -1274,16 +1274,13 @@ compute_merges (index_t *possible_merges, MAYBE_UNUSED filter_matrix_t *L,
   /* initialize array to zero */
 #pragma omp for schedule(static)
   for (int t = 0; t < T; t++)
-    for (int c = 0; c <= cbound; c++)
-      count[t][c] = 0;
+    memset(count+t, 0, (cbound + 1) * sizeof(index_t));
 
   /* Yet Another Bucket Sort (sigh): sort the candidate merges by cost. Check if worth parallelizing */
 #pragma omp parallel
   {
     int tid = omp_get_thread_num();
     index_t *tcount = &count[tid][0];
-
-    memset(tcount, 0, (cbound + 1) * sizeof(index_t));
 
 #pragma omp for schedule(static)  // static is mandatory
     for (index_t i = 0; i < Rn; i++) {
