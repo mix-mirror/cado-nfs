@@ -1,6 +1,16 @@
-/* merge --- new merge program
+/* merge --- new merge program, for double-matrix algorithm
 
-Copyright 2019-2021 Charles Bouillaguet and Paul Zimmermann.
+TODO:
+* fix the discrepancy between the weight of R printed by merge (R has W=...)
+  and that printed by replay-dblemat (Weight of the sparse submatrix: ...)
+* fix the total weight W in merge, which should correspond to what replay says
+  (ok for the c60 from README, and for
+  parameters/polynomials/{c70,c80,c90,c100}.poly,
+  but we get a discrepancy for the c110 from
+  parameters/polynomials/c110.poly, where on baguette.loria.fr merge gives
+  W=48426850 but replay gives 48345848).
+
+Copyright 2019-2023 Charles Bouillaguet and Paul Zimmermann.
 
 This file is part of CADO-NFS.
 
@@ -66,17 +76,30 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "merge_compute_weights.h"
 #include "read_purgedfile_in_parallel.h"
 
+/* MERGE_STRATEGY=1: classical strategy, where we optimize the weight increase
+   in the matrix product M = L*R
+   MERGE_STRATEGY=2: alternate strategy, where we optimize the weight increase
+   in both L and R */
+#define MERGE_STRATEGY 1
+
+#if !(MERGE_STRATEGY == 1 || MERGE_STRATEGY == 2)
+#error "MERGE_STRATEGY should be 1 or 2"
+#endif
+
+int twomerge_mode = 1;   // stays true until we do the first k-merge with k > 2
+
 #ifdef DEBUG
 static void
-Print_row (filter_matrix_t *mat, index_t i)
+fprint_row (FILE *fp, filter_matrix_t *mat, index_t i)
 {
   ASSERT_ALWAYS(mat->rows[i] != NULL);
-  printf ("%u:", i);
+  fprintf (fp, "%u", matLengthRow(mat, i));
   for (index_t k = 1; k <= matLengthRow(mat, i); k++)
-    printf (" %u", rowCell(mat->rows[i],k));
-  printf ("\n");
+    fprintf (fp, " %u", rowCell(mat->rows[i],k));
+  fprintf (fp, "\n");
 }
 #endif
+
 
 /*************************** output buffer ***********************************/
 
@@ -176,7 +199,7 @@ usage (param_list pl, char *argv0)
 void check_invariant(filter_matrix_t *mat)
 {
     if (sizeof(col_weight_t) == 1)
-        return;
+      return;
 
     uint64_t tot_weight2 = 0;
     for (index_t i = 0; i < mat->ncols; i++) {
@@ -251,7 +274,7 @@ insert_rel_into_table (void *context_data, earlyparsed_relation_ptr rel)
   qsort (&(buf[1]), j, sizeof(typerow_t), cmp_typerow_t);
 #endif
 
-  mat->rows[rel->num] = heap_alloc_row(rel->num, j);
+  mat->rows[rel->num] = heap_alloc_row(mat->heap, rel->num, j);
   compressRow (mat->rows[rel->num], buf, j);  /* sparse.c, simple copy loop... */
 
   return NULL;
@@ -311,8 +334,20 @@ check_matrix (filter_matrix_t *mat)
     }
 }
 
-/* stack non-empty columns at the begining. Update mat->p (for DL) and jmin */
-static void recompress(filter_matrix_t *mat, index_t *jmin)
+/* Put the initial weights (after the initial 2-merges) in R->wt[].
+   Warning: these weights are saturated at 255, thus cannot be used
+   to compute the total weight of R. */
+static void
+compute_weights_R (filter_matrix_t *R, filter_matrix_t *mat)
+{
+#pragma omp parallel for
+  for (index_t j = 0; j < mat->ncols; j++)
+    R->wt[j] = mat->wt[j];
+}
+
+/* Stack non-empty columns at the beginning. Update mat->p (for DL) and jmin.
+   We also have to "recompress" R->wt[]. */
+static void recompress(filter_matrix_t *R, filter_matrix_t *mat, index_t *jmin)
 {
 	double cpu = seconds (), wct = wct_seconds ();
 	uint64_t nrows = mat->nrows;
@@ -323,6 +358,7 @@ static void recompress(filter_matrix_t *mat, index_t *jmin)
 
         /* new column weights */
         col_weight_t *nwt = malloc(mat->rem_ncols * sizeof(*nwt));
+        col_weight_t *nwtr = malloc(mat->rem_ncols * sizeof(*nwt));
 
         /* compute the number of non-empty columns */
         {
@@ -379,21 +415,28 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
                         matCell(mat, i, l) = p[matCell(mat, i, l)];
                 }
 
-                /* update mat->wt */
+                /* update mat->wt and R->wt */
 #pragma omp for schedule(static) /* static is slightly better than guided */
                 for (index_t j = 0; j < ncols; j++)
                     if (0 < mat->wt[j])
-                        nwt[p[j]] = mat->wt[j];
+                    {
+                      nwt[p[j]] = mat->wt[j];
+                      /* Note: during the 2-merges, R->wt[] is not
+                         initialized, thus the following is useless
+                         (but does not hurt).
+                         After the 2-merges, we call
+                         compute_weights_R() which initializes R->wt[]. */
+                      nwtr[p[j]] = R->wt[j];
+                    }
 
             } /* end parallel section */
         }
 
-        #ifdef FOR_DL
-        /* For the discrete logarithm, we keep the inverse of p, to print the
-	original columns in the history file.
-	Warning: for a column j of weight 0, we have p[j] = p[j'] where
-	j' is the smallest column > j of positive weight, thus we only consider
-	j such that p[j] < p[j+1], or j = ncols-1. */
+        /* We keep the inverse of p, to print the
+	   original columns in the history file.
+	   Warning: for a column j of weight 0, we have p[j] = p[j'] where
+	   j' is the smallest column > j of positive weight, thus we only consider
+	   j such that p[j] < p[j+1], or j = ncols-1. */
         if (mat->p == NULL) {
         	mat->p = malloc(mat->rem_ncols * sizeof (index_t));
                 /* We must pay attention to the case of empty columns at the
@@ -424,10 +467,11 @@ https://cado-nfs-ci.loria.fr/ci/job/future-parallel-merge/job/compile-debian-tes
 		free(mat->p);
 		mat->p = new_p;
         }
-        #endif
-
+        
 	free(mat->wt);
 	mat->wt = nwt;
+        free(R->wt);
+        R->wt = nwtr;
 
 	/* update jmin */
 	if (jmin[0] == 1)
@@ -554,7 +598,10 @@ compute_weights (filter_matrix_t *mat, index_t *jmin)
 }
 
 /* computes the transposed matrix for columns of weight <= cwmax
- * (we only consider columns >= j0) */
+ * (we only consider columns >= j0).
+ *
+ * Careful: "R" is overloaded.  This "R" is not the same as that of the main() function
+ */
 static void
 compute_R (filter_matrix_t *mat, index_t j0)
 {
@@ -711,16 +758,17 @@ increase_weight (filter_matrix_t *mat, index_t j)
   }
 }
 
-/* doit == 0: return the weight of row i1 + row i2
-   doit <> 0: add row i2 to row i1.
-   New memory is allocated and the old space is freed */
+/* add row i2 to i1 (in place), and return the fill-in */
 #ifndef FOR_DL
+
 /* special code for factorization */
-static void
-add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
+static int32_t
+add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
 {
-	index_t k1 = matLengthRow(mat, i1);
-	index_t k2 = matLengthRow(mat, i2);
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
 	index_t t1 = 1, t2 = 1;
 	index_t t = 0;
 
@@ -730,26 +778,33 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 #endif
 
 	/* fast-track : don't precompute the size */
-	typerow_t *sum = heap_alloc_row(i1, k1 + k2);
+	typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
 
 	while (t1 <= k1 && t2 <= k2) {
-		if (mat->rows[i1][t1] == mat->rows[i2][t2]) {
-			decrease_weight(mat, mat->rows[i1][t1]);
-			t1 ++, t2 ++;
-		} else if (mat->rows[i1][t1] < mat->rows[i2][t2]) {
-			sum[++t] = mat->rows[i1][t1++];
+		index_t j1 = r1[t1]; 
+		index_t j2 = r2[t2];
+		if (j1 == j2) {
+			decrease_weight(L, j1);
+			t1++;
+			t2++;
+		} else if (j1 < j2) {
+			t++;
+			sum[t] = j1;
+			t1++;
 		} else {
-			increase_weight(mat, mat->rows[i2][t2]);
-			sum[++t] = mat->rows[i2][t2++];
+			increase_weight(L, j2);
+			t++;
+			sum[t] = j2;
+			t2++;
 		}
 	}
 	while (t1 <= k1)
-	      sum[++t] = mat->rows[i1][t1++];
+	      sum[++t] = r1[t1++];
 	while (t2 <= k2) {
-	    increase_weight(mat, mat->rows[i2][t2]);
-	    sum[++t] = mat->rows[i2][t2++];
+	    increase_weight(L, r2[t2]);
+	    sum[++t] = r2[t2++];
 	}
-	ASSERT(t <= k1 + k2 - 1);
+	ASSERT(t <= k1 + k2);
 
 #ifdef CANCEL
 	int cancel = (t1 - 1) + (t2 - 1) - (t - 1);
@@ -758,106 +813,113 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	cancel_cols[cancel] ++;
 #endif
 
-	heap_resize_last_row(sum, t);
-	heap_destroy_row(mat->rows[i1]);
-	mat->rows[i1] = sum;
-	return;
+	heap_resize_last_row(L->heap, sum, t);
+	heap_destroy_row(L->heap, L->rows[i1]);
+	L->rows[i1] = sum;
+	return t - k1; /* weight increase when replacing i1 by i1+i2 */
 }
+
+/* return the weight of the relation obtained when adding relations i1 and i2.
+ * This is quite similar to add_row
+ */
+int
+weightSum(const filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
+{
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
+	index_t t1 = 1, t2 = 1;
+	index_t t = 0;
+	while (t1 <= k1 && t2 <= k2) {
+		index_t j1 = r1[t1]; 
+		index_t j2 = r2[t2];
+		if (j1 == j2) {
+			t1++;
+			t2++;
+		} else if (j1 < j2) {
+			t++;
+			t1++;
+		} else {
+			t++;
+			t2++;
+		}
+	}
+	t += (k1 - t1) + (k2 - t2);
+	ASSERT(t <= k1 + k2);
+	return t;
+}
+
+
 #else /* FOR_DL: j is the ideal to be merged */
 #define INT32_MIN_64 (int64_t) INT32_MIN
 #define INT32_MAX_64 (int64_t) INT32_MAX
 
-static void
-add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
+/* we will multiply row i1 by e2, and row i2 by e1 */
+static int32_t
+add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED int32_t e2)
 {
+	/* we always check e1 and e2 are not zero, in order to prevent from zero
+     	 * exponents that would come from exponent overflows in previous merges 
+     	 */
+	ASSERT_ALWAYS (e1 != 0 && e2 != 0);
 #ifdef CANCEL
 	#pragma omp atomic update
 	cancel_rows ++;
 #endif
 
-  /* first look for the exponents of j in i1 and i2 */
-  uint32_t k1 = matLengthRow (mat, i1);
-  uint32_t k2 = matLengthRow (mat, i2);
-  typerow_t *r1 = mat->rows[i1];
-  typerow_t *r2 = mat->rows[i2];
-  int32_t e1 = 0, e2 = 0;
+	/* now perform the real merge on L */
+	index_t t1 = 1, t2 = 1, t = 0;
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
+	typerow_t *sum = heap_alloc_row(L->heap, i1, k1 + k2);
 
-  /* search by decreasing ideals as the ideal to be merged is likely large */
-  for (int l = k1; l >= 1; l--)
-    if (r1[l].id == j) {
-	e1 = r1[l].e;
-	break;
-      }
-  for (int l = k2; l >= 1; l--)
-    if (r2[l].id == j) {
-	e2 = r2[l].e;
-	break;
-      }
-
-  /* we always check e1 and e2 are not zero, in order to prevent from zero
-     exponents that would come from exponent overflows in previous merges */
-  ASSERT_ALWAYS (e1 != 0 && e2 != 0);
-
-  int d = (int) gcd_int64 ((int64_t) e1, (int64_t) e2);
-  e1 /= -d;
-  e2 /= d;
-  /* we will multiply row i1 by e2, and row i2 by e1 */
-
-  index_t t1 = 1, t2 = 1, t = 0;
-
-  /* now perform the real merge */
-  typerow_t *sum;
-  sum = heap_alloc_row(i1, k1 + k2 - 1);
-
-  int64_t e;
-  while (t1 <= k1 && t2 <= k2) {
-      if (r1[t1].id == r2[t2].id) {
-	  /* as above, the exponent e below cannot overflow */
-	  e = (int64_t) e2 * (int64_t) r1[t1].e + (int64_t) e1 * (int64_t) r2[t2].e;
-	  if (e != 0) { /* exponents do not cancel */
-	      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-	      t++;
-	      setCell(sum, t, r1[t1].id, e);
-	    }
-	  else
-	    decrease_weight (mat, r1[t1].id);
-	  t1 ++, t2 ++;
+	while (t1 <= k1 && t2 <= k2) {
+		if (r1[t1].id == r2[t2].id) {
+			/* as above, the exponent e below cannot overflow */
+			int64_t e = (int64_t) e2 * (int64_t) r1[t1].e + (int64_t) e1 * (int64_t) r2[t2].e;
+			if (e != 0) { /* exponents do not cancel */
+				ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+				t++;
+				setCell(sum, t, r1[t1].id, e);
+			} else {
+				decrease_weight (L, r1[t1].id);
+			}
+	  		t1++;
+	  		t2++;
+		} else if (r1[t1].id < r2[t2].id) {
+			int64_t e = (int64_t) e2 * (int64_t) r1[t1].e;
+			ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+			t++;
+			setCell(sum, t, r1[t1].id, e);
+			t1 ++;
+		} else {
+	  		int64_t e = (int64_t) e1 * (int64_t) r2[t2].e;
+	  		ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+	  		t++;
+	  		setCell(sum, t, r2[t2].id, e);
+	  		increase_weight (L, r2[t2].id);
+	  		t2 ++;
+		}
 	}
-      else if (r1[t1].id < r2[t2].id)
-	{
-	  e = (int64_t) e2 * (int64_t) r1[t1].e;
-	  ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-	  t++;
-	  setCell(sum, t, r1[t1].id, e);
-	  t1 ++;
+	while (t1 <= k1) {
+		int64_t e = (int64_t) e2 * (int64_t) r1[t1].e;
+		ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+		t++;
+		setCell(sum, t, r1[t1].id, e);
+		t1 ++;
 	}
-      else
-	{
-	  e = (int64_t) e1 * (int64_t) r2[t2].e;
-	  ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-	  t++;
-	  setCell(sum, t, r2[t2].id, e);
-	  increase_weight (mat, r2[t2].id);
-	  t2 ++;
+	while (t2 <= k2) {
+		int64_t e = (int64_t) e1 * (int64_t) r2[t2].e;
+		ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
+		t++;
+		setCell(sum, t, r2[t2].id, e);
+		increase_weight (L, r2[t2].id);
+		t2 ++;
 	}
-    }
-  while (t1 <= k1) {
-      e = (int64_t) e2 * (int64_t) r1[t1].e;
-      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-      t++;
-      setCell(sum, t, r1[t1].id, e);
-      t1 ++;
-    }
-  while (t2 <= k2) {
-      e = (int64_t) e1 * (int64_t) r2[t2].e;
-      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
-      t++;
-      setCell(sum, t, r2[t2].id, e);
-      increase_weight (mat, r2[t2].id);
-      t2 ++;
-    }
-  ASSERT(t <= k1 + k2 - 1);
-
+	ASSERT(t <= k1 + k2);
 
 #ifdef CANCEL
 	int cancel = (t1 - 1) + (t2 - 1) - (t - 1);
@@ -866,21 +928,65 @@ add_row (filter_matrix_t *mat, index_t i1, index_t i2, index_t j)
 	cancel_cols[cancel] ++;
 #endif
 
-  heap_resize_last_row(sum, t);
-  heap_destroy_row(mat->rows[i1]);
-  mat->rows[i1] = sum;
+	heap_resize_last_row(L->heap, sum, t);
+	heap_destroy_row(L->heap, L->rows[i1]);
+	L->rows[i1] = sum;
+	return t - k1;
 }
+
+/* return the weight of the relation obtained when adding relations e1*i1 and e2*i2.
+ * This is quite similar to add_row
+ */
+int
+weightSum(const filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
+{
+	ASSERT (e1 != 0 && e2 != 0);
+	typerow_t *r1 = L->rows[i1];
+	typerow_t *r2 = L->rows[i2];
+	index_t k1 = matLengthRow(L, i1);
+	index_t k2 = matLengthRow(L, i2);
+	index_t t1 = 1, t2 = 1;
+	index_t t = 0;
+
+	while (t1 <= k1 && t2 <= k2) {
+		if (r1[t1].id == r2[t2].id) {
+			/* as above, the exponent e below cannot overflow */
+			int64_t e = (int64_t) e2 * (int64_t) r1[t1].e + (int64_t) e1 * (int64_t) r2[t2].e;
+			if (e != 0) 
+				t++;   /* exponents do not cancel */
+			t1++;
+			t2++;
+		} else if (r1[t1].id < r2[t2].id) {
+			t++;
+			t1++;
+		} else {
+			t++;
+			t2++;
+		}
+	}
+	t += (k1 - t1) + (k2 - t2);
+	ASSERT(t <= k1 + k2);
+	return t;
+}
+
 #endif
 
-
-static void
-remove_row (filter_matrix_t *mat, index_t i)
+/* L is the "left" matrix (rows are relations-sets, columns are relations),
+   and mat is the "merged" matrix (rows are relations-sets, columns are
+   ideals). Return the (negative) fill-in.
+*/
+static int32_t
+remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
 {
   int32_t w = matLengthRow (mat, i);
   for (int k = 1; k <= w; k++)
     decrease_weight (mat, rowCell(mat->rows[i], k));
-  heap_destroy_row(mat->rows[i]);
+  heap_destroy_row(mat->heap, mat->rows[i]);
   mat->rows[i] = NULL;
+  // replicate on L
+  heap_destroy_row(L->heap, L->rows[i]);
+  L->rows[i] = NULL;
+  return -w;
 }
 
 #ifdef DEBUG
@@ -904,40 +1010,53 @@ printRow (filter_matrix_t *mat, index_t i)
 }
 #endif
 
+#if MERGE_STRATEGY == 1
 #define BIAS 3
+#else
+#define BIAS (int32_t) ((col_weight_t) (-1))
+#endif
 
 /* classical cost: merge the row of smaller weight with the other ones,
-   and return the merge cost (taking account of cancellations).
-   id is the index of a row in R. */
+   and return the merge cost (partially taking account of cancellations).
+   Return:
+   * 0 for 1-merges and 2-merges
+   * a value >= 3 for all k-merges with k >= 3
+   * here L might be mat (MERGE_STRATEGY=1) or L (MERGE_STRATEGY=2)
+   */
 static int32_t
-merge_cost (filter_matrix_t *mat, index_t id)
+merge_cost (filter_matrix_t *L, MAYBE_UNUSED filter_matrix_t *R,
+            filter_matrix_t *mat, index_t j)
 {
-  index_t lo = mat->Rp[id];
-  index_t hi = mat->Rp[id + 1];
-  int w = hi - lo;
+  index_t lo = mat->Rp[j];
+  index_t hi = mat->Rp[j + 1];
+  int32_t w = hi - lo; /* weight of the considered ideal */
 
-  if (w == 1)
-    return 0; /* ensure all 1-merges are processed before 2-merges with no
-		 cancellation */
+  if (w <= 2)
+    return 0; /* ensure all 1-and 2-merges are processed first
+                 (they are done on the R matrix) */
 
-  if (w > mat->cwmax)
+  if (w > mat->cwmax) /* discard too heavy ideals for now */
     return INT32_MAX;
 
-  /* find shortest row in the merged column */
+  /* find lightest row in L */
   index_t i = mat->Ri[lo];
-  int32_t c, cmin = matLengthRow (mat, i);
+  int32_t c, cmin = matLengthRow (L, i);
   for (index_t k = lo + 1; k < hi; k++)
     {
       i = mat->Ri[k];
-      c = matLengthRow(mat, i);
+      c = matLengthRow(L, i);
       if (c < cmin)
 	cmin = c;
     }
 
-  /* fill-in formula for Markowitz pivoting: since w >= 2 we have
-     (w - 1) * (cmin - 2) - cmin >= -2, thus adding 3 ensures we
-     get a value >= 1, then 1-merges will be merged first */
-  return (w - 1) * (cmin - 2) - cmin + BIAS;
+  /* We return the original Markowitz cost, i.e., we optimize the weight
+     increase of the matrix product M=L*R. */
+#if MERGE_STRATEGY == 1
+  ASSERT_ALWAYS(cmin >= 2);
+  return (w - 1) * (cmin - 2) + BIAS;
+#else
+  return (w - 2) * cmin + BIAS - R->wt[j];
+#endif
 }
 
 /* Output a list of merges to a string.
@@ -945,11 +1064,7 @@ merge_cost (filter_matrix_t *mat, index_t id)
    Return the number of characters written, except the final \0
    (or that would have been written if that number >= size) */
 static int
-#ifndef FOR_DL
-sreportn (char *str, size_t size, index_signed_t *ind, int n)
-#else
 sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
-#endif
 {
   size_t m = 0; /* number of characters written */
 
@@ -963,107 +1078,170 @@ sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
 	  ASSERT(m < size);
 	}
     }
-#ifdef FOR_DL
   m += snprintf (str + m, size - m, " #%lu", (unsigned long) j);
-#endif
   m += snprintf (str + m, size - m, "\n");
   ASSERT(m < size);
   return m;
 }
 
+/* Rows i1, i2 in mat have an entry on column j; Set e1, e2 to the exponent */
+static void locate_columns(MAYBE_UNUSED const filter_matrix_t *mat, 
+	MAYBE_UNUSED index_t i1, MAYBE_UNUSED index_t i2, 
+	MAYBE_UNUSED index_t j, MAYBE_UNUSED int32_t *e1, MAYBE_UNUSED int32_t *e2)
+{
+	#ifdef FOR_DL
+	uint32_t k1 = matLengthRow (mat, i1);
+	uint32_t k2 = matLengthRow (mat, i2);
+	typerow_t *r1 = mat->rows[i1];
+	typerow_t *r2 = mat->rows[i2];
+	*e1 = 0;
+	*e2 = 0;
+		
+	/* search by decreasing ideals as the ideal to be merged is likely large */
+	for (int l = k1; l >= 1; l--)
+		if (r1[l].id == j) {
+			*e1 = r1[l].e;
+			break;
+		}
+	for (int l = k2; l >= 1; l--)
+		if (r2[l].id == j) {
+			*e2 = r2[l].e;
+			break;
+		}
+	int d = (int) gcd_int64 ((int64_t) *e1, (int64_t) *e2);
+	*e1 /= -d;
+	*e2 /= d;
+	#endif
+}
+
 /* Perform the row additions given by the minimal spanning tree (stored in
-   history[][]). */
+   history[][]). Add in c the fill-in in mat. */
 static int
 addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
-		 filter_matrix_t *mat, int m, index_t *ind, index_t j,
-		 int *father, int *sons)
+		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind,
+                 MAYBE_UNUSED index_t j, int *father, int *sons, int32_t *c)
 {
-  int i, s, t;
+	for (int i = m - 2; i >= 0; i--) {
+		int s = father[i];
+		int t = sons[i];
+		if (i == 0) {
+			history[i][1] = ind[s];
+			ASSERT(s == 0);
+		} else {
+			history[i][1] = -(ind[s] + 1);
+		}
 
-  for (i = m - 2; i >= 0; i--)
-    {
-      s = father[i];
-      t = sons[i];
-      if (i == 0)
-	{
-	  history[i][1] = ind[s];
-	  ASSERT(s == 0);
+		index_t i1 = ind[t];
+		index_t i2 = ind[s];
+		
+		/* perform the operation on mat, and possibly "record" it in L 
+		 * First determine the coefficients of the linear combination
+		 */
+		int32_t e1, e2;
+		locate_columns(mat, i1, i2, j, &e1, &e2);
+
+		*c += add_row (mat, i1, i2, e1, e2);
+		if (!twomerge_mode)
+      			add_row (L, i1, i2, e1, e2);
+		history[i][2] = i1;
+		history[i][0] = 2;
 	}
-      else
-	history[i][1] = -(ind[s] + 1);
-      add_row (mat, ind[t], ind[s], j);
-      history[i][2] = ind[t];
-      history[i][0] = 2;
-    }
-  return m - 2;
+	return m - 2;
 }
+
+
+/* given an ideal of weight m, fills the m x m matrix A so that
+   A[i][j] is the weight of the sum of the i-th and j-th rows
+   containing the ideal, for 0 <= i, j < m */
+void
+fillRowAddMatrix(int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX],
+		 const filter_matrix_t *mat, filter_matrix_t *L,
+                 int m, index_t *ind, index_t j)
+{
+	/* A[i][i] is not used, thus we don't initialize it. */
+	for (int u = 0; u < m; u++)
+		for (int v = u+1; v < m; v++) {
+			index_t i1 = ind[u];
+			index_t i2 = ind[v];
+			int32_t e1 = 0, e2 = 0;
+			locate_columns(mat, i1, i2, j, &e1, &e2);
+			A[u][v] = weightSum(L, i1, i2, e1, e2);
+			A[v][u] = A[u][v];
+		}
+}
+
 
 /* perform the merge described by the id-th row of R,
-   computing the full spanning tree */
+   computing the full spanning tree, and return the fill-in */
 static int32_t
-merge_do (filter_matrix_t *mat, index_t id, buffer_struct_t *buf)
+merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
+          index_t id, buffer_struct_t *buf)
 {
-  int32_t c;
-  index_t j = mat->Rqinv[id];
-  index_t t = mat->Rp[id];
-  int w = mat->Rp[id + 1] - t;
+	int32_t c = 0;
+	index_t j = mat->Rqinv[id];
+	index_t t = mat->Rp[id];
+	int w = mat->Rp[id + 1] - t;
 
-  ASSERT (1 <= w && w <= mat->cwmax);
+	ASSERT (1 <= w && w <= mat->cwmax);
 
-  if (w == 1)
-    {
-      char s[MERGE_CHAR_MAX];
-      int n MAYBE_UNUSED;
-      index_signed_t i = mat->Ri[t]; /* only row containing j */
-#ifndef FOR_DL
-      n = sreportn (s, MERGE_CHAR_MAX, &i, 1);
+	if (w == 1) {             // eliminate a singleton column
+		char s[MERGE_CHAR_MAX];
+		int n MAYBE_UNUSED;
+		index_signed_t i = mat->Ri[t]; /* only row containing j */
+		n = sreportn (s, MERGE_CHAR_MAX, &i, 1, mat->p[j]);
+		ASSERT(n < MERGE_CHAR_MAX);
+		buffer_add (buf, s);
+		c = remove_row (L, mat, i);
+	} else {
+		/* perform the real merge and output to history file */
+		index_t *ind = mat->Ri + t;
+		char s[MERGE_CHAR_MAX];
+		int n = 0; /* number of characters written to s (except final \0) */
+		int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
+#if MERGE_STRATEGY == 1
+		fillRowAddMatrix (A, mat, mat, w, ind, j);           // target mat
 #else
-      n = sreportn (s, MERGE_CHAR_MAX, &i, 1, mat->p[j]);
+		fillRowAddMatrix (A, mat, L, w, ind, j);             // target L
 #endif
-      ASSERT(n < MERGE_CHAR_MAX);
-      buffer_add (buf, s);
-      remove_row (mat, i);
-      return -3;
-    }
+		int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
+		minimalSpanningTree (start, end, w, A);
+		index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
+		int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end, &c);
+		for (int i = hmax; i >= 0; i--) {
+      			n += sreportn (s + n, MERGE_CHAR_MAX - n, (index_signed_t*) (history[i]+1), 
+      					history[i][0], mat->p[j]);
+      			ASSERT(n < MERGE_CHAR_MAX);
+    		}
+		buffer_add (buf, s);
+		c += remove_row (L, mat, ind[0]);
+	}
 
-  /* perform the real merge and output to history file */
-  index_t *ind = mat->Ri + t;
-  char s[MERGE_CHAR_MAX];
-  int n = 0; /* number of characters written to s (except final \0) */
-  int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
-  fillRowAddMatrix (A, mat, w, ind, j);
-  /* mimic MSTWithA */
-  int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
-  c = minimalSpanningTree (start, end, w, A);
-  /* c is the weight of the minimal spanning tree, we have to remove
-     the weights of the initial relations */
-  for (int k = 0; k < w; k++)
-    c -= matLengthRow (mat, ind[k]);
-  index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
-  int hmax = addFatherToSons (history, mat, w, ind, j, start, end);
-  for (int i = hmax; i >= 0; i--)
-    {
-#ifndef FOR_DL
-      n += sreportn (s + n, MERGE_CHAR_MAX - n,
-		     (index_signed_t*) (history[i]+1), history[i][0]);
-#else
-      n += sreportn (s + n, MERGE_CHAR_MAX - n,
-		     (index_signed_t*) (history[i]+1), history[i][0],
-		     mat->p[j]);
-#endif
-      ASSERT(n < MERGE_CHAR_MAX);
-    }
-  buffer_add (buf, s);
-  remove_row (mat, ind[0]);
-  return c;
+	/* Update the total weight of R. We check the merged column has not a
+	   saturated weight (which should not happen in practice). */
+	ASSERT_ALWAYS (R->wt[j] < (col_weight_t) -1);
+	if (twomerge_mode) {
+		// we apply the merge directly to R
+		#pragma omp atomic update
+    		R->tot_weight += c;
+	} else {
+	        // we remove column j from R
+    		/* Warning: R->wt[j] (the weight of column j after the 2-merges)
+    		 * might differ from w (the current weight of column j). 
+    		 */
+		#pragma omp atomic update
+		R->tot_weight -= R->wt[j];
+	}
+	return c;
 }
 
-/* accumulate in L all merges of (biased) cost <= cbound.
-   L must be preallocated.
-   L is a linear array and the merges appear by increasing cost.
-   Returns the size of L. */
+/* accumulate in possible_merges all merges of (biased) cost <= cbound.
+   possible_mergesL must be preallocated.
+   possible_mergesL is a linear array and the merges appear by increasing cost.
+   Returns the size of possible_merges. */
 static int
-compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
+compute_merges (index_t *possible_merges, MAYBE_UNUSED filter_matrix_t *L,
+                MAYBE_UNUSED filter_matrix_t *R,
+                filter_matrix_t *mat, int cbound)
 {
   double cpu = seconds(), wct = wct_seconds();
   index_t Rn = mat->Rn;
@@ -1079,7 +1257,11 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
      schedule(guided) for RSA-240 with 112 threads. */
   #pragma omp parallel for schedule(dynamic,128)
   for (index_t i = 0; i < Rn; i++)
-    cost[i] = merge_cost (mat, i);
+#if MERGE_STRATEGY == 1
+    cost[i] = merge_cost (mat, R, mat, i);
+#else
+    cost[i] = merge_cost (L, R, mat, i);
+#endif
 
   int s;
 
@@ -1092,16 +1274,13 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
   /* initialize array to zero */
 #pragma omp for schedule(static)
   for (int t = 0; t < T; t++)
-    for (int c = 0; c <= cbound; c++)
-      count[t][c] = 0;
+    memset(count+t, 0, (cbound + 1) * sizeof(index_t));
 
   /* Yet Another Bucket Sort (sigh): sort the candidate merges by cost. Check if worth parallelizing */
 #pragma omp parallel
   {
     int tid = omp_get_thread_num();
     index_t *tcount = &count[tid][0];
-
-    memset(tcount, 0, (cbound + 1) * sizeof(index_t));
 
 #pragma omp for schedule(static)  // static is mandatory
     for (index_t i = 0; i < Rn; i++) {
@@ -1130,7 +1309,7 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
       int c = cost[i];
       if (c > cbound)
 	continue;
-      L[tcount[c]++] = i;
+      possible_merges[tcount[c]++] = i;
     }
   } /* end parallel section */
 
@@ -1154,11 +1333,11 @@ compute_merges (index_t *L, filter_matrix_t *mat, int cbound)
   return s;
 }
 
-
 /* return the number of merges applied */
 static unsigned long
-apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
-	      buffer_struct_t *Buf)
+apply_merges (index_t *possible_merges, index_t total_merges,
+              filter_matrix_t *L,  filter_matrix_t *R,
+              filter_matrix_t *mat, buffer_struct_t *Buf)
 {
   double cpu3 = seconds (), wct3 = wct_seconds ();
   char * busy_rows = malloc(mat->nrows * sizeof (char));
@@ -1184,7 +1363,7 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
   {
     #pragma omp for schedule(guided)
     for (index_t it = 0; it < total_merges; it++) {
-      index_t id = L[it];
+      index_t id = possible_merges[it];
       index_t lo = mat->Rp[id];
       index_t hi = mat->Rp[id + 1];
       int tid = omp_get_thread_num ();
@@ -1237,8 +1416,8 @@ apply_merges (index_t *L, index_t total_merges, filter_matrix_t *mat,
 	  }
       }
       if (ok) {
-	fill_in += merge_do(mat, id, Buf + tid);
-	nmerges ++;
+        fill_in += (uint64_t) merge_do (L, R, mat, id, &Buf[tid]);
+        nmerges ++;
         ASSERT(hi - lo <= MERGE_LEVEL_MAX);
       }
     }  /* for */
@@ -1402,7 +1581,7 @@ main (int argc, char *argv[])
 {
     char *argv0 = argv[0];
 
-    filter_matrix_t mat[1];
+    filter_matrix_t mat[1], L[1], R[1];
     FILE * history;
 
     int nthreads = 1, cbound_incr;
@@ -1475,7 +1654,6 @@ main (int argc, char *argv[])
       usage (pl, argv0);
     }
 
-    heap_setup();
     set_antebuffer_path (argv0, path_antebuffer);
 
     history = fopen_maybe_compressed (outname, "w");
@@ -1487,10 +1665,8 @@ main (int argc, char *argv[])
     fprintf (history, "is added to i2, ..., ik, and row i1\n");
     fprintf (history, "# is removed afterwards ");
     fprintf (history, "(where row 0 is the first line in *.purged.gz).\n");
-#ifdef FOR_DL
     fprintf (history, "# A line ending with #j ");
     fprintf (history, "means that ideal of index j should be merged.\n");
-#endif
 
     /* Read number of rows and cols on first line of purged file */
     purgedfile_read_firstline (purgedname, &(mat->nrows), &(mat->ncols));
@@ -1498,16 +1674,28 @@ main (int argc, char *argv[])
     sanity_check_matrix_sizes(mat);
 
     /* initialize the matrix structure */
-    initMat (mat, skip);
+    initMat (mat, skip); // merge_replay_matrix.c
+
+    /* Set L to the identity matrix. This matrix will contain the combinations
+       of rows of the initial matrix M, so that the output matrix M' of merge
+       equals to L*M (up to removed rows and columns).
+    */
+    L->nrows = L->ncols = mat->nrows;
+    initMat (L, 0); // no skip in L, since skip only concerns columns
+    for (index_t i = 0; i < L->nrows; i++)
+    {
+      L->rows[i] = heap_alloc_row(L->heap, i, 2);  // merge_heap.c
+      setCell(L->rows[i], 0, 1, 1); // only one non-zero element in row
+      setCell(L->rows[i], 1, i, 1); // L[i,i] = 1
+    }
+
+    /* Allocate the wt field of R (we don't use the other fields). */
+    R->wt = malloc (mat->ncols * sizeof (col_weight_t));
 
     /* Read all rels and fill-in the mat structure */
     tt = seconds ();
     filter_matrix_read (mat, purgedname);
     printf ("Time for filter_matrix_read: %2.2lfs\n", seconds () - tt);
-
-
-
-
 
     check_matrix (mat);
 
@@ -1522,8 +1710,11 @@ main (int argc, char *argv[])
     index_t jmin[MERGE_LEVEL_MAX + 1] = {0,};
 
     compute_weights (mat, jmin);
+    /* Initially, R=mat, thus they have the same weights. */
+    compute_weights_R (R, mat);
+    R->tot_weight = mat->tot_weight;
 
-    recompress (mat, jmin);
+    recompress (R, mat, jmin);
 
     // output_matrix (mat, "out.sage");
 
@@ -1542,9 +1733,6 @@ main (int argc, char *argv[])
 
     printf ("Using MERGE_LEVEL_MAX=%d, cbound_incr=%d",
 	    MERGE_LEVEL_MAX, cbound_incr);
-#ifdef USE_ARENAS
-    printf (", M_ARENA_MAX=%d", arenas);
-#endif
     printf (", PAGE_DATA_SIZE=%d", heap_config_get_PAGE_DATA_SIZE());
 #ifdef HAVE_OPENMP
     /* https://stackoverflow.com/questions/38281448/how-to-check-the-version-of-openmp-on-windows
@@ -1565,8 +1753,6 @@ main (int argc, char *argv[])
     fflush (stdout);
 
     mat->cwmax = 2;
-
-    // copy_matrix (mat);
 
 #if defined(DEBUG) && defined(FOR_DL)
     /* compute the minimum/maximum coefficients */
@@ -1597,15 +1783,15 @@ main (int argc, char *argv[])
 	double cpu1 = seconds (), wct1 = wct_seconds ();
 	merge_pass++;
 
-        if (merge_pass == 2 || mat->cwmax > 2) {
-                double cpu8 = seconds (), wct8 = wct_seconds ();
-                heap_garbage_collection(mat->rows);
-                 cpu8 = seconds () - cpu8;
-                wct8 = wct_seconds () - wct8;
-                print_timings ("   GC took", cpu8, wct8);
-                cpu_t[GC] += cpu8;
-                wct_t[GC] += wct8;
-        }
+    if (merge_pass == 2 || mat->cwmax > 2) {
+            double cpu8 = seconds (), wct8 = wct_seconds ();
+            heap_garbage_collection(mat->heap, mat->rows);
+            cpu8 = seconds () - cpu8;
+            wct8 = wct_seconds () - wct8;
+            print_timings ("   GC took", cpu8, wct8);
+            cpu_t[GC] += cpu8;
+            wct_t[GC] += wct8;
+    }
 
 	/* Once cwmax >= 3, at each pass, we increase cbound to allow more
 	   merges. If one decreases cbound_incr, the final matrix will be
@@ -1637,14 +1823,16 @@ main (int argc, char *argv[])
 
 	compute_R (mat, jmin[mat->cwmax]);
 
-	index_t *L = malloc(mat->Rn * sizeof(index_t));
+	index_t *possible_merges = malloc(mat->Rn * sizeof(index_t));
 
-	index_t n_possible_merges = compute_merges(L, mat, cbound);
+	index_t n_possible_merges = compute_merges(possible_merges, L, R, mat,
+                                                   cbound);
 
-	unsigned long nmerges = apply_merges(L, n_possible_merges, mat, Buf);
+	unsigned long nmerges = apply_merges (possible_merges,
+                                            n_possible_merges, L, R, mat, Buf);
 
 	buffer_flush (Buf, nthreads, history);
-	free(L);
+	free(possible_merges);
 
 	free_aligned (mat->Ri);
 
@@ -1657,17 +1845,24 @@ main (int argc, char *argv[])
 
 	/* settings for next pass */
   	if (mat->cwmax == 2) { /* we first process all 2-merges */
-		if (nmerges == n_possible_merges)
+		if (nmerges == 0) {
+                        twomerge_mode = 0;    // stop special treatment of the initial run of 2-merges
+                        compute_weights_R (R, mat);
 			mat->cwmax++;
+                }
 	} else {
-		if (mat->cwmax < MERGE_LEVEL_MAX)
-			mat->cwmax ++;
+#define INCREASE_RATIO 0.0035
+          /* we only increase cwmax when nmerges is below a given proportion
+             of the matrix size */
+          if (mat->cwmax < MERGE_LEVEL_MAX &&
+              (nmerges < INCREASE_RATIO * (double) mat->ncols))
+              mat->cwmax ++;
 	}
 
 	if (mat->rem_ncols < 0.66 * mat->ncols) {
 	  static int recompress_pass = 0;
 	  printf("============== Recompress %d ==============\n", ++recompress_pass);
-	  recompress(mat, jmin);
+	  recompress (R, mat, jmin);
 	}
 
 	cpu1 = seconds () - cpu1;
@@ -1694,7 +1889,7 @@ main (int argc, char *argv[])
 	fflush (stdout);
 
 	if (average_density (mat) >= target_density)
-		break;
+          break;
 
         /* With small cbound_incr, in particular cbound_incr=1,
            we might have zero potential merge when cbound is small,
@@ -1702,10 +1897,9 @@ main (int argc, char *argv[])
            merge being proportional to the square of the column weight). */
 	if (nmerges == 0 && mat->cwmax == MERGE_LEVEL_MAX &&
             cbound > mat->cwmax * mat->cwmax)
-		break;
+          break;
     }
     /****** end main loop ******/
-    merge_pass++;
 
 #if defined(DEBUG) && defined(FOR_DL)
     min_exp = 0; max_exp = 0;
@@ -1752,21 +1946,45 @@ main (int argc, char *argv[])
 	    mat->rem_nrows - mat->rem_ncols, mat->tot_weight);
     fflush (stdout);
 
+    /* stats on L (mostly for debugging for now) */
+    uint64_t Lweight = 0;
+    uint64_t Ln = 0;
+    for (index_t i = 0; i < L->nrows; i++)
+        if (L->rows[i] != NULL) {
+                Ln += 1;
+                Lweight += rowLength(L->rows, i);
+        }
+
+    printf ("L has N=%" PRIu64 " W=%" PRIu64 "\n", Ln, Lweight);
+    printf ("R has N=%" PRIu64 " W=%" PRIu64 "\n",
+            mat->rem_ncols, R->tot_weight);
+    printf ("Theoretical linalg cost N*(|L|+|R|)=%.2e\n",
+            (double) Ln * ((double) Lweight + (double) R->tot_weight));
+    fflush (stdout);
+
+/*
+    FILE *f = fopen("Ldump.txt", "w");
+    for (index_t i = 0; i < L->nrows; i++) 
+        if (L->rows[i] != NULL) {
+                for (index_t j = 0; j <= rowLength(L->rows, i); j++)
+                        fprintf(f, "%d ", rowCell(L->rows[i], j));
+                fprintf(f, "\n");
+        }
+    fclose(f);
+*/
     printf ("Before cleaning memory:\n");
     print_timing_and_memory (stdout, cpu_after_read, wct_after_read);
 
     buffer_clear (Buf, nthreads);
 
-    heap_clear ();
-
-#ifdef FOR_DL
     free (mat->p);
-#endif
     free (mat->Rp);
     free (mat->Rq);
     free (mat->Rqinv);
 
     clearMat (mat);
+    clearMat (L);
+    free (R->wt);
 
     param_list_clear (pl);
 

@@ -3,24 +3,18 @@
 
 #include <stddef.h>    // for NULL
 #include <stdint.h>    // for uint64_t, uint32_t
+
 #include "typedefs.h"
 #include "filter_config.h"
+#include "merge_types.h"  // typerow_t, col_weight_t, ...
+#include "merge_heap.h"  // heapctx_t
 
 #define TRACE_COL -1 // 253224 // 231 // put to -1 if not...!
 #define TRACE_ROW -1 // 59496 // put to -1 if not...!
 
-#ifndef FOR_DL
-#define typerow_t index_t
-#define cmp_typerow_t cmp_index
-#else
-#define typerow_t ideal_merge_t
-#define cmp_typerow_t cmp_ideal_merge
-#endif
-
-#define col_weight_t unsigned char
-
 /* rows correspond to relations, and columns to primes (or prime ideals) */
 typedef struct {
+  heapctx_t heap;
   int verbose;         /* verbose level */
   uint64_t nrows;
   uint64_t ncols;
@@ -70,8 +64,6 @@ void print_row(filter_matrix_t *mat, index_t i);
 #define isRowNull(mat, i) ((mat)->rows[(i)] == NULL)
 
 #define SPARSE_ITERATE(mat, i, k) for((k)=1; (k)<=lengthRow((mat),(i)); (k)++)
-
-int weightSum(filter_matrix_t *mat, index_t i1, index_t i2, index_t j);
 
 #ifdef __cplusplus
 }

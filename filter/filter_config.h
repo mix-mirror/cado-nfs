@@ -33,38 +33,32 @@
 /*********/
 
 /* Maximum level for a merge. */
-#define MERGE_LEVEL_MAX 32
+#define MERGE_LEVEL_MAX 64
 /* Maximum number of characters of a merge in the history file.
    For a k-merge, we have up to k-1 lines written in the same string.
    Each line is of the following form:
-   i1 i2 ... in
+   i1 i2 ... in #j
    which means that line i1 has to be added to i2, ..., in and then destroyed,
    or:
-   -(i1+1) i2 ... in
+   -(i1+1) i2 ... in #j
    which means that line i1 has to be added to i2, ..., in, but not destroyed.
    The sum of n-1 over all such lines must equal k.
    Each line consists of numbers written in decimal:
    - if SIZEOF_INDEX=4, each number is a 32-bit value (<=10 digits)
    - if SIZEOF_INDEX=8, each number is a 64-bit value (<=20 digits)
    The worst case (in term of total length) is when we only have lines of
-   the form "i1 i2" or "-(i1+1) i2". This is precisely what we get with the
-   spanning tree algorithm. We then get exactly k-1 lines: first k-2 with a
+   the form "i1 i2 #j" or "-(i1+1) i2 #j". This is precisely what we get with
+   the spanning tree algorithm. We then get exactly k-1 lines: first k-2 with a
    minus sign (row i1 not destroyed), and last one without minus sign (row
    destroyed).
-   We also a final \n per line, and (for DLP) an extra number of 10/20
+   We also a final \n per line, and an extra number of 10/20
    digits and two extra characters (" #"). Plus an extra \0 (end of string).
-   This gives a maximum of:
-   - (k-1)*(2*10*SIZEOF_INDEX/4 + 3) for the factorization
-   - (k-1)*(3*10*SIZEOF_INDEX/4 + 5) for DLP
-   For MERGE_LEVEL_MAX=32 this gives:
-   - SIZEOF_INDEX=4: 713 for the factorization, 1085 for DLP
-   - SIZEOF_INDEX=8: 1333 for the factorization, 2015 for DLP
+   This gives a maximum of (k-1)*(3*10*SIZEOF_INDEX/4 + 5) characters.
+   For MERGE_LEVEL_MAX=64 this gives:
+   - SIZEOF_INDEX=4: 2205 characters
+   - SIZEOF_INDEX=8: 4095 characters
 */
-#ifndef FOR_DL
-#define MERGE_CHAR_MAX ((MERGE_LEVEL_MAX - 1) * (2 * 10 * (SIZEOF_INDEX / 4) + 3))
-#else
 #define MERGE_CHAR_MAX ((MERGE_LEVEL_MAX - 1) * (3 * 10 * (SIZEOF_INDEX / 4) + 5))
-#endif
 
 #ifndef FOR_DL
 /* the default value 170 was determined experimentally on RSA-155

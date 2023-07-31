@@ -189,7 +189,6 @@ print_relation (FILE * file, earlyparsed_relation_srcptr rel)
    * that case, we only use a single combined additional column. (except
    * for free relations, of course).
    */
-
   if (number_of_additional_columns(renumber_tab)) {
       size_t n = renumber_table_get_nb_polys(renumber_tab);
       if (n == 2) {

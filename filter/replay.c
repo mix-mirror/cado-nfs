@@ -330,7 +330,7 @@ renumber (index_t small_ncols, index_t *colweight, index_t ncols,
           MAYBE_UNUSED const char *idealsfilename)
 {
     index_t k, nb;
-    index_signed_t j;
+    index_t j;
     index_t *tmp;
 
 #ifdef FOR_DL
@@ -359,10 +359,14 @@ renumber (index_t small_ncols, index_t *colweight, index_t ncols,
     printf ("Sorting %" PRIu64 " columns by decreasing weight\n",
             (uint64_t) small_ncols);
     fflush (stdout);
-    qsort (tmp, small_ncols, 2*sizeof(index_t), cmp_index2);
+    /* PZ: for now, we don't sort the columns, to compare with
+       replay_dblemat. If restore the sort, also restore the order of
+       the for loop below. */
+    // qsort (tmp, small_ncols, 2*sizeof(index_t), cmp_index2);
     memset (colweight, 0, ncols * sizeof(index_t));
     // useful for BW + skipping heavy part only...
-    for (j = nb - 1, k = 1; j >= 0; j -= 2)
+    // for (j = nb - 1, k = 1; j >= 0; j -= 2)
+    for (j = 1, k = 1; j < nb; j += 2)
       {
         colweight[tmp[j]] = k++; // always this +1 trick
 #ifdef FOR_DL
@@ -502,6 +506,7 @@ typedef struct
   index_t ncols;
   index_t col0;
   index_t colmax;
+  int32_t *scratch;
 } replay_read_data_t;
 
 void * fill_in_rows (void *context_data, earlyparsed_relation_ptr rel)
@@ -509,11 +514,26 @@ void * fill_in_rows (void *context_data, earlyparsed_relation_ptr rel)
   replay_read_data_t *data = (replay_read_data_t *) context_data;
   typerow_t buf[UMAX(weight_t)];
 
+  // 1st pass, set scratch
+  for (unsigned int j = 0; j < rel->nb; j++) {
+    index_t h = rel->primes[j].h;
+    if (h < data->col0 || h >= data->colmax)
+      continue; // column has been eliminated, skip entry
+    data->scratch[h] ^= 1;
+  }
+
+  // 2nd pass, read and reset scratch
   unsigned int nb = 0;
   for (unsigned int j = 0; j < rel->nb; j++)
   {
     index_t h = rel->primes[j].h;
-    if (h < data->col0 || h >= data->colmax) continue;
+    if (h < data->col0 || h >= data->colmax)
+      continue;
+#ifndef FOR_DL
+    if (data->scratch[h] == 0)
+      continue; // ideal appeared an even number of times
+#endif
+    data->scratch[h] = 0; // reset scratch
     nb++;
 #ifdef FOR_DL
     exponent_t e = rel->primes[j].e;
@@ -561,15 +581,21 @@ read_purgedfile (typerow_t **mat, const char* filename, index_t nrows,
     printf("Reading sparse matrix from %s\n", filename);
     fflush(stdout);
     char *fic[2] = {(char *) filename, NULL};
+    int32_t *scratch =  malloc(ncols * sizeof(*scratch));
+    ASSERT_ALWAYS(scratch != NULL);
+    for (index_t j = 0; j < ncols; j++)
+      scratch[j] = 0;
     replay_read_data_t tmp = (replay_read_data_t) {
         .mat= mat,
         .ncols = ncols,
         .col0 = col0,
         .colmax = colmax,
+        .scratch = scratch
     };
     nread = filter_rels(fic, (filter_rels_callback_t) &fill_in_rows, &tmp,
                         EARLYPARSE_NEED_INDEX, NULL, NULL);
     ASSERT_ALWAYS (nread == nrows);
+    free(scratch);
   }
   else /* for_msieve */
   {

@@ -164,6 +164,7 @@ filter/merge_heap.c
 filter/merge_heap.h
 filter/merge_replay_matrix.c
 filter/merge_replay_matrix.h
+filter/merge_types.h
 filter/mst.c
 filter/mst.h
 filter/purge.c
@@ -173,6 +174,7 @@ filter/read_purgedfile_in_parallel.c
 filter/read_purgedfile_in_parallel.h
 filter/reconstructlog.cpp
 filter/replay.c
+filter/replay_dblemat.c
 filter/shrink_rels.cpp
 filter/singleton_removal.c
 filter/singleton_removal.h

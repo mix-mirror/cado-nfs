@@ -56,38 +56,6 @@ minimalSpanningTree (int *start, int *end, int m,
   return w;
 }
 
-/* given an ideal of weight m, fills the m x m matrix A so that
-   A[i][j] is the weight of the sum of the i-th and j-th rows
-   containing the ideal, for 0 <= i, j < m */
-void
-fillRowAddMatrix(int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX], filter_matrix_t *mat,
-                 int m, index_t *ind, index_t ideal)
-{
-    int i, j;
-
-    /* A[i][i] is not used, thus we don't initialize it. */
-    for(i = 0; i < m; i++)
-	for(j = i+1; j < m; j++){
-	    A[i][j] = weightSum (mat, ind[i], ind[j], ideal);
-	    A[j][i] = A[i][j];
-	}
-}
-
-int
-minCostUsingMST (filter_matrix_t *mat, int m, index_t *ind, index_t j)
-{
-    int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX], w;
-    int sons[MERGE_LEVEL_MAX];
-    int father[MERGE_LEVEL_MAX];
-
-    fillRowAddMatrix (A, mat, m, ind, j);
-    w = minimalSpanningTree (father, sons, m, A);
-    /* w is the cost of all merges, we should subtract the cost of the
-       initial relations */
-    for (int i = 0; i < m; i++)
-      w -= matLengthRow(mat, ind[i]);
-    return w;
-}
 
 #ifdef DEBUG
 void
