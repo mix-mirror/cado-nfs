@@ -282,6 +282,8 @@ void blstate_save(struct blstate * bl, unsigned int iter)
         size_t rc;
         rc = fwrite(bl->L[i1].data(), sizeof(mat64), 1, f);
         ASSERT_ALWAYS(rc == (size_t) 1);
+        rc = fwrite(bl->L[i2].data(), sizeof(mat64), 1, f);
+        ASSERT_ALWAYS(rc == (size_t) 1);
         fclose(f);
         free(tmp);
     }
