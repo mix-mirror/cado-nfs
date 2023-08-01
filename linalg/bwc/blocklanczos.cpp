@@ -534,9 +534,10 @@ void * bl_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUSED
     mpfq_vbase_ptr A = bl->A;
 
     /* so many features we do not support ! */
-    ASSERT_ALWAYS(bw->m == bw->n);
+    ASSERT_ALWAYS(bw->n == 64);
+    ASSERT_ALWAYS(bw->m == 64);
     ASSERT_ALWAYS(bw->ys[0] == 0);
-    ASSERT_ALWAYS(bw->ys[1] == bw->n);
+    ASSERT_ALWAYS(bw->ys[1] == 64);
 
     /* Don't think we stand any chance with interleaving with block
      * Lanczos... */
@@ -883,6 +884,7 @@ int main(int argc, char * argv[])
     matmul_top_lookup_parameters(pl);
     /* interpret our parameters */
     if (bw->ys[0] < 0) { fprintf(stderr, "no ys value set\n"); exit(1); }
+    if (bw->interval == 0) { fprintf(stderr, "no interval value set\n"); exit(1); }
     catch_control_signals();
 
     if (param_list_warn_unused(pl)) {
