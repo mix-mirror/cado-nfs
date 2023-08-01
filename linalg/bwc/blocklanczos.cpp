@@ -181,11 +181,7 @@ void blstate_clear(struct blstate * bl)
 
     serialize(mmt->pi->m);
     for(int i = 0 ; i < 3 ; i++) {
-        /* We also need D_n, D_{n-1}, D_{n-2}. Those are in fact bitmaps.
-         * Not clear that the bitmap type is really the one we want, though. */
         bit_vector_clear(bl->D[i]);
-        /* We need as well the two previous vectors. For these, distributed
-         * storage will be ok. */
         mmt_vec_clear(mmt, bl->V[i]);
     }
     mmt_vec_clear(mmt, bl->y);
