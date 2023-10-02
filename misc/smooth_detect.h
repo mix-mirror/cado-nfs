@@ -15,9 +15,9 @@
  * that it can have a context, and update it after each call.
  *
  * The next_cand() function must create candidates with something like:
- *   cand_set_original_values(C, u0, v0);
+ *   cand_set_original_values(C, u0, v0, id);
  * where u0 and v0 are the two integers that must be checked for
- * simultaneous smoothness.
+ * simultaneous smoothness, and id is the candidate identifier.
  * Note that the candidate C is initialized and cleared by the caller.
  *
  * An example of usage is given in descent_init_Fp.c .
