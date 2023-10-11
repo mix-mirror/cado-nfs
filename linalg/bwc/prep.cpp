@@ -128,7 +128,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
     /* We're cheating on the generic init routines */
     cheating_vec_init(A, &xymats, bw->m * prep_lookahead_iterations * A_multiplex);
 
-    for (unsigned ntri = 0;; ntri++) {
+    for (unsigned int ntri = 0;; ntri++) {
         if (nrhs == A_multiplex) {
             if (ntri) ++my_nx;
             if (ntri >= 4) {
@@ -240,6 +240,11 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
                 printf("// Found good x,y vector pair after %u trials\n",
                         ntri+1);
             break;
+        }
+
+        if (ntri == 4096) {
+            fprintf(stderr, "Aborting after %u trials\n", ntri);
+            exit(EXIT_FAILURE);
         }
     }
 
