@@ -25,7 +25,7 @@ mmt_vector_pair::mmt_vector_pair(matmul_top_data_ptr mmt, int dir)
     matmul_top_matrix_ptr mptr;
     mptr = (matmul_top_matrix_ptr) mmt->matrices + (dir ? (mmt->nmatrices - 1) : 0);
     for(int i = 0 ; i < mmt->nmatrices ; i++) {
-        int shared = (i == 0) & nmats_odd;
+        int shared = (i == 0) && nmats_odd;
         mmt_vec_init(mmt,0,0, (*this)[i], dir ^ (i&1), shared, mptr->n[dir]);
         mmt_full_vec_set_zero((*this)[i]);
 
