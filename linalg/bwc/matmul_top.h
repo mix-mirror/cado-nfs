@@ -112,9 +112,15 @@ struct matmul_top_data_s {
      *
      * n[0] is matrices[0]->n[0]
      * n[1] is matrices[nmatrices-1]->n[1]
+     * n0[0] is matrices[0]->n0[0]
+     * n0[1] is matrices[nmatrices-1]->n0[1]
      */
     unsigned int n[2];
     unsigned int n0[2]; // n0: unpadded.
+
+    /* The matrix we are dealing with is
+     * matrices[0] * matrices[1] * ... * matrices[nmatrices-1]
+     */
     int nmatrices;
     matmul_top_matrix * matrices;
 };
