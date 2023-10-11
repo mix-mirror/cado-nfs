@@ -211,6 +211,10 @@ extern void mmt_vec_unapply_P(matmul_top_data_ptr mmt, mmt_vec_ptr y);
 extern void mmt_apply_identity(mmt_vec_ptr w, mmt_vec_ptr v);
 extern void indices_twist(matmul_top_data_ptr mmt, uint32_t * xs, unsigned int n, int d);
 
+static inline int mmt_vec_is_shared(mmt_vec_ptr v) {
+    return v->siblings == NULL;
+}
+
 #ifdef __cplusplus
 }
 #endif
