@@ -862,6 +862,9 @@ void matmul_top_mul(matmul_top_data_ptr mmt, mmt_vec * v, struct timing_data * t
         int lnext = last && !nmats_odd ? 0 : (l+1);
         mmt_vec_ptr dst = v[lnext];
 
+        if (last && !nmats_odd)
+            mmt_full_vec_set_zero(dst);
+
         ASSERT_ALWAYS(src->consistency == 2);
         matmul_top_mul_cpu(mmt, midx, d, dst, src);
         ASSERT_ALWAYS(dst->consistency == 0);
