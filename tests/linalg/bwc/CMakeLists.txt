@@ -752,6 +752,20 @@ cado_define_test(TEST_NAME test-blocklanczos-staged
     no_save_cache=1 interval=10 nullspace=left
     TARGET_DEPENDENCIES test-blocklanczos_dependencies)
 
+
+#########################################################################
+
+cado_define_test(TEST_NAME test-multi-matrix
+    PROGRAM ${CMAKE_CURRENT_SOURCE_DIR}/bwc-test-double-matrix.sh
+        --bindir ${CADO_NFS_BINARY_DIR}/linalg/bwc
+    NO_DEFAULT_RUN
+    TARGET_DEPENDENCIES
+    bwc_full_gf2
+)
+cado_divert_test(test-multi-matrix thr11 APPEND_ARGUMENTS --thr 1x1 --test "159 193 129 STRETCH STRETCH")
+cado_divert_test(test-multi-matrix thr22 APPEND_ARGUMENTS --thr 2x2 --test "123 251 172 STRETCH STRETCH")
+
+
 #########################################################################
 ### if(HAVE_PERL_DIGEST_MD5)
 ### # This is testing the old binary.
