@@ -4,7 +4,7 @@
 
 
 mmt_vector_pair::mmt_vector_pair(matmul_top_data_ptr mmt, int dir)
-    : std::vector<mmt_vec>(mmt->nmatrices + (mmt->nmatrices & 1))
+    : std::vector<mmt_vec_s>(mmt->nmatrices + (mmt->nmatrices & 1))
     , mmt(mmt)
 {
     /* we allocate as many vectors as we have matrices, plus one if the
@@ -40,6 +40,6 @@ mmt_vector_pair::mmt_vector_pair(matmul_top_data_ptr mmt, int dir)
 mmt_vector_pair::~mmt_vector_pair()
 {
     for(auto & v : *this) {
-        mmt_vec_clear(mmt, v);
+        mmt_vec_clear(mmt, &v);
     }
 }
