@@ -763,7 +763,7 @@ cado_define_test(TEST_NAME test-multi-matrix
     bwc_full_gf2
 )
 cado_divert_test(test-multi-matrix thr11 APPEND_ARGUMENTS --thr 1x1 --test "159 193 129 STRETCH STRETCH")
-cado_divert_test(test-multi-matrix thr22 APPEND_ARGUMENTS --thr 2x2 --test "123 251 172 STRETCH STRETCH")
+cado_divert_test(test-multi-matrix thr22 APPEND_ARGUMENTS --thr 2x2 --test "159 193 129 STRETCH STRETCH")
 
 
 #########################################################################
