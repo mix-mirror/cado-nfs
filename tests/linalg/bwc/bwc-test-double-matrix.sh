@@ -61,7 +61,7 @@ common=(
         matrix=$matrices
         wdir=$tmp
         mn=64
-        balancing_options=reorder=columns
+        balancing_options=reorder=none,skip_decorrelating_permutation=1
         thr=$thr
     )
 $bindir/prep "${common[@]}" seed=$seed

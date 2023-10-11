@@ -305,6 +305,9 @@ void mf_bal_interpret_parameters(struct mf_bal_args * mba, param_list_ptr pl)
         } else if (strcmp(tmp, "columns,rows") == 0) {
             mba->do_perm[1] = MF_BAL_PERM_YES;
             mba->do_perm[0] = MF_BAL_PERM_YES;
+        } else if (strcmp(tmp, "none") == 0) {
+            mba->do_perm[1] = MF_BAL_PERM_NO;
+            mba->do_perm[0] = MF_BAL_PERM_NO;
         } else if (strcmp(tmp, "both") == 0) {
             mba->do_perm[1] = MF_BAL_PERM_YES;
             mba->do_perm[0] = MF_BAL_PERM_YES;
@@ -314,6 +317,7 @@ void mf_bal_interpret_parameters(struct mf_bal_args * mba, param_list_ptr pl)
                     "\tauto (default)\n"
                     "\trows\n"
                     "\tcolumns\n"
+                    "\tnone\n"
                     "\tboth (equivalent forms: \"rows,columns\" or \"columns,rows\"\n",
                     tmp);
             exit(EXIT_FAILURE);

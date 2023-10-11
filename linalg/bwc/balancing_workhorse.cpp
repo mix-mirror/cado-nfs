@@ -616,7 +616,12 @@ void dispatcher::reader_fill_index_maps()/*{{{*/
     fw_colperm.assign(xbal->tcols, -1);
     fw_rowperm.assign(xbal->trows, -1);
 
-    if (xbal->h->flags & FLAG_REPLICATE) {
+    if (!(xbal->h->flags & (FLAG_ROWPERM | FLAG_COLPERM))) {
+        for (uint32_t i = 0; i < xbal->tcols; i++)
+            fw_colperm[i] = i;
+        for (uint32_t i = 0; i < xbal->trows; i++)
+            fw_rowperm[i] = i;
+    } else if (xbal->h->flags & FLAG_REPLICATE) {
         uint32_t * xc = xbal->colperm;
         uint32_t * xr = xbal->rowperm;
         ASSERT_ALWAYS(xbal->tcols == xbal->trows);

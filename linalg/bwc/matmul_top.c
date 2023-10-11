@@ -2943,6 +2943,16 @@ void matmul_top_init(matmul_top_data_ptr mmt,
 
         matmul_top_init_prepare_local_permutations(mmt, i);
 
+        if (mmt->nmatrices > 1) {
+            /* as a stopgap measure, forbid the intermediate permutations
+             * entirely.
+             */
+            if (Mloc->bal->h->flags & (FLAG_ROWPERM | FLAG_COLPERM)) {
+                fprintf(stderr, "Use balancing_options=reorder=none for the multi-matrix setting\n");
+                exit(EXIT_FAILURE);
+            }
+        }
+
         if (!mmt->pi->interleaved) {
             matmul_top_read_submatrix(mmt, i, pl, optimized_direction );
         } else {
