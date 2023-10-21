@@ -455,8 +455,19 @@ class BwcMatrix(object):
 
         A = (self.P*self.sigma).transpose() * self.Mx * self.sigma
 
+
         B = self.M * self.Q
         sub = lambda T: T.submatrix(0,0,self.nrows,self.ncols)
+
+        fp = lambda M: ([ v.hamming_weight() for v in M], [ v.hamming_weight() for v in M.columns() ])
+        sfp = lambda M: (sorted([ v.hamming_weight() for v in M]), sorted([ v.hamming_weight() for v in M.columns() ]))
+
+        # current situation in the double matrix branch is that
+        # B == sub(self.Mx * self.sigma*self.xQ)
+        # self.M == sub(self.Mx * self.sigma)
+        #
+        # IOW the left permutation seems forgotten, and I'm unsure about
+        # what's going on with the decorrelation.
 
         if sub(A) != B:
             raise ValueError("Reconstructed matrix from submatrices does not match M " + NOK)

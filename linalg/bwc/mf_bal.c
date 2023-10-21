@@ -100,7 +100,7 @@ struct slice * alloc_slices(unsigned int water, unsigned int n)
  */
 struct slice * shuffle_rtable(
         const char * text,
-        uint32_t * rt,
+        uint32_t (*rt)[2],
         uint32_t n,
         unsigned int ns)
 {
@@ -137,8 +137,8 @@ struct slice * shuffle_rtable(
         int j = heap[ns-1].i;
         int pos = slices[j].nrows-heap[ns-1].room;
         ASSERT(heap[ns-1].room);
-        slices[j].r[pos] = rt[2*i+1];
-        heap[ns-1].s += rt[2*i];
+        slices[j].r[pos] = rt[i][1];
+        heap[ns-1].s += rt[i][0];
         heap[ns-1].room--;
         push_heap(heap, heap + ns);
     }
@@ -374,204 +374,426 @@ void mf_bal_adjust_from_option_string(struct mf_bal_args * mba, const char * opt
 
 void mf_bal(struct mf_bal_args * mba)
 {
+    mf_bal_n(mba, 1);
+}
+
+void mf_bal_n(struct mf_bal_args * mbas, int n)
+{
+    const char * text[2] = { "row", "column", };
     int rc;
-    /* we sometimes allocate strings, which need to be freed eventually */
-    char * freeit[2] = { NULL, NULL, };
-    if (mba->mfile && !mba->rwfile) {
-        mba->rwfile = freeit[0] = build_mat_auxfile(mba->mfile, "rw", ".bin");
+    int rectangular = mbas[0].rectangular;
+
+    char *(*freeit)[2] = malloc(n * sizeof(char *[2]));
+    balancing * bals = malloc(n * sizeof(balancing));
+
+    /* {{{ get/build filenames */
+    for(int midx = 0 ; midx < n ; midx++) {
+        struct mf_bal_args * mba = &mbas[midx];
+
+        /* we sometimes allocate strings, which need to be freed eventually */
+        // char * freeit[2] = { NULL, NULL, };
+        if (mba->mfile && !mba->rwfile) {
+            mba->rwfile = freeit[midx][0] = build_mat_auxfile(mba->mfile, "rw", ".bin");
+        }
+
+        if (mba->mfile && !mba->cwfile) {
+            mba->cwfile = freeit[midx][1] = build_mat_auxfile(mba->mfile, "cw", ".bin");
+        }
+
+        if (!mba->rwfile) { fprintf(stderr, "No rwfile given\n"); exit(1); }
+        if (!mba->cwfile) { fprintf(stderr, "No cwfile given\n"); exit(1); }
+        if (!mba->mfile) {
+            fprintf(stderr, "Matrix file name (mfile) must be given, even though the file itself does not have to be present\n");
+            exit(1);
+        }
     }
+    /*}}}*/
 
-    if (mba->mfile && !mba->cwfile) {
-        mba->cwfile = freeit[1] = build_mat_auxfile(mba->mfile, "cw", ".bin");
-    }
-
-    if (!mba->rwfile) { fprintf(stderr, "No rwfile given\n"); exit(1); }
-    if (!mba->cwfile) { fprintf(stderr, "No cwfile given\n"); exit(1); }
-    if (!mba->mfile) {
-        fprintf(stderr, "Matrix file name (mfile) must be given, even though the file itself does not have to be present\n");
-        exit(1);
-    }
-
-    balancing bal;
-    balancing_init(bal);
-
-    bal->h->nh = mba->nh;
-    bal->h->nv = mba->nv;
-
-    struct stat sbuf[2][1];
-    rc = stat(mba->rwfile, sbuf[0]);
-    if (rc < 0) { perror(mba->rwfile); exit(1); }
-    bal->h->nrows = sbuf[0]->st_size / sizeof(uint32_t);
-
-    rc = stat(mba->cwfile, sbuf[1]);
-    if (rc < 0) { perror(mba->cwfile); exit(1); }
-    bal->h->ncols = sbuf[1]->st_size / sizeof(uint32_t);
-
-    if (bal->h->ncols > bal->h->nrows) {
-        fprintf(stderr, "Warning. More columns than rows. There could be bugs.\n");
-    }
-
-    read_mfile_header(bal, mba->mfile, mba->withcoeffs);
-
-    /* {{{ Compute the de-correlating permutation */
-    if (mba->skip_decorrelating_permutation) {
-        /* internal, for debugging. This removes the de-correlating
-         * permutation. Nothing to do with what is called
-         * "shuffled-product" elsewhere, except that both are taken care
-         * of within mf_bal. */
-        bal->h->pshuf[0] = 1;
-        bal->h->pshuf[1] = 0;
-        bal->h->pshuf_inv[0] = 1;
-        bal->h->pshuf_inv[1] = 0;
-    } else {
-        modulusul_t M;
-        modul_initmod_ul(M, MIN(bal->h->nrows, bal->h->ncols));
-        residueul_t a,b;
-        residueul_t ai,bi;
-        modul_init(a, M);
-        modul_init(b, M);
-        modul_init(ai, M);
-        modul_init(bi, M);
-        modul_set_ul(a, (unsigned long) sqrt(bal->h->ncols), M);
-        modul_set_ul(b, 42, M);
-
-        for( ; modul_inv(ai, a, M) == 0 ; modul_add_ul(a,a,1,M)) ;
-        modul_mul(bi, ai, b, M);
-        modul_neg(bi, bi, M);
-
-        bal->h->pshuf[0] = modul_get_ul(a, M);
-        bal->h->pshuf[1] = modul_get_ul(b, M);
-        bal->h->pshuf_inv[0] = modul_get_ul(ai, M);
-        bal->h->pshuf_inv[1] = modul_get_ul(bi, M);
-
-        modul_clear(a, M);
-        modul_clear(b, M);
-        modul_clear(ai, M);
-        modul_clear(bi, M);
-        modul_clearmod(M);
+    /* {{{ init balancing structs */
+    for(int midx = 0 ; midx < n ; midx++) {
+        balancing_init(bals[midx]);
+        bals[midx]->h->nh = mbas[midx].nh;
+        bals[midx]->h->nv = mbas[midx].nv;
     }
     /* }}} */
 
-    const char * text[2] = { "row", "column", };
-    unsigned int matsize[2] = { bal->h->nrows, bal->h->ncols, };
-    unsigned int gridsize[2] = { mba->nh, mba->nv };
-    unsigned int block[2];
-    unsigned int padding[2];
-    uint32_t * weights[2];
-    uint32_t nzero[2];
-    double avg[2], sdev[2];
+    /* {{{ Get the row weights and column weights files (which *must exist*) */
+    for(int midx = 0 ; midx < n ; midx++) {
+        balancing_ptr bal = bals[midx];
+        struct mf_bal_args * mba = &mbas[midx];
 
-    for(int d = 0 ; d < 2 ; d++) {
-        /* d == 0 : padding the rows */
-        block[d] = iceildiv(matsize[d], mba->nh * mba->nv);
+        struct stat sbuf[2][1];
+        rc = stat(mba->rwfile, sbuf[0]);
+        if (rc < 0) { perror(mba->rwfile); exit(1); }
+        bal->h->nrows = sbuf[0]->st_size / sizeof(uint32_t);
+
+        rc = stat(mba->cwfile, sbuf[1]);
+        if (rc < 0) { perror(mba->cwfile); exit(1); }
+        bal->h->ncols = sbuf[1]->st_size / sizeof(uint32_t);
+
+        if (bal->h->ncols > bal->h->nrows) {
+            fprintf(stderr, "Warning. More columns than rows. There could be bugs.\n");
+        }
+
+        read_mfile_header(bal, mba->mfile, mba->withcoeffs);
+    }
+    /*}}}*/
+
+    /* {{{ Compute the de-correlating permutation.
+     * This only makes sense on the last matrix (since it amounts to
+     * changing it from M to M*S for some S)
+     */
+    {
+        int midx = n - 1;
+        balancing_ptr bal = bals[midx];
+        struct mf_bal_args * mba = &mbas[midx];
+
+        if (mba->skip_decorrelating_permutation) {
+            /* internal, for debugging. This removes the de-correlating
+             * permutation. Nothing to do with what is called
+             * "shuffled-product" elsewhere, except that both are taken care
+             * of within mf_bal. */
+            bal->h->pshuf[0] = 1;
+            bal->h->pshuf[1] = 0;
+            bal->h->pshuf_inv[0] = 1;
+            bal->h->pshuf_inv[1] = 0;
+        } else {
+            modulusul_t M;
+            modul_initmod_ul(M, MIN(bal->h->nrows, bal->h->ncols));
+            residueul_t a,b;
+            residueul_t ai,bi;
+            modul_init(a, M);
+            modul_init(b, M);
+            modul_init(ai, M);
+            modul_init(bi, M);
+            modul_set_ul(a, (unsigned long) sqrt(bal->h->ncols), M);
+            modul_set_ul(b, 42, M);
+
+            for( ; modul_inv(ai, a, M) == 0 ; modul_add_ul(a,a,1,M)) ;
+            modul_mul(bi, ai, b, M);
+            modul_neg(bi, bi, M);
+
+            bal->h->pshuf[0] = modul_get_ul(a, M);
+            bal->h->pshuf[1] = modul_get_ul(b, M);
+            bal->h->pshuf_inv[0] = modul_get_ul(ai, M);
+            bal->h->pshuf_inv[1] = modul_get_ul(bi, M);
+
+            modul_clear(a, M);
+            modul_clear(b, M);
+            modul_clear(ai, M);
+            modul_clear(bi, M);
+            modul_clearmod(M);
+        }
+    }
+    /* }}} */
+
+    /* The grid size is given as (nh, nv).
+     *
+     * matrix 0 is split with grid (nh, nv)
+     * matrix 1 is split with grid (nv, nh)
+     * (and so on)
+     *
+     * so that if we have an odd number of matrices, we have the
+     * (surprising) situation where
+     * mbas[0].nh == mbas[n-1].nv
+     *
+     * (and in particular, the pair (mbas[0].nh, mbas[n-1].nv) is not
+     * guaranteed to be (nh, nv))
+     */
+    unsigned int G = mbas[0].nh * mbas[0].nv;
+
+    struct per_dim_stats {
+        unsigned int matsize;
+        unsigned int blocksize;
+        unsigned int padding;
+        uint32_t (*perm)[2];
+        int todo;
+    };
+
+    struct per_matrix_stats {
+        uint32_t * weights[2];
+        uint32_t nzero[2];
+        uint32_t totalweight;
+        double avg[2];
+        double sdev[2];
+    };
+
+    struct per_dim_stats * D = malloc((n + 1) * sizeof(struct per_dim_stats));
+    struct per_matrix_stats * M = malloc(n * sizeof(struct per_matrix_stats));
+
+    /* {{{ get (and check) the common dimensions */
+    for(int midx = 0 ; midx < n ; midx++) {
+        if ((midx & 1) == 0) {
+            ASSERT_ALWAYS(mbas[midx].nh == mbas[0].nh);
+            ASSERT_ALWAYS(mbas[midx].nv == mbas[0].nv);
+        } else {
+            ASSERT_ALWAYS(mbas[midx].nh == mbas[0].nv);
+            ASSERT_ALWAYS(mbas[midx].nv == mbas[0].nh);
+        }
+        D[midx].matsize = bals[midx]->h->nrows;
+        ASSERT_ALWAYS(!midx || bals[midx-1]->h->ncols == bals[midx]->h->nrows);
+    }
+    D[n].matsize = bals[n-1]->h->ncols;
+    /* }}} */
+
+    /* {{{ define block sizes and padding for both inner and outer dimensions */
+    for(int didx = 0 ; didx < n + 1 ; didx++) {
+        D[didx].blocksize = iceildiv(D[didx].matsize, G);
+
         /* We also want to enforce alignment of the block size with
          * respect to the SIMD things.
          * Given that mmt_vec_init provides 64-byte alignment of vector
          * areas, we may enforce the block size to be a multiple of
          * 8 in order to effectively guarantee 64-byte alignment for all
-         * chunks. (Admittedly, this is a it fragile; if we were to
+         * chunks. (Admittedly, this is a bit fragile; if we were to
          * possibly use smaller items, that would change stuff somewhat).
          */
-        for ( ; block[d] % (FORCED_ALIGNMENT_ON_MPFQ_VEC_TYPES / MINIMUM_ITEM_SIZE_OF_MPFQ_VEC_TYPES) ; block[d]++);
+        for ( ; D[didx].blocksize % (FORCED_ALIGNMENT_ON_MPFQ_VEC_TYPES / MINIMUM_ITEM_SIZE_OF_MPFQ_VEC_TYPES) ; D[didx].blocksize++);
     }
 
-    if (!mba->rectangular) {
+    if (!rectangular) {
         printf("Padding to a square matrix\n");
-        block[0] = block[1] = MAX(block[0], block[1]);
+        D[0].blocksize = D[n].blocksize = MAX(D[0].blocksize, D[n].blocksize);
     }
 
-    for(int d = 0 ; d < 2 ; d++) {
-        padding[d] = mba->nv * mba->nh * block[d] - matsize[d];
-        printf("Padding to %u+%u=%u %ss which is %u blocks of %u*%u=%u %ss\n",
-                matsize[d], padding[d], mba->nv * mba->nh * block[d], text[d],
-                gridsize[d],
-                gridsize[!d], block[d], gridsize[!d] * block[d], text[d]);
+    for(int didx = 0 ; didx < n + 1 ; didx++) {
+        D[didx].padding = G * D[didx].blocksize - D[didx].matsize;
+        printf("Padding dimension %d to %u+%u=%u , which is %u blocks of %u\n",
+                didx, D[didx].matsize, D[didx].padding, G * D[didx].blocksize,
+                G,
+                D[didx].blocksize);
+    }
+    /* }}} */
 
-        size_t n = matsize[d] + padding[d];
+    /* {{{ read weights files for all matrices, and do (and report) stats.
+     * We also fill bal->h->{ncoeffs, nzrows, nzcols, flags} for each matrix
+     */
+    for(int midx = 0 ; midx < n ; midx++) {
+        balancing_ptr bal = bals[midx];
+        M[midx].totalweight = 0;
+        for(int d = 0 ; d < 2 ; d++) {
+            int didx = midx + d;
+            size_t nitems = D[didx].matsize + D[didx].padding;
 
-        /* Read the file with row or column weights */
-        const char * filename = d == 0 ? mba->rwfile : mba->cwfile;
-        FILE * fw = fopen(filename, "rb");
-        if (fw == NULL) { perror(filename); exit(1); }
-        weights[d] = malloc(n * sizeof(uint32_t));
-        memset(weights[d], 0, n * sizeof(uint32_t));
-        /* Padding rows and cols have zero weight of course */
-        double t_w;
-        t_w = -wct_seconds();
-        size_t nr = fread32_little(weights[d], matsize[d], fw);
-        t_w += wct_seconds();
-        fclose(fw);
-        if (nr < matsize[d]) {
-            fprintf(stderr, "%s: short %s count\n", filename, text[d]);
-            exit(1);
+            M[midx].weights[d] = NULL;
+
+            struct mf_bal_args * mba = &mbas[midx];
+            const char * filename = d == 0 ? mba->rwfile : mba->cwfile;
+
+            FILE * fw = fopen(filename, "rb");
+            if (fw == NULL) { perror(filename); exit(1); }
+            M[midx].weights[d] = malloc(nitems * sizeof(uint32_t));
+            memset(M[midx].weights[d], 0, nitems * sizeof(uint32_t));
+            /* Padding rows and cols have zero weight of course */
+            double t_w;
+            t_w = -wct_seconds();
+            size_t nr = fread32_little(M[midx].weights[d], D[didx].matsize, fw);
+            t_w += wct_seconds();
+            fclose(fw);
+            
+            if (nr < D[didx].matsize) {
+                fprintf(stderr, "%s: short %s count\n", filename, text[d]);
+                exit(1);
+            }
+            printf("read %s in %.1f s (%.1f MB / s)\n", filename, t_w,
+                    1.0e-6 * nr * sizeof(uint32_t) / t_w);
+
+            /* {{{ compute and report average weight and sdev */
+            {
+                double s1 = 0;
+                double s2 = 0;
+                uint64_t totalweight = 0;
+                for(unsigned int r = 0 ; r < D[didx].matsize ; r++) {
+                    double x = M[midx].weights[d][r];
+                    totalweight += M[midx].weights[d][r];
+                    s1 += x;
+                    s2 += x * x;
+                }
+                /* {{{ make sure we agree on the total weight */
+                if (M[midx].totalweight) {
+                    /* hopefully the sums of row weights and column
+                     * weights coincide!
+                     */
+                    ASSERT_ALWAYS(M[midx].totalweight == totalweight);
+                } else {
+                    M[midx].totalweight = totalweight;
+                }
+                if (bal->h->ncoeffs) {
+                    if (totalweight != bal->h->ncoeffs) {
+                        fprintf(stderr,
+                                "Inconsistency in number of coefficients\n"
+                                "From %s: %" PRIu64
+                                ", from file sizes; %" PRIu64 "\n",
+                                filename, totalweight, bal->h->ncoeffs);
+                        fprintf(stderr,
+                                "Maybe use the --withcoeffs option for DL matrices ?\n");
+                        exit(EXIT_FAILURE);
+                    }
+                } else {
+                    bal->h->ncoeffs = totalweight;
+                    printf("%" PRIu64 " coefficients counted\n", totalweight);
+                }
+                /*}}}*/
+                M[midx].avg[d] = s1 / D[didx].matsize;
+                M[midx].sdev[d] = sqrt(s2 / D[didx].matsize - M[midx].avg[d]*M[midx].avg[d]);
+                printf("%" PRIu32 " %ss ;"
+                        " avg %.1f sdev %.1f"
+                        " [scan time %.1f s]\n",
+                        D[didx].matsize, text[d],
+                        M[midx].avg[d], M[midx].sdev[d],
+                        t_w);
+            }
+            /* }}} */
+
+            /* {{{ count zero rows or columns */
+            M[midx].nzero[d] = 0;
+            for(size_t r = 0 ; r < D[didx].matsize ; r++) {
+                M[midx].nzero[d] += (M[midx].weights[d][r] == 0);
+            }
+            /* }}} */
+
         }
-        printf("read %s in %.1f s (%.1f MB / s)\n", filename, t_w,
-                1.0e-6 * sbuf[d]->st_size / t_w);
-        /* count zero rows or columns */
-        nzero[d] = 0;
-        for(size_t r = 0 ; r < matsize[d] ; r++) {
-            nzero[d] += (weights[d][r] == 0);
+        bal->h->nzrows = M[midx].nzero[0];
+        bal->h->nzcols = M[midx].nzero[1];
+        bal->h->flags = 0;
+    }
+    /* }}} */
+
+    /* {{{ Determine what we have to do with each dimension. */
+    /* Each dimension exists for two matrices, except for the
+     * outer ones which of course exist only for one.
+     * At times, for a given index didx inside the list of n+1 matrix
+     * dimensions ([0] to [n]), we need to consider the following
+     * matrices:
+     *  - the "previous" ("left") matrix is for d=1, and it's matrix
+     *  number didx-1 if didx>0. (we're interested in its columns,
+     *  hence d=1)
+     *  - the "next" ("right") matrix is for d=0, and it's matrix
+     *  number didx, if didx<n (that is, unless we're speaking of the last
+     *  dimension, which is numbered [n] and corresponds to the
+     *  number of columns of matrix [n-1])
+     */
+
+    /* For outer dimensions, we want to compute a balancing permutation
+     * based on the single set of weights we have access to.
+     *
+     * For inner dimensions (inner dimensions happen only when we have a
+     * chain of several matrices), there's a decision to make about what
+     * is the "weight" we should rely on: we have two !
+     *
+     * Short of something smarter, a simple proposal is to do exactly as
+     * we do with the outer dimensions, in fact: we look at the two
+     * standard deviations, and permute according to whichever is larger.
+     */
+    for(int didx = 0 ; didx < n + 1 ; didx++) {
+        int dp[2];
+        int mi[2];
+        for(int d = 0 ; d < 2 ; d++)  {
+            mi[d] = (didx + n - d) % n;
+            dp[d] = mbas[mi[d]].do_perm[d];
+        }
+        if (dp[0] == MF_BAL_PERM_YES && dp[1] == MF_BAL_PERM_NO) {
+            /* ok */
+        } else if (dp[0] == MF_BAL_PERM_NO && dp[1] == MF_BAL_PERM_YES) {
+            /* ok */
+        } else if (dp[0] == MF_BAL_PERM_NO && dp[1] == MF_BAL_PERM_NO) {
+            /* ok. No work to do here ! */
+        } else if (dp[0] == MF_BAL_PERM_AUTO && dp[1] == MF_BAL_PERM_AUTO) {
+            int choose = M[mi[1]].sdev[1] > M[mi[0]].sdev[0];
+            printf("Choosing a %s (matrix %d) permutation based"
+                    " on largest deviation"
+                    " (%.2f > %.2f)\n",
+                    text[choose], mi[choose],
+                    M[mi[choose]].sdev[choose],
+                    M[mi[!choose]].sdev[!choose]);
+            mbas[mi[choose]].do_perm[choose] = MF_BAL_PERM_YES;
+            mbas[mi[!choose]].do_perm[!choose] = MF_BAL_PERM_NO;
+        } else {
+            /* in particular, AUTO only works with AUTO, and YES
+             * obviously does not work with YES.
+             */
+            fprintf(stderr,
+                    "inconsistent requests for balancing order"
+                    " at dimension %d ; doperm[%d][1]=%d, doperm[%d][0]=%d\n",
+                    didx,
+                    didx-1, mbas[mi[1]].do_perm[1],
+                    didx, mbas[mi[0]].do_perm[0]);
+            exit(EXIT_FAILURE);
+        }
+        /* At this point we only have YESes and Nos */
+    }
+    /* }}} */
+
+
+    /* {{{ Prepare the tables that we're going to sort */
+    for(int didx = 0 ; didx < n + 1 ; didx++) {
+        size_t nitems = D[didx].matsize + D[didx].padding;
+
+        D[didx].perm = NULL;
+
+        /* Are we going to permute this dimension based on the rows of
+         * the next matrix, or the columns of the previous one ?
+         */
+        /* We let didx run from 0 to n included, but in reality if the
+         * product of the whole matrix chain is square, dimensions [0]
+         * and [n] are the same, and in that case we're comparing the
+         * same things.
+         *
+         * I.e., didx=0 compares rows of M (d=0) with columns of M (d=1)
+         *   and didx=1 also compares rows of M (d=0) with columns of M (d=1)
+         */
+        uint32_t * active_weights = NULL;
+        for(int d = 0 ; d < 2 ; d++)  {
+            int midx = (didx + n - d) % n;
+            if (mbas[midx].do_perm[d] == MF_BAL_PERM_YES) {
+                ASSERT_ALWAYS(active_weights == NULL);
+                active_weights = M[midx].weights[d];
+            }
         }
 
-        if (mba->do_perm[d] == MF_BAL_PERM_NO) {
-            free(weights[d]);
-            weights[d] = NULL;
+        if (!active_weights) {
+            /* we're not rearranging this table */
             continue;
         }
 
-        uint32_t ** pperm = d == 0 ? &bal->rowperm : &bal->colperm;
-        *pperm = malloc(2 * n * sizeof(uint32_t));
+        D[didx].perm = malloc(nitems * sizeof(uint32_t[2]));
 
         /* prepare for qsort */
-        uint32_t * perm = *pperm;
-        t_w = -wct_seconds();
-        double s1 = 0, s2 = 0;
-        uint64_t totalweight = 0;
-        for(size_t r = 0 ; r < matsize[d] + padding[d] ; r++) {
-            /* Column r in the matrix we work with is actually column rx in
-             * the original matrix ! */
+        for(size_t r = 0 ; r < nitems ; r++) {
+            /* Compute rx so that the column r in the matrix we work with
+             * is actually column rx in the original matrix.  */
+
+            /* We do so a priori only for the last dimension only */
+            int shuffle = didx == n;
+
+            /* so the base case is simply rx == r */
             size_t rx = r;
-            if (r < matsize[d]) {
+
+#if 1   /* very weird behaviour, to be investigated */
+            /* FIXME: previous code did that both for d==1 *AND* d==0,
+             * and I very much think that it's bogus to do that for d==0.
+             * It could be that it's a mistake that has gone unnoticed.
+             */
+            if (n == 1)
+                shuffle = 1;
+#endif
+
+            if (shuffle && r < D[didx].matsize) {
                 /* The balancing_pre_* function satisfy
                  * f([0,bal->h->ncols[) \subset [0,bal->h->ncols[.
                  * and correspond to identity for x>=bal->h->ncols
                  */
-                rx = balancing_pre_unshuffle(bal, r);
-                ASSERT(balancing_pre_shuffle(bal, rx) == r);
-                ASSERT(rx < matsize[d]);
+                rx = balancing_pre_unshuffle(bals[n-1], r);
+                ASSERT(balancing_pre_shuffle(bals[n-1], rx) == r);
+                ASSERT(rx < D[didx].matsize);
             }
-            uint32_t w = weights[d][rx];
-            totalweight += w;
-            double x = w;
-            perm[2*r]=w;
-            perm[2*r+1]=r;
-            s1 += x;
-            s2 += x * x;
+            D[didx].perm[r][0] = active_weights[rx];
+            D[didx].perm[r][1] = r;
         }
-        avg[d] = s1 / matsize[d];
-        sdev[d] = sqrt(s2 / matsize[d] - avg[d]*avg[d]);
-        t_w += wct_seconds();
-
-        if (bal->h->ncoeffs) {
-            if (totalweight != bal->h->ncoeffs) {
-                fprintf(stderr, "Inconsistency in number of coefficients\n"
-                        "From %s: %" PRIu64 ", from file sizes; %" PRIu64 "\n",
-                        filename, totalweight, bal->h->ncoeffs);
-                fprintf(stderr, "Maybe use the --withcoeffs option for DL matrices ?\n");
-                exit(1);
-            }
-        } else {
-            bal->h->ncoeffs = totalweight;
-            printf("%" PRIu64 " coefficients counted\n", totalweight);
-        }
-        printf("%" PRIu32 " %ss ; avg %.1f sdev %.1f [scan time %.1f s]\n",
-                matsize[d], text[d], avg[d], sdev[d], t_w);
     }
+    /* }}} */
 
-    bal->h->nzrows = nzero[0];
-    bal->h->nzcols = nzero[1];
-
-#if 0
+#if 0 /* {{{ examine row/col correlation (disabled) */
     /* We used to examine the correlation between row and column
      * weight. This is important, as it accounts for some timing jitter
      * on the local matrix products.
@@ -582,11 +804,11 @@ void mf_bal(struct mf_bal_args * mba)
      */
 
     if (display_correlation) {
-        size_t n = bal->h->nrows + rpadding;
+        size_t nitems = bal->h->nrows + rpadding;
         FILE * frw = fopen(rwfile, "rb");
         if (frw == NULL) { perror(rwfile); exit(1); }
-        uint32_t * rowweights = malloc(n * sizeof(uint32_t));
-        memset(rowweights, 0, n * sizeof(uint32_t));
+        uint32_t * rowweights = malloc(nitems * sizeof(uint32_t));
+        memset(rowweights, 0, nitems * sizeof(uint32_t));
         double t_rw;
         t_rw = -wct_seconds();
         size_t nr = fread32_little(rowweights, bal->h->nrows, frw);
@@ -600,20 +822,20 @@ void mf_bal(struct mf_bal_args * mba)
         double rs2 = 0;
         double rc_plain = 0;
         double rc_decorr = 0;
-        for(size_t r = 0 ; r < n ; r++) {
-            double x = rowweights[r];
+        for(size_t r = 0 ; r < nitems ; r++) {
+            double x = rowM[r].weights;
             rs1 += x;
             rs2 += x * x;
-            rc_plain += x * colweights[r];
+            rc_plain += x * colM[r].weights;
             rc_decorr += x * bal->colperm[2*r];
         }
-        double ravg = rs1 / n;
-        double rsdev = sqrt(rs2 / n - ravg*ravg);
-        double cavg = s1 / n;
-        double csdev = sqrt(s2 / n - cavg*cavg);
-        double pcov = rc_plain / n - ravg * cavg;
+        double ravg = rs1 / nitems;
+        double rsdev = sqrt(rs2 / nitems - ravg*ravg);
+        double cavg = s1 / nitems;
+        double csdev = sqrt(s2 / nitems - cavg*cavg);
+        double pcov = rc_plain / nitems - ravg * cavg;
         double pcorr = pcov / csdev / rsdev;
-        double dcov = rc_decorr / n - ravg * cavg;
+        double dcov = rc_decorr / nitems - ravg * cavg;
         double dcorr = dcov / csdev / rsdev;
 
         printf("%" PRIu32 " rows ; avg %.1f sdev %.1f [scan time %.1f s]\n",
@@ -623,45 +845,72 @@ void mf_bal(struct mf_bal_args * mba)
         printf("row-column correlation coefficient after decorrelation is %.4f\n",
                 dcorr);
     }
-#endif
-    if (mba->do_perm[0] != MF_BAL_PERM_NO) free(weights[0]);
-    if (mba->do_perm[1] != MF_BAL_PERM_NO) free(weights[1]);
+#endif/*}}}*/
 
-    if (mba->do_perm[0] == MF_BAL_PERM_AUTO) {
-        int choose = sdev[1] > sdev[0];
-        printf("Choosing a %s permutation based on largest deviation"
-                " (%.2f > %.2f)\n",
-                text[choose], sdev[choose], sdev[!choose]);
-        mba->do_perm[choose] = MF_BAL_PERM_YES;
-        mba->do_perm[!choose] = MF_BAL_PERM_NO;
-    }
-
-    bal->h->flags = 0;
-
-    for(int d = 0 ; d < 2 ; d++) {
-        if (mba->do_perm[d] == MF_BAL_PERM_NO) continue;
-        bal->h->flags |= (d == 0) ? FLAG_ROWPERM : FLAG_COLPERM;
-        uint32_t ** pperm = d == 0 ? &bal->rowperm : &bal->colperm;
-        struct slice * h = shuffle_rtable(text[d], *pperm, matsize[d] + padding[d], gridsize[d]);
-        /* we can now make the column permutation tidier */
-        *pperm = realloc(*pperm, (matsize[d] + padding[d]) * sizeof(uint32_t));
-        for(unsigned int ii = 0 ; ii < gridsize[d] ; ii++) {
-            const struct slice * r = &(h[ii]);
-            memcpy(*pperm + r->i0, r->r, r->nrows * sizeof(uint32_t));
+    /* {{{ All weight tables can be freed now */
+    for(int midx = 0 ; midx < n ; midx++) {
+        for(int d = 0 ; d < 2 ; d++) {
+            free (M[midx].weights[d]);
         }
-        free_slices(h, gridsize[d]);
+    }
+    /* }}} */
+
+    for(int didx = 0 ; didx < n + 1 ; didx++) {
+        size_t nitems = D[didx].matsize + D[didx].padding;
+        for(int d = 0 ; d < 2 ; d++)  {
+            int midx = (didx + n - d) % n;
+
+            if (mbas[midx].do_perm[d] == MF_BAL_PERM_NO)
+                /* in effect, only one value of d will run through the
+                 * loop */
+                continue;
+
+            balancing_ptr bal = bals[midx];
+            bal->h->flags |= d == 0 ? FLAG_ROWPERM : FLAG_COLPERM;
+            uint32_t **pperm = d == 0 ? &bal->rowperm : &bal->colperm;
+
+            // unsigned int k = G; // better choice, perhaps ?
+            unsigned int k = d == 0 ? mbas[midx].nh : mbas[midx].nv;
+
+            struct slice * h = shuffle_rtable(text[d], D[didx].perm, nitems, k);
+            *pperm = malloc(nitems * sizeof(uint32_t));
+
+            for(unsigned int ii = 0 ; ii < k ; ii++) {
+                const struct slice * r = &(h[ii]);
+                memcpy(*pperm + r->i0, r->r, r->nrows * sizeof(uint32_t));
+            }
+            free_slices(h, k);
+        }
     }
 
-    if (!mba->rectangular) {
-        bal->h->flags |= FLAG_REPLICATE;
+    /*
+     * "replicating" a permutation means connecting the rows
+     * of the first matrix with the columns of the last one.
+     *
+     * In the multi matrix case, we're not quite sure that we want to use
+     * this flag, but for consistency with the behaviour of the single
+     * matrix code, we keep the old behaviour that if the matrix is
+     * square, we forcibly do this replication
+     */
+    if (n == 1 && !rectangular) {
+        bals[0]->h->flags |= FLAG_REPLICATE;
     }
 
-    balancing_finalize(bal);
+    for(int midx = 0 ; midx < n ; midx++) {
+        balancing_ptr bal = bals[midx];
+        struct mf_bal_args * mba = &mbas[midx];
 
-    balancing_write(bal, mba->mfile, mba->bfile);
-    balancing_clear(bal);
+        balancing_finalize(bal);
 
-    if (freeit[0]) free(freeit[0]);
-    if (freeit[1]) free(freeit[1]);
+        balancing_write(bal, mba->mfile, mba->bfile);
+        balancing_clear(bal);
+
+        if (freeit[midx][0]) free(freeit[midx][0]);
+        if (freeit[midx][1]) free(freeit[midx][1]);
+    }
+    free(freeit);
+    free(bals);
+    free(D);
+    free(M);
 }
 

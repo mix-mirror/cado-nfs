@@ -2503,12 +2503,12 @@ static void matmul_top_read_submatrix(matmul_top_data_ptr mmt, int midx, param_l
 /* see matmul_top2.cpp */
 extern char * matrix_list_get_item(param_list_ptr pl, const char * key, int midx);
 
-static char* matrix_get_derived_cache_subdir(const char * matrixname, parallelizing_info_ptr pi)
+static char* matrix_get_derived_cache_subdir(const char * matrixname, int swap, parallelizing_info_ptr pi)
 {
     /* input is NULL in the case of random matrices */
     if (!matrixname) return NULL;
-    unsigned int nh = pi->wr[1]->totalsize;
-    unsigned int nv = pi->wr[0]->totalsize;
+    unsigned int nh = pi->wr[1 ^ swap]->totalsize;
+    unsigned int nv = pi->wr[0 ^ swap]->totalsize;
     char * copy = strdup(matrixname);
     char * t;
     if (strlen(copy) > 4 && strcmp((t = copy + strlen(copy) - 4), ".bin") == 0) {
@@ -2525,9 +2525,9 @@ static char* matrix_get_derived_cache_subdir(const char * matrixname, paralleliz
     return t;
 }
 
-static void matrix_create_derived_cache_subdir(const char * matrixname, parallelizing_info_ptr pi)
+static void matrix_create_derived_cache_subdir(const char * matrixname, int swap, parallelizing_info_ptr pi)
 {
-    char * d = matrix_get_derived_cache_subdir(matrixname, pi);
+    char * d = matrix_get_derived_cache_subdir(matrixname, swap, pi);
     struct stat sbuf[1];
     int rc = stat(d, sbuf);
     if (rc < 0 && errno == ENOENT) {
@@ -2542,11 +2542,11 @@ static void matrix_create_derived_cache_subdir(const char * matrixname, parallel
 /* return an allocated string with the name of a balancing file for this
  * matrix and this mpi/thr split.
  */
-static char* matrix_get_derived_balancing_filename(const char * matrixname, parallelizing_info_ptr pi)
+static char* matrix_get_derived_balancing_filename(const char * matrixname, int swap, parallelizing_info_ptr pi)
 {
     /* input is NULL in the case of random matrices */
     if (!matrixname) return NULL;
-    char * dn = matrix_get_derived_cache_subdir(matrixname, pi);
+    char * dn = matrix_get_derived_cache_subdir(matrixname, swap, pi);
     char * t;
     int rc = asprintf(&t, "%s/%s.bin", dn, dn);
     free(dn);
@@ -2554,7 +2554,7 @@ static char* matrix_get_derived_balancing_filename(const char * matrixname, para
     return t;
 }
 
-static char* matrix_get_derived_cache_filename_stem(const char * matrixname, parallelizing_info_ptr pi, uint32_t checksum)
+static char* matrix_get_derived_cache_filename_stem(const char * matrixname, int swap, parallelizing_info_ptr pi, uint32_t checksum)
 {
     /* input is NULL in the case of random matrices */
     if (!matrixname) return NULL;
@@ -2573,15 +2573,15 @@ static char* matrix_get_derived_cache_filename_stem(const char * matrixname, par
         pi_comm_ptr wr = pi->wr[d];
         pos[d] = wr->jrank * wr->ncores + wr->trank;
     }
-    char * dn = matrix_get_derived_cache_subdir(matrixname, pi);
-    int rc = asprintf(&t, "%s/%s.%08" PRIx32 ".h%d.v%d", dn, dn, checksum, pos[1], pos[0]);
+    char * dn = matrix_get_derived_cache_subdir(matrixname, swap, pi);
+    int rc = asprintf(&t, "%s/%s.%08" PRIx32 ".h%d.v%d", dn, dn, checksum, pos[1 ^ swap], pos[0 ^ swap]);
     free(dn);
     ASSERT_ALWAYS(rc >=0);
     free(copy);
     return t;
 }
 
-static char* matrix_get_derived_submatrix_filename(const char * matrixname, parallelizing_info_ptr pi)
+static char* matrix_get_derived_submatrix_filename(const char * matrixname, int swap, parallelizing_info_ptr pi)
 {
     /* input is NULL in the case of random matrices */
     if (!matrixname) return NULL;
@@ -2600,70 +2600,143 @@ static char* matrix_get_derived_submatrix_filename(const char * matrixname, para
         pi_comm_ptr wr = pi->wr[d];
         pos[d] = wr->jrank * wr->ncores + wr->trank;
     }
-    char * dn = matrix_get_derived_cache_subdir(matrixname, pi);
-    int rc = asprintf(&t, "%s/%s.h%d.v%d.bin", dn, dn, pos[1], pos[0]);
+    char * dn = matrix_get_derived_cache_subdir(matrixname, swap, pi);
+    int rc = asprintf(&t, "%s/%s.h%d.v%d.bin", dn, dn, pos[1 ^ swap], pos[0 ^ swap]);
     free(dn);
     ASSERT_ALWAYS(rc >=0);
     free(copy);
     return t;
 }
 
-static void matmul_top_init_fill_balancing_header(matmul_top_data_ptr mmt, int i, param_list_ptr pl)
+/* This fills the matrix-specific balancing header if one of these
+ * conditions hold:
+ *  - we're working in staged mode (hence balancing makes little sense)
+ *  - a matrix-specific balancing file exists
+ *
+ * If neither of these conditions hold, 0 is returned, at which point the
+ * corresponding balancing header is not yet set !
+ */
+
+static int matmul_top_init_fill_balancing_header(matmul_top_data_ptr mmt, int i, param_list_ptr pl)
 {
     parallelizing_info_ptr pi = mmt->pi;
     matmul_top_matrix_ptr Mloc = mmt->matrices[i];
 
+    int rc = 1;
     if (pi->m->jrank == 0 && pi->m->trank == 0) {
         if (!Mloc->mname) {
             random_matrix_fill_fake_balancing_header(Mloc->bal, pi, param_list_lookup_string(pl, "random_matrix"));
-        } else {
-            if (access(Mloc->bname, R_OK) != 0) {
-                if (errno == ENOENT) {
-                    printf("Creating balancing file %s\n", Mloc->bname);
-                    struct mf_bal_args mba = {
-                        .mfile = Mloc->mname,
-                        .bfile = Mloc->bname,
-                        .nh = pi->wr[1]->totalsize,
-                        .nv = pi->wr[0]->totalsize,
-                        .do_perm = { MF_BAL_PERM_AUTO, MF_BAL_PERM_AUTO },
-                    };
-                    mf_bal_adjust_from_option_string(&mba, param_list_lookup_string(pl, "balancing_options"));
-                    /* withcoeffs being a switch for param_list, it is
-                     * clobbered by the configure_switch mechanism */
-                    mba.withcoeffs = !is_char2(mmt->abase);
-                    matrix_create_derived_cache_subdir(Mloc->mname, mmt->pi);
-
-                    mf_bal(&mba);
-                } else {
-                    fprintf(stderr, "Cannot access balancing file %s: %s\n", Mloc->bname, strerror(errno));
-                    exit(EXIT_FAILURE);
-                }
-            }
+        } else if (access(Mloc->bname, R_OK) == 0) {
             balancing_read_header(Mloc->bal, Mloc->bname);
+        } else if (errno != ENOENT) {
+            fprintf(stderr, "Cannot access balancing file %s (system error): %s\n", Mloc->bname, strerror(errno));
+            exit(EXIT_FAILURE);
+        } else {
+            rc = 0;
         }
     }
+    pi_bcast(&rc, 1, BWC_PI_INT, 0, 0, mmt->pi->m);
     pi_bcast(Mloc->bal, sizeof(balancing), BWC_PI_BYTE, 0, 0, mmt->pi->m);
 
+    return rc;
+}
+
+/* make sure that each matrix is balanced according to dimensions that
+ * match our parallelizing_info dimensions. More precisely, matrix 0 must
+ * be balanced exactly in this way, matrix 1 in the other direction, and
+ * so on. This is done so that from one vector to the next, a simple
+ * allreduce() call works.
+ */
+static void matmul_top_check_balancing_versus_parallelizing_info(matmul_top_data_ptr mmt)
+{
     /* check that balancing dimensions are compatible with our run */
     int ok = 1;
-    ok = ok && mmt->pi->wr[0]->totalsize == Mloc->bal->h->nv;
-    ok = ok && mmt->pi->wr[1]->totalsize == Mloc->bal->h->nh;
-    if (ok) return;
 
-    if (pi->m->jrank == 0 && pi->m->trank == 0) {
-        fprintf(stderr, "Matrix %d, %s: balancing file %s"
-                " has dimensions %ux%u,"
-                " this conflicts with the current run,"
-                " which expects dimensions (%ux%u)x(%ux%u).\n",
-                i, Mloc->mname, Mloc->bname,
-                Mloc->bal->h->nh, Mloc->bal->h->nv,
-                mmt->pi->wr[1]->njobs,
-                mmt->pi->wr[1]->ncores,
-                mmt->pi->wr[0]->njobs,
-                mmt->pi->wr[0]->ncores);
+    for(int i = 0 ; i < mmt->nmatrices ; i++) {
+        matmul_top_matrix_ptr Mloc = mmt->matrices[i];
+        ok = ok && mmt->pi->wr[0 ^ (i & 1)]->totalsize == Mloc->bal->h->nv;
+        ok = ok && mmt->pi->wr[1 ^ (i & 1)]->totalsize == Mloc->bal->h->nh;
+
+        if (!ok && mmt->pi->m->jrank == 0 && mmt->pi->m->trank == 0) {
+            fprintf(stderr, "Matrix %d, %s: balancing file %s"
+                    " has dimensions %ux%u,"
+                    " this conflicts with the current run,"
+                    " which expects dimensions (%ux%u)x(%ux%u).\n",
+                    i, Mloc->mname, Mloc->bname,
+                    Mloc->bal->h->nh, Mloc->bal->h->nv,
+                    mmt->pi->wr[1 ^ (i & 1)]->njobs,
+                    mmt->pi->wr[1 ^ (i & 1)]->ncores,
+                    mmt->pi->wr[0 ^ (i & 1)]->njobs,
+                    mmt->pi->wr[0 ^ (i & 1)]->ncores);
+        }
     }
     serialize(mmt->pi->m);
-    exit(1);
+
+    if (ok) return;
+
+    exit(EXIT_FAILURE);
+}
+
+
+static void matmul_top_fill_balancing_for_all_matrices(matmul_top_data_ptr mmt, param_list_ptr pl)
+{
+    int nok = 0;
+    for(int i = 0 ; i < mmt->nmatrices ; i++) {
+        nok += matmul_top_init_fill_balancing_header(mmt, i, pl);
+    }
+    ASSERT_ALWAYS(nok == 0 || nok == mmt->nmatrices);
+
+    if (nok == 0) {
+        if (mmt->pi->m->jrank == 0 && mmt->pi->m->trank == 0) {
+            struct mf_bal_args * mba = malloc(mmt->nmatrices * sizeof(struct mf_bal_args));
+            for(int i = 0 ; i < mmt->nmatrices ; i++) {
+                matmul_top_matrix_ptr Mloc = mmt->matrices[i];
+                printf("Creating balancing file %s\n", Mloc->bname);
+                mba[i].mfile = Mloc->mname;
+                mba[i].bfile = Mloc->bname;
+                mba[i].nh = mmt->pi->wr[1 ^ (i & 1)]->totalsize;
+                mba[i].nv = mmt->pi->wr[0 ^ (i & 1)]->totalsize;
+                mba[i].do_perm[0] = MF_BAL_PERM_AUTO;
+                mba[i].do_perm[1] = MF_BAL_PERM_AUTO;
+                mf_bal_adjust_from_option_string(&mba[i], param_list_lookup_string(pl, "balancing_options"));
+                /* withcoeffs being a switch for param_list, it is
+                 * clobbered by the configure_switch mechanism */
+                mba[i].withcoeffs = !is_char2(mmt->abase);
+                matrix_create_derived_cache_subdir(Mloc->mname, i & 1, mmt->pi);
+            }
+
+            mf_bal_n(mba, mmt->nmatrices);
+        }
+
+        for(int i = 0 ; i < mmt->nmatrices ; i++) {
+            matmul_top_matrix_ptr Mloc = mmt->matrices[i];
+            if (mmt->pi->m->jrank == 0 && mmt->pi->m->trank == 0) {
+                balancing_read_header(Mloc->bal, Mloc->bname);
+            }
+            pi_bcast(Mloc->bal, sizeof(balancing), BWC_PI_BYTE, 0, 0, mmt->pi->m);
+        }
+    }
+
+    matmul_top_check_balancing_versus_parallelizing_info(mmt);
+
+    /* Fill these convenience fields */
+    for(int i = 0 ; i < mmt->nmatrices ; i++) {
+        matmul_top_matrix_ptr Mloc = mmt->matrices[i];
+        Mloc->n[0] = Mloc->bal->trows;
+        Mloc->n[1] = Mloc->bal->tcols;
+        Mloc->n0[0] = Mloc->bal->h->nrows;
+        Mloc->n0[1] = Mloc->bal->h->ncols;
+        
+        /* This one is only used for local caches */
+        Mloc->locfile = matrix_get_derived_cache_filename_stem(Mloc->mname, i & 1, mmt->pi, Mloc->bal->h->checksum);
+    }
+
+    mmt->n[0] = mmt->matrices[0]->n[0];
+    mmt->n0[0] = mmt->matrices[0]->n0[0];
+    mmt->n[1] = mmt->matrices[mmt->nmatrices-1]->n[1];
+    mmt->n0[1] = mmt->matrices[mmt->nmatrices-1]->n0[1];
+
+    serialize(mmt->pi->m);
 }
 
 
@@ -2817,7 +2890,6 @@ void matmul_top_init(matmul_top_data_ptr mmt,
 
     serialize_threads(mmt->pi->m);
 
-    /* The initialization goes through several passes */
     for(int i = 0 ; i < mmt->nmatrices ; i++) {
         matmul_top_matrix_ptr Mloc = mmt->matrices[i];
         if (multimat) {
@@ -2830,32 +2902,36 @@ void matmul_top_init(matmul_top_data_ptr mmt,
             t = param_list_lookup_string(pl, "balancing");
             Mloc->bname = t ? strdup(t) : NULL;
         }
-        if (static_random_matrix) {
-            ASSERT_ALWAYS(i == 0);
-            Mloc->mname = strdup(static_random_matrix);
-        }
         if (!Mloc->bname) {
             /* returns NULL is mname is NULL */
-            Mloc->bname = matrix_get_derived_balancing_filename(Mloc->mname, mmt->pi);
+            Mloc->bname = matrix_get_derived_balancing_filename(Mloc->mname, i & 1, mmt->pi);
         }
-        /* At this point mname and bname are either NULL or freshly
-         * allocated */
-        ASSERT_ALWAYS((Mloc->bname != NULL) == !random_description);
-
-        matmul_top_init_fill_balancing_header(mmt, i, pl);
-
-        Mloc->n[0] = Mloc->bal->trows;
-        Mloc->n[1] = Mloc->bal->tcols;
-        Mloc->n0[0] = Mloc->bal->h->nrows;
-        Mloc->n0[1] = Mloc->bal->h->ncols;
-        Mloc->locfile = matrix_get_derived_cache_filename_stem(Mloc->mname, mmt->pi, Mloc->bal->h->checksum);
 
     }
 
-    mmt->n[0] = mmt->matrices[0]->n[0];
-    mmt->n0[0] = mmt->matrices[0]->n0[0];
-    mmt->n[1] = mmt->matrices[mmt->nmatrices-1]->n[1];
-    mmt->n0[1] = mmt->matrices[mmt->nmatrices-1]->n0[1];
+    if (static_random_matrix) {
+        ASSERT_ALWAYS(mmt->nmatrices == 1);
+        mmt->matrices[0]->mname = strdup(static_random_matrix);
+    }
+
+    for(int i = 0 ; i < mmt->nmatrices ; i++) {
+        matmul_top_matrix_ptr Mloc = mmt->matrices[i];
+        /* At this point mname and bname are either NULL or freshly
+         * allocated */
+        ASSERT_ALWAYS((Mloc->bname != NULL) == !random_description);
+        ASSERT_ALWAYS((Mloc->mname != NULL) == !random_description);
+    }
+
+    /* in the multi matrix case, we need to create (or fetch) the
+     * balancing structure from the different matrices _as a whole_,
+     * because of two things:
+     *  - "padding to a square" only makes sense if we reflect on the two
+     *    outer dimensions.
+     *  - At the chaining points between matrices, consistency of the
+     *    permutations is necessary.
+     */
+
+    matmul_top_fill_balancing_for_all_matrices(mmt, pl);
 
     /* in the second loop below, get_local_permutations_ranges uses
      * mmt->n[], so we do it in a second pass.
@@ -3135,7 +3211,7 @@ static void matmul_top_read_submatrix(matmul_top_data_ptr mmt, int midx, param_l
              * also here.
              */
             if (mmt->pi->m->trank == 0)
-                matrix_create_derived_cache_subdir(Mloc->mname, mmt->pi);
+                matrix_create_derived_cache_subdir(Mloc->mname, midx & 1, mmt->pi);
             serialize_threads(mmt->pi->m);
 
             balancing_get_matrix_u32(mmt->pi, pl, m);
@@ -3143,7 +3219,7 @@ static void matmul_top_read_submatrix(matmul_top_data_ptr mmt, int midx, param_l
             int ssm = 0;
             param_list_parse_int(pl, "save_submatrices", &ssm);
             if (ssm) {
-                char * submat = matrix_get_derived_submatrix_filename(Mloc->mname, mmt->pi);
+                char * submat = matrix_get_derived_submatrix_filename(Mloc->mname, midx & 1, mmt->pi);
                 fprintf(stderr, "DEBUG: creating %s\n", submat);
                 FILE * f = fopen(submat, "wb");
                 fwrite(m->p, sizeof(uint32_t), m->size, f);
