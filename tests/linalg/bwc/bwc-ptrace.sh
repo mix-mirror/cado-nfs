@@ -39,7 +39,7 @@ while [ $# -gt 0 ] ; do
         #     # where these arguments are exported via the shell
         #     # environment?
         #     :
-        elif [[ $a =~ ^(bindir|mats|pre_wipe|random_matrix_size|random_matrix_minkernel|script_steps|nrhs|sage|magma) ]] ; then
+        elif [[ $a =~ ^(bindir|mats|pre_wipe|random_matrix_size|random_matrix_minkernel|script_steps|nrhs|sage|magma|wordsize) ]] ; then
             # and there are even parameters that only make sense here.
             :
         else
@@ -78,7 +78,8 @@ done
 
 pass_bwcpl_args+=("seed=$seed")
 
-wordsize=64
+: ${wordsize=64}
+
 # XXX note that $wdir is wiped out by this script !
 : ${wdir=/tmp/bwcp}
 
@@ -502,8 +503,8 @@ magma_sage_check_parameters() { # {{{
 magma_print_main_parameters() { # {{{
     echo "m:=$m;n:=$n;interval:=$interval;"
     echo "nrhs:=$nrhs;"
-}
-# }}}
+} # }}}
+
 magma_save_matrix() { # {{{
     echo "Saving matrix to magma format"
     $cmd weights < $rwfile > $mdir/rw.m
@@ -541,9 +542,9 @@ magma_save_matrix() { # {{{
             nc:=Ncols(M);
             nh:=$Nh;
             nv:=$Nv;
-            FORCED_ALIGNMENT_ON_MPFQ_VEC_TYPES:=64;
-            MINIMUM_ITEM_SIZE_OF_MPFQ_VEC_TYPES:=4;
-            chunk:=FORCED_ALIGNMENT_ON_MPFQ_VEC_TYPES div MINIMUM_ITEM_SIZE_OF_MPFQ_VEC_TYPES;
+            ALIGNMENT_ON_ALL_BWC_VECTORS:=64;
+            MINIMUM_ITEMS_IN_BWC_CHUNKS:=4;
+            chunk:=ALIGNMENT_ON_ALL_BWC_VECTORS div MINIMUM_ITEMS_IN_BWC_CHUNKS;
             nr:=nh*nv*(chunk*Ceiling(x/chunk)) where x is Ceiling(Maximum(nr, nc)/(nh*nv));
             nc:=nr;
             x:=Matrix(GF(p),nr,nc,[]);InsertBlock(~x,M,1,1);M:=x;
@@ -829,7 +830,11 @@ if [ "$sage" ] ; then
                 wdir=$wdir matrix=$matrix
                 nh=$Nh nv=$Nv
     )
+    if [ "$wordsize" != 64 ] ; then
+        sage_args+=(wordsize=$wordsize)
+    fi
     if [ "$CADO_DEBUG" ] ; then set -x ; fi
+    set -eo pipefail
     "$sage" bwc.sage "${sage_args[@]}" >&${check_script_diagnostic_fd}
     eval $old_setx
 fi
