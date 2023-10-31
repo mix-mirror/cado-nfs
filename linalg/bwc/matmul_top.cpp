@@ -1214,8 +1214,15 @@ matmul_top_data::matmul_top_data(
     for(int i = 0 ; i < nmatrices ; i++) {
         matmul_top_matrix Mloc;
         if (multimat) {
-            Mloc.mname = matrix_list_get_item(pl, "matrix", i);
-            Mloc.bname = matrix_list_get_item(pl, "balancing", i);
+            char * t;
+            if ((t = matrix_list_get_item(pl, "matrix", i)) != NULL) {
+                Mloc.mname = t;
+                free(t);
+            }
+            if ((t = matrix_list_get_item(pl, "balancing", i)) != NULL) {
+                Mloc.bname = t;
+                free(t);
+            }
         } else {
             const char * t;
             t = param_list_lookup_string(pl, "matrix");
@@ -1225,10 +1232,10 @@ matmul_top_data::matmul_top_data(
         }
         if (static_random_matrix) {
             ASSERT_ALWAYS(i == 0);
-            Mloc.mname = strdup(static_random_matrix);
+            Mloc.mname = static_random_matrix;
         }
         if (Mloc.bname.empty()) {
-            /* returns NULL is mname is NULL */
+            /* returns an empty string is mname is empty */
             Mloc.bname = matrix_get_derived_balancing_filename(Mloc.mname, i & 1, mmt.pi);
         }
         mmt.matrices.push_back(Mloc);
