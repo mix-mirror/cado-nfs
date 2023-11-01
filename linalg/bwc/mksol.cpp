@@ -453,7 +453,7 @@ void * mksol_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNU
                      */
                     if (i_window < n_windows-1 || k < s1 - s0 - 1) {
                         // if (tcan_print) printf("v:=M*v;\n");
-                        matmul_top_mul(mmt, ymy.vectors(), timing);
+                        matmul_top_mul(mmt, ymy, timing);
 
                         timing_check(pi, timing, s + sx - s1 + k + 1, tcan_print);
                     }

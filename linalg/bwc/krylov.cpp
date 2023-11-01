@@ -213,7 +213,7 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
     serialize(pi->m);
     char * v_name = NULL;
     if (!fake) {
-        int ok = mmt_vec_load(ymy[0], fmt::format(FMT_STRING("V%u-%u.{}"), bw->start), unpadded, ys[0]);
+        int ok = mmt_vec_load(ymy.input_vector(), fmt::format(FMT_STRING("V%u-%u.{}"), bw->start), unpadded, ys[0]);
         ASSERT_ALWAYS(ok);
         free(v_name);
     } else {
@@ -244,8 +244,8 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
 #else
         unsigned long g = pi->m->jrank * pi->m->ncores + pi->m->trank;
         gmp_randseed_ui(rstate, bw->seed + g);
-        mmt_vec_set_random_inconsistent(ymy[0], rstate);
-        mmt_vec_truncate(mmt, ymy[0]);
+        mmt_vec_set_random_inconsistent(ymy.input_vector(), rstate);
+        mmt_vec_truncate(mmt, ymy.input_vector());
 #endif
         gmp_randclear(rstate);
     }
@@ -299,7 +299,7 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
 
     for(int s = bw->start ; s < bw->end ; s += bw->interval ) {
 
-        if (C) C->plan_ahead(ymy[0]);
+        if (C) C->plan_ahead(ymy.input_vector());
 
         /* Create an empty slot in program execution, so that we don't
          * impose strong constraints on twist/untwist_vector being free of
@@ -308,7 +308,7 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
          */
         pi_interleaving_flip(pi);
         pi_interleaving_flip(pi);
-        mmt_vec_twist(mmt, ymy[0]);
+        mmt_vec_twist(mmt, ymy.input_vector());
 
         A->vec_set_zero(xymats, bw->m*bw->interval);
         serialize(pi->m);
@@ -316,9 +316,9 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
         for(int i = 0 ; i < bw->interval ; i++) {
             /* Compute the product by x */
             x_dotprod(A->vec_subvec(xymats, i * bw->m),
-                    gxvecs, bw->m, nx, ymy[0], 1);
+                    gxvecs, bw->m, nx, ymy.input_vector(), 1);
 
-            matmul_top_mul(mmt, ymy.vectors(), timing);
+            matmul_top_mul(mmt, ymy, timing);
 
             timing_check(pi, timing, s+i+1, tcan_print);
         }
@@ -328,13 +328,13 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
         pi_interleaving_flip(pi);
         pi_interleaving_flip(pi);
 
-        if (C && !C->verify(ymy[0], gxvecs, nx)) {
+        if (C && !C->verify(ymy.input_vector(), gxvecs, nx)) {
             printf("Failed %scheck at iteration %d\n", legacy_check_mode ? "(legacy) " : "", s + bw->interval);
             exit(1);
         }
 
 
-        mmt_vec_untwist(mmt, ymy[0]);
+        mmt_vec_untwist(mmt, ymy.input_vector());
 
         /* Now (and only now) collect the xy matrices */
         pi_allreduce(NULL, xymats,
@@ -362,7 +362,7 @@ void * krylov_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UN
         }
 
         if (!fake) {
-            mmt_vec_save(ymy[0], fmt::format(FMT_STRING("V%u-%u.{}"), s + bw->interval), unpadded, ys[0]);
+            mmt_vec_save(ymy.input_vector(), fmt::format(FMT_STRING("V%u-%u.{}"), s + bw->interval), unpadded, ys[0]);
         }
 
         if (pi->m->trank == 0 && pi->m->jrank == 0) {

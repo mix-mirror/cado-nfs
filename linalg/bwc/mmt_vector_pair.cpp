@@ -7,6 +7,9 @@
 
 mmt_vector_pair::mmt_vector_pair(matmul_top_data & mmt, int dir)
     : std::vector<mmt_vec>(mmt.matrices.size() + (mmt.matrices.size() & 1))
+    , nmats_odd(mmt.matrices.size() & 1)
+    , direction(dir)
+
 {
     /* we allocate as many vectors as we have matrices, plus one if the
      * number of matrices is odd (so we always have an even number of
@@ -20,8 +23,6 @@ mmt_vector_pair::mmt_vector_pair(matmul_top_data & mmt, int dir)
      * Interleaving could defined twice as many interleaved levels as we
      * have matrices. It is probably not relevant.
      */
-
-    int nmats_odd = mmt.matrices.size() & 1;
 
     matmul_top_matrix * mptr = & mmt.matrices[dir ? (mmt.matrices.size() - 1) : 0];
     for(size_t i = 0 ; i < mmt.matrices.size() ; i++) {

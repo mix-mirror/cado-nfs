@@ -167,7 +167,7 @@ void * dispatch_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_
         mmt_full_vec_set_dummy1(y, unpadded);
 
         mmt_vec_twist(mmt, y);
-        matmul_top_mul(mmt, ymy.vectors(), NULL);
+        matmul_top_mul(mmt, ymy, NULL);
         mmt_vec_untwist(mmt, y);
 
         mmt_vec_save(y, "Hx%u-%u", unpadded, 0);
@@ -223,7 +223,7 @@ void * dispatch_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_
         {
             mmt_vector_pair myy(mmt, 0);
             mmt_full_vec_set(myy[0], my);
-            matmul_top_mul(mmt, myy.vectors(), NULL);
+            matmul_top_mul(mmt, myy, NULL);
             mmt_full_vec_set(my, myy[0]);
         }
         mmt_vec_untwist(mmt, my);

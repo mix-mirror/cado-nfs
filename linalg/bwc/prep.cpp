@@ -100,7 +100,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
 
     mmt_vector_pair ymy(mmt, bw->dir);
 
-    mmt_vec & y = ymy[0];
+    mmt_vec & y = ymy.input_vector();
 
     unsigned int unpadded = MAX(mmt.n0[0], mmt.n0[1]);
 
@@ -158,7 +158,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
                 /* create it as an extraction from the rhs file */
                 ASSERT_ALWAYS(0);       /* implement me... See GF(p) below. */
             } else {
-                mmt_vec_set_random_through_file(ymy[0], "V%u-%u.0", unpadded, rstate, j * A_width);
+                mmt_vec_set_random_through_file(ymy.input_vector(), "V%u-%u.0", unpadded, rstate, j * A_width);
             }
             if (tcan_print) {
                 printf("// generated V%u-%u.0 (trial # %u)\n", 
@@ -172,7 +172,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
             // XXX Note that x^Ty does not count here, because it does not
             // take part to the sequence computed by lingen !
             mmt_vec_twist(mmt, y);
-            matmul_top_mul(mmt, ymy.vectors(), NULL);
+            matmul_top_mul(mmt, ymy, NULL);
             mmt_vec_untwist(mmt, y);
             
 
@@ -193,7 +193,7 @@ void * prep_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUS
                     }
                 }
                 mmt_vec_twist(mmt, y);
-                matmul_top_mul(mmt, ymy.vectors(), NULL);
+                matmul_top_mul(mmt, ymy, NULL);
                 mmt_vec_untwist(mmt, y);
             }
         }

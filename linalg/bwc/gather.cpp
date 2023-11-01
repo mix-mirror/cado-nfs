@@ -294,15 +294,15 @@ std::vector<unsigned int> get_possibly_wrong_columns(matmul_top_data & mmt)/*{{{
 
     /* Do that in the opposite direction compared to ymy */
     mmt_vector_pair zmz(mmt, !bw->dir);
-    mmt_vec & z = zmz[0];
-    mmt_vec & mz = zmz[zmz.size()-1];
+    mmt_vec & z = zmz.input_vector();
+    mmt_vec & mz = zmz.output_vector();
 
 
     mmt_vec_set_random_inconsistent(z, rstate);
     mmt_vec_truncate_above_index(mmt, z, mmt.n0[bw->dir]);
     mmt_vec_apply_T(mmt, z);
     mmt_vec_twist(mmt, z);
-    matmul_top_mul(mmt, zmz.vectors(), NULL);
+    matmul_top_mul(mmt, zmz, NULL);
     mmt_vec_untwist(mmt, z);
     mmt_apply_identity(mz, z);
     mmt_vec_allreduce(mz);
@@ -324,7 +324,7 @@ std::vector<unsigned int> get_possibly_wrong_columns(matmul_top_data & mmt)/*{{{
     mmt_vec_truncate_above_index(mmt, z, mmt.n0[!bw->dir]);
     mmt_vec_apply_T(mmt, z);
     mmt_vec_twist(mmt, z);
-    matmul_top_mul(mmt, zmz.vectors(), NULL);
+    matmul_top_mul(mmt, zmz, NULL);
     mmt_vec_untwist(mmt, z);
     mmt_apply_identity(mz, z);
     mmt_vec_allreduce(mz);
@@ -616,7 +616,7 @@ std::tuple<int, int, int> test_one_vector(matmul_top_data & mmt, mmt_vector_pair
         mmt_vec_apply_T(mmt, y);
         serialize(pi->m);
         mmt_vec_twist(mmt, y);
-        matmul_top_mul(mmt, ymy.vectors(), NULL);
+        matmul_top_mul(mmt, ymy, NULL);
         mmt_vec_untwist(mmt, y);
         serialize(pi->m);
         /* Add the contributions from the right-hand side vectors, to see
@@ -645,15 +645,17 @@ std::tuple<int, int, int> test_one_vector(matmul_top_data & mmt, mmt_vector_pair
 std::tuple<int, int, int> expanded_test(matmul_top_data & mmt, mmt_vector_pair & ymy, mmt_vec const & y_saved, rhs const& R)
 {
     parallelizing_info_ptr pi = mmt.pi;
-    mmt_vec & y = ymy[0];
-    mmt_vec & my = ymy[ymy.size()-1];
+    mmt_vec & y = ymy.input_vector();
+    mmt_vec & my = ymy.output_vector();
     mmt_full_vec_set(y, y_saved);
     auto res = test_one_vector(mmt, ymy, R);
 
     /* Need to get the indices with respect to !bw->dir...  */
     serialize(pi->m);
-    mmt_apply_identity(my, y);
-    mmt_vec_allreduce(my);
+    if (&my != &y) {
+        mmt_apply_identity(my, y);
+        mmt_vec_allreduce(my);
+    }
     mmt_vec_unapply_T(mmt, my);
     serialize(pi->m);
     return res;
@@ -713,8 +715,8 @@ class parasite_fixer {/*{{{*/
         arith_generic * A = mmt.abase;
 
         mmt_vector_pair ymy(mmt, bw->dir);
-        mmt_vec & y = ymy[0];
-        mmt_vec & my = ymy[ymy.size()-1];
+        mmt_vec & y = ymy.input_vector();
+        mmt_vec & my = ymy.output_vector();
 
         /* Now try to see which indices are potentially affected */
         unsigned int B = A->simd_groupsize();
@@ -726,7 +728,7 @@ class parasite_fixer {/*{{{*/
             }
             mmt_vec_apply_T(mmt, y);
             mmt_vec_twist(mmt, y);
-            matmul_top_mul(mmt, ymy.vectors(), NULL);
+            matmul_top_mul(mmt, ymy, NULL);
             mmt_vec_untwist(mmt, y);
             /* Not entirely clear to me if I should unapply_T here or not
             */
@@ -846,8 +848,8 @@ class parasite_fixer {/*{{{*/
 
         /* code is similar to row_coordinates_of_nonzero_cols() */
         mmt_vector_pair ymy(mmt, bw->dir);
-        mmt_vec & y = ymy[0];
-        mmt_vec & my = ymy[ymy.size()-1];
+        mmt_vec & y = ymy.input_vector();
+        mmt_vec & my = ymy.output_vector();
 
         /* 1, -1: coeff is 1 or -1.
          * 2: coeff is something else, and lookup is needed (char!=2
@@ -894,7 +896,7 @@ class parasite_fixer {/*{{{*/
                 }
                 mmt_vec_apply_T(mmt, y);
                 mmt_vec_twist(mmt, y);
-                matmul_top_mul(mmt, ymy.vectors(), NULL);
+                matmul_top_mul(mmt, ymy, NULL);
                 mmt_vec_untwist(mmt, y);
                 /* Not entirely clear to me if I should unapply_T here or not
                 */
@@ -1000,7 +1002,7 @@ class parasite_fixer {/*{{{*/
 
     std::tuple<int, int, int> attempt(matmul_top_data & mmt, mmt_vector_pair & ymy, mmt_vec & y_saved, rhs const& R)/*{{{*/
     {
-        mmt_vec & my = ymy[ymy.size()-1];
+        mmt_vec & my = ymy.output_vector();
         int tcan_print = bw->can_print && pi->m->trank == 0;
         int leader = pi->m->jrank == 0 && pi->m->trank == 0;
 

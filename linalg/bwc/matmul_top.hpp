@@ -15,6 +15,9 @@ struct timing_data;
 #include "params.h"
 #include "balancing.hpp"
 
+struct mmt_vec;
+class mmt_vector_pair;
+
 struct matmul_top_matrix {
     // global stuff.
     //
@@ -72,9 +75,13 @@ struct matmul_top_data {
     unsigned int n0[2]; // n0: unpadded.
 
     /* The matrix we are dealing with is
-     * matrices[0] * matrices[1] * ... * matrices[nmatrices-1]
+     * M = matrices[0] * matrices[1] * ... * matrices[nmatrices-1]
      */
     std::vector<matmul_top_matrix> matrices;
+
+    /* optimized direction is whether like to compute x*M
+     * (optimized_direction==0) or M*x (optimized_direction==1).
+     */
     matmul_top_data(
         arith_generic * abase,
         parallelizing_info_ptr pi,
@@ -100,8 +107,7 @@ extern void matmul_top_mul_cpu(matmul_top_data & mmt, int midx, int d, mmt_vec &
 extern void matmul_top_comm_bench(matmul_top_data & mmt, int d);
 extern void matmul_top_mul_comm(mmt_vec & w, mmt_vec & v);
 
-/* v is both input and output. w is temporary */
-extern void matmul_top_mul(matmul_top_data & mmt, mmt_vec *w, struct timing_data * tt);
+extern void matmul_top_mul(matmul_top_data & mmt, mmt_vector_pair & w, struct timing_data * tt);
 
 extern void mmt_vec_twist(matmul_top_data & mmt, mmt_vec & y);
 extern void mmt_vec_untwist(matmul_top_data & mmt, mmt_vec & y);

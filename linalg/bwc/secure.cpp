@@ -77,7 +77,7 @@ void * sec_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUSE
 
     /* we work in the opposite direction compared to other programs */
     mmt_vector_pair myy(mmt, !bw->dir);
-    mmt_vec & my = myy[0];
+    mmt_vec & my = myy.input_vector();
 
     mmt_vec dvec(mmt,0,0, !bw->dir, /* shared ! */ 1, mmt.n[!bw->dir]);
 
@@ -399,7 +399,7 @@ void * sec_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUSE
             dvec.consistency = 1;
             mmt_vec_broadcast(dvec);
             pi_log_op(mmt.pi->m, "iteration %d", k);
-            matmul_top_mul(mmt, myy.vectors(), NULL);
+            matmul_top_mul(mmt, myy, NULL);
 
             if (tcan_print) {
                 putchar('.');

@@ -78,22 +78,7 @@ void * bench_cpu_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE
      * This could be improved.
      */
 
-    int nmats_odd = mmt.nmatrices & 1;
-
-    mmt_vec * ymy = new mmt_vec[mmt.nmatrices + nmats_odd];
-    matmul_top_matrix_ptr mptr;
-    mptr = (matmul_top_matrix_ptr) mmt.matrices + (bw->dir ? (mmt.nmatrices - 1) : 0);
-    for(int i = 0 ; i < mmt.nmatrices ; i++) {
-        int shared = (i == 0) & nmats_odd;
-        mmt_vec_setup(ymy[i], mmt,0,0, bw->dir ^ (i&1), shared, mptr->n[bw->dir]);
-        mmt_full_vec_set_zero(ymy[i]);
-
-        mptr += bw->dir ? -1 : 1;
-    }
-    if (nmats_odd) {
-        mmt_vec_setup(ymy[mmt.nmatrices], mmt,0,0, !bw->dir, 0, mmt.matrices[0]->n[bw->dir]);
-        mmt_full_vec_set_zero(ymy[mmt.nmatrices]);
-    }
+    mmt_vector_pair ymy(mmt, bw->dir);
 
     /* I have absolutely no idea why, but the two --apparently useless--
      * serializing calls around the next block seem to have a beneficial
@@ -106,8 +91,8 @@ void * bench_cpu_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE
         gmp_randinit_default(rstate);
         unsigned long g = pi->m->jrank * pi->m->ncores + pi->m->trank;
         gmp_randseed_ui(rstate, bw->seed + g);
-        mmt_vec_set_random_inconsistent(ymy[0], rstate);
-        mmt_vec_truncate(mmt, ymy[0]);
+        mmt_vec_set_random_inconsistent(ymy.input_vector(), rstate);
+        mmt_vec_truncate(mmt, ymy.input_vector());
         gmp_randclear(rstate);
     }
     serialize(pi->m);
@@ -127,22 +112,13 @@ void * bench_cpu_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE
 
         for(int i = 0 ; i < streak ; i++) {
             // matmul_top_mul(mmt, ymy, timing);
-            {
-                int d = ymy[0].d;
-                int nmats_odd = mmt.nmatrices & 1;
-                int midx = (d ? (mmt.nmatrices - 1) : 0);
-                for(int l = 0 ; l < mmt.nmatrices ; l++) {
-                    mmt_vec & src = ymy[l];
-                    int last = l == (mmt.nmatrices - 1);
-                    int lnext = last && !nmats_odd ? 0 : (l+1);
-                    mmt_vec & dst = ymy[lnext];
-
-                    src.consistency = 2;
-                    matmul_top_mul_cpu(mmt, midx, d, dst, src);
-
-
-                    midx += d ? -1 : 1;
-                }
+            for(auto M : ymy.chain(mmt)) {
+                M.src().consistency = 2;
+                matmul_top_mul_cpu(mmt,
+                        M.matrix_index(),
+                        M.direction(),
+                        M.dst(),
+                        M.src());
             }
         }
         thread_seconds_user_sys(timers, 1);

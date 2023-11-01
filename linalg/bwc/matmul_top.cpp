@@ -26,6 +26,7 @@
 #include "timing.h"     // wct_seconds
 #include "verbose.h"    // CADO_VERBOSE_PRINT_BWC_CACHE_BUILD
 #include "matmul_top_comm.hpp"
+#include "mmt_vector_pair.hpp"
 
 ///////////////////////////////////////////////////////////////////
 /* Start with stuff that does not depend on abase at all -- this
@@ -79,61 +80,67 @@ void matmul_top_lookup_parameters(param_list_ptr pl)
 
 //////////////////////////////////////////////////////////////////////////
 
-void matmul_top_mul(matmul_top_data & mmt, mmt_vec * v, struct timing_data * tt)/*{{{*/
+/* Do all matrices in turn. This call matches the conventions that are
+ * defined in the mmt_vector_pair type.
+ *
+ * We represent M as * M0*M1*..*M_{n-1}.
+ *
+ * The input vector is w.input_vector(), and the result is put in
+ * w.input_vector() again.
+ *
+ * The direction in which we apply the product is given by w.d, and it
+ * remains constant throughout the chain. However, note that this may
+ * differ from the wiring of individual vectors, and some products are
+ * transposed, although this is only for data presentation reasons.
+ *
+ * For w.d == 0, we do w*M. For w.d==1, we do M*w
+ *
+ * In all cases, w[0].d = w.input_vector().d is == w.d
+ *
+ * We use temporaries as follows (this is also in mmt_vector_pair):
+ *
+ * For w.d == w[0].d == 0:
+ *  w[1] <- w[0] * M0 ; w[1].d == 1
+ *  w[2] <- w[1] * M1 ; w[2].d == 0
+ *  if n is odd:
+ *  w[n] <- w[n-1] * M_{n-1} ; w[n].d == 1
+ *  if n is even:
+ *  w[0] <- w[n-1] * M_{n-1} ; w[0].d == 0
+ *
+ * For w[0].d == w[0].d == 1:
+ *  w[1] <- M_{n-1} * w[0] ; w[1].d == 0
+ *  w[2] <- M_{n-2} * w[1] ; w[2].d == 1
+ *  if n is odd:
+ *  w[n] <- M_{0} * w[n-1] ; w[n].d == 0
+ *  if n is even:
+ *  w[0] <- M_{0} * w[n-1] ; w[0].d == 1
+ *
+ * Appropriate communication operations are run after each step.
+ * Internal communication steps are done with allreduce. The last
+ * communication step is either:
+ *  - if n is odd, dispatch v[n-1] to v[0] with reduce_scatter + allgather
+ *  - if n is even, dispatch v[0] to itself with allreduce
+ *
+ * If tt is not NULL, it should be a timing_data structure holding
+ * exactly 4*n timers (or only 4, conceivably). Timers are switched
+ * exactly that many times.
+ *
+ * If the mmt.pi->interleaving setting is on, we interleave
+ * computations and communications. We do 2n flips. Communications
+ * are forbidden both before and after calls to this function (in the
+ * directly adjacent code fragments before the closest flip() call,
+ * that is).
+ */
+void matmul_top_mul(matmul_top_data & mmt, mmt_vector_pair & w, struct timing_data * tt)/*{{{*/
 {
-    /* Do all matrices in turn.
-     *
-     * We represent M as * M0*M1*..*M_{n-1}.
-     *
-     * The input vector is v[0], and the result is put in v[0] again.
-     *
-     * The direction in which we apply the product is given by v[0].d.
-     * For v[0].d == 0, we do v[0]*M. For v[0].d==1, we do M*v[0]
-     *
-     * We use temporaries as follows.
-     * For v[0].d == 0:
-     *  v[1] <- v[0] * M0 ; v[1].d == 1
-     *  v[2] <- v[1] * M1 ; v[2].d == 0
-     *  if n is odd:
-     *  v[n] <- v[n-1] * M_{n-1} ; v[n].d == 1
-     *  if n is even:
-     *  v[0] <- v[n-1] * M_{n-1} ; v[0].d == 0
-     *
-     * For v[0].d == 1:
-     *  v[1] <- M0 * v[0] ; v[1].d == 0
-     *  v[2] <- M1 * v[1] ; v[2].d == 1
-     *  if n is odd:
-     *  v[n] <- M_{n-1} * v[n-1] ; v[n].d == 0
-     *  if n is even:
-     *  v[0] <- M_{n-1} * v[n-1] ; v[0].d == 1
-     *
-     * This has the consequence that v must hold exactly n+(n&1) vectors.
-     *
-     * Appropriate communication operations are run after each step.
-     *
-     * If tt is not NULL, it should be a timing_data structure holding
-     * exactly 4*n timers (or only 4, conceivably). Timers are switched
-     * exactly that many times.
-     *
-     * If the mmt.pi->interleaving setting is on, we interleave
-     * computations and communications. We do 2n flips. Communications
-     * are forbidden both before and after calls to this function (in the
-     * directly adjacent code fragments before the closest flip() call,
-     * that is).
-     */
-
-    int d = v[0].d;
-    int nmats_odd = mmt.matrices.size() & 1;
-    int midx = (d ? (mmt.matrices.size() - 1) : 0);
-    for(size_t l = 0 ; l < mmt.matrices.size() ; l++) {
-        mmt_vec const & src = v[l];
-        bool last = l == (mmt.matrices.size() - 1);
-        size_t lnext = last && !nmats_odd ? 0 : (l+1);
-        mmt_vec & dst = v[lnext];
-
-        ASSERT_ALWAYS(src.consistency == 2);
-        matmul_top_mul_cpu(mmt, midx, d, dst, src);
-        ASSERT_ALWAYS(dst.consistency == 0);
+    for(auto M : w.chain(mmt)) {
+        ASSERT_ALWAYS(M.src().consistency == 2);
+        matmul_top_mul_cpu(mmt,
+                M.matrix_index(),
+                w.direction,
+                M.dst(),
+                M.src());
+        ASSERT_ALWAYS(M.dst().consistency == 0);
 
         timing_next_timer(tt);
         /* now measuring jitter */
@@ -141,12 +148,13 @@ void matmul_top_mul(matmul_top_data & mmt, mmt_vec * v, struct timing_data * tt)
         serialize(mmt.pi->m);
         timing_next_timer(tt);
 
-        /* Now we can resume MPI communications. */
-        if (last && nmats_odd) {
-            ASSERT_ALWAYS(lnext == mmt.matrices.size());
-            matmul_top_mul_comm(v[0], dst);
+        if (M.output_is_extra_vector()) {
+            matmul_top_mul_comm(w.input_vector(), M.dst());
         } else {
-            mmt_vec_allreduce(dst);
+            /* if we're doing the last multiply and the number of
+             * matrices is off, M.dst() is w.input_vector()
+             */
+            mmt_vec_allreduce(M.dst());
         }
         timing_next_timer(tt);
         /* now measuring jitter */
@@ -154,9 +162,8 @@ void matmul_top_mul(matmul_top_data & mmt, mmt_vec * v, struct timing_data * tt)
         serialize(mmt.pi->m);
 
         timing_next_timer(tt);
-        midx += d ? -1 : 1;
     }
-    ASSERT_ALWAYS(v[0].consistency == 2);
+    ASSERT_ALWAYS(w.input_vector().consistency == 2);
 }
 /*}}}*/
 
@@ -321,6 +328,7 @@ void matmul_top_fill_random_source_generic(matmul_top_data & mmt, size_t stride,
 
 void mmt_apply_identity(mmt_vec & w, mmt_vec const & v)
 {
+    ASSERT_ALWAYS(&w != &v);
     /* input: fully consistent */
     /* output: inconsistent ! 
      * Need mmt_vec_allreduce or mmt_vec_reduce_sameside, or
@@ -727,6 +735,12 @@ void matmul_top_fill_random_source(matmul_top_data & mmt, int d)
  *   in the direction foo*M.
  * - the only case where this does not necessarily happen so is when we
  *   have several matrices.
+ *
+ * TODO: it seems plausible that we can drop mmt and midx, and work only
+ * with Mloc. We're not doing it just yet, because there are a few
+ * uncertain things with the direction parameter dancing from one side to
+ * the other in the multi matrix case. (worst, it could mean
+ * special-casing stuff here).
  */
 void matmul_top_mul_cpu(matmul_top_data & mmt, int midx, int d, mmt_vec & w, mmt_vec const & v)
 {
