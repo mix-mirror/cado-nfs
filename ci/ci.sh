@@ -22,6 +22,19 @@ step_configure() {
     # if [ "$specific_checks" = "bwc.sagemath" ] ; then
     #     export FORCE_BWC_EXTERNAL_CHECKS_OUTPUT_ON_FD3=1
     # fi
+    if [ "$specific_checks" = "including_mpi" ] ; then
+        export MPI=1
+        # sigh. when we run in containers, running as root isn't much of
+        # a problem
+        export OMPI_ALLOW_RUN_AS_ROOT=1
+        export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+    elif [ "$specific_checks" = "only_mpi" ] ; then
+        export MPI=1
+        # sigh. when we run in containers, running as root isn't much of
+        # a problem
+        export OMPI_ALLOW_RUN_AS_ROOT=1
+        export OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1
+    fi
     if [ "$using_cmake_directly" ] ; then
         (cd "$build_tree" ; cmake "$source_tree")
     else
@@ -63,6 +76,17 @@ step_build2() {
 
 check_environment() {
     export OMP_DYNAMIC=true
+    # See https://stackoverflow.com/questions/70126350/openmp-incredibly-slow-when-another-process-is-running
+    # It's not totally clear to me if it somewhere specified that
+    # lowercase "passive" implies GOMP_SPINCOUNT=0 for gcc. If it's not
+    # specified, it may change in the future, so let's force the setting
+    # ourselves.
+    export OMP_DISPLAY_ENV=verbose
+    export OMP_WAIT_POLICY=passive
+    export GOMP_SPINCOUNT=0
+    # OMP_PROC_BIND helps in certain cases, and is a disaster in other
+    # cases. We can't afford it.
+    # export OMP_PROC_BIND=true
     export STATS_PARSING_ERRORS_ARE_FATAL=1
 }
 
@@ -119,6 +143,11 @@ step_check() {
 
     if [ "$specific_checks" = "bwc.sagemath" ] ; then
         ctest_args="$ctest_args -R with_sagemath"
+    elif [ "$specific_checks" = "including_mpi" ] ; then
+        # nothing to do
+        :
+    elif [ "$specific_checks" = "only_mpi" ] ; then
+        ctest_args="$ctest_args -R mpi"
     fi
 
     if [ "$using_cmake_directly" ] ; then
