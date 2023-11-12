@@ -83,6 +83,6 @@ if [ "${#afiles[@]}" != 1 ] ; then
 fi
 afile="${afiles[0]}"
 ffile="$afile.gen"
-$bindir/lingen_u64k1 "${pmn[@]}" wdir=$tmp afile="$afile" ffile=F rhs=none split-output-file=1
+$bindir/lingen_b64 "${pmn[@]}" wdir=$tmp afile="$afile" ffile=F rhs=none split-output-file=1
 $bindir/mksol "${common[@]}" solutions=0-$n
 $bindir/gather "${common[@]}" solutions=0-$n
