@@ -872,7 +872,7 @@ cado_define_test(TEST_NAME test-multi-matrix
         --bindir ${CADO_NFS_BINARY_DIR}/linalg/bwc
     NO_DEFAULT_RUN
     TARGET_DEPENDENCIES
-    bwc_full_gf2
+    bwc_full
 )
 cado_divert_test(test-multi-matrix thr11 APPEND_ARGUMENTS --thr 1x1 --test "159 193 129 STRETCH STRETCH")
 cado_divert_test(test-multi-matrix thr22 APPEND_ARGUMENTS --thr 2x2 --test "159 193 129 STRETCH STRETCH")

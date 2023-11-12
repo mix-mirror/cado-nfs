@@ -23,6 +23,10 @@ bindir="$CMAKE_CURRENT_BINARY_DIR"
 thr=2x2
 seed=1
 
+prime=2
+m=64
+n=64
+
 while [ $# -gt 0 ] ; do
     if [ "$1" = "--bindir" ] ; then
         shift
@@ -40,27 +44,40 @@ while [ $# -gt 0 ] ; do
         shift
         thr="$1"
         shift
+    elif [ "$1" = "--prime" ] ; then
+        shift
+        prime="$1"
+        shift
+    elif [ "$1" = "--m" ] ; then
+        shift
+        m="$1"
+        shift
+    elif [ "$1" = "--n" ] ; then
+        shift
+        n="$1"
+        shift
     else
         usage
     fi
 done
 
 # generate the matrices
-`dirname "$0"`/create-fake-dble-matrices.pl --save-matrices-list $tmp/matrices.txt --dstdir $tmp --seed $seed $TESTCASE
+`dirname "$0"`/create-fake-dble-matrices.pl --prime $prime --save-matrices-list $tmp/matrices.txt --dstdir $tmp --seed $seed $TESTCASE
 
 # form the comma-separated list of matrices
 matrices=""
 set -- `cat $tmp/matrices.txt`
-for m in "$@" ; do
+for mat in "$@" ; do
     if [ "$matrices" ] ; then matrices="$matrices," ; fi
-    matrices="$matrices$m"
+    matrices="$matrices$mat"
 done
 
-pmn=(
-    prime=2
-    m=64
-    n=64
-)
+pmn=( prime=$prime m=$m n=$n)
+
+case "$prime" in
+    2) lingen=lingen_b64;;
+    *) lingen=lingen_p1;;
+esac
 
 eval "${pmn[@]}"
 
@@ -83,6 +100,6 @@ if [ "${#afiles[@]}" != 1 ] ; then
 fi
 afile="${afiles[0]}"
 ffile="$afile.gen"
-$bindir/lingen_b64 "${pmn[@]}" wdir=$tmp afile="$afile" ffile=F rhs=none split-output-file=1
+$bindir/$lingen "${pmn[@]}" wdir=$tmp afile="$afile" ffile=F rhs=none split-output-file=1
 $bindir/mksol "${common[@]}" solutions=0-$n
 $bindir/gather "${common[@]}" solutions=0-$n

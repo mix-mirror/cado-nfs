@@ -31,6 +31,7 @@ my @dims=();
 my @modes=();
 my $dstdir;
 my $matrices_list;
+my $withcoeffs;
 
 while (defined($_=shift @ARGV)) {
     if (/^\d+$/) {
@@ -47,6 +48,15 @@ while (defined($_=shift @ARGV)) {
         defined($dstdir = shift(@ARGV)) or usage "missing argument to $_";
     } elsif (/--save-matrices-list/) {
         defined($matrices_list = shift(@ARGV)) or usage "missing argument to $_";
+    } elsif (/--binary/) {
+        $withcoeffs = 0;
+    } elsif (/--prime/) {
+        my $p = shift @ARGV;
+        if ($p == 2) {
+            $withcoeffs = 0;
+        } else {
+            $withcoeffs = 1;
+        }
     } elsif (/--help/) {
         usage;
     } else {
@@ -84,31 +94,47 @@ for my $i (0..$n-1) {
     open(RW, "> :raw :bytes", $rwfile);
     for(my $rowid = 0 ; $rowid < $nrows ; $rowid++) {
         my @cols;
+        my @coeffs;
 
         if ($mode eq 'SIMPLESHIFTRIGHT') {
             if ($rowid + 1 < $ncols) {
                 push @cols, $rowid+1;
+                push @coeffs, $rowid+1;
+                push @coeffs, 1 if $withcoeffs;
             }
         } elsif ($mode eq 'SIMPLESHIFTDOWN') {
             if ($rowid >= 1) {
                 push @cols, $rowid-1;
+                push @coeffs, $rowid-1;
+                push @coeffs, 1 if $withcoeffs;
             }
         } elsif ($mode eq 'STRETCH') {
             my $j0 = int(($rowid * $ncols) / $nrows);
             my $j1 = int((($rowid+1) * $ncols) / $nrows);
             for(my $j = $j0 ; $j < $j1 ; $j++) {
                 push @cols, $j;
+                push @coeffs, $j;
+                push @coeffs, 1 if $withcoeffs;
             }
         } elsif ($mode =~ /URANDOM(\d+)/) {
             my $d = $1;
             for(my $j = 0 ; $j < $d ; $j++) {
-                push @cols, int(rand()*$ncols);
+                my $c = int(rand()*$ncols);
+                push @cols, $c;
             }
             @cols = sort @cols;
+            if ($withcoeffs) {
+                for my $c (@cols) {
+                    my $s = int(rand()*2)*2-1;
+                    push @coeffs, $c, $s;
+                }
+            } else {
+                push @coeffs, @cols;
+            }
         }
 
         print RW pack("L", scalar @cols);
-        print MAT pack("L*", (scalar @cols, @cols));
+        print MAT pack("L*", (scalar @cols, @coeffs));
         for (@cols) {
             $columns[$_]++;
         }
