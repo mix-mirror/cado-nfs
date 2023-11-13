@@ -3,16 +3,58 @@ import re
 import sys
 import math
 import copy
+import functools
 
 from sage.matrix.constructor import matrix
 from sage.rings.finite_rings.finite_field_constructor import GF
-from sage.matrix.special import block_matrix, zero_matrix
+from sage.matrix.special import block_matrix, zero_matrix, identity_matrix
 from sage.modules.free_module_element import vector
 
 from .tools import OK, NOK, EXCL
 from .tools import u32, s32
 from .BwcParameters import BwcParameters
 from .BwcBalancing import BwcBalancing, BwcShuffling
+
+
+class DecorrelatedMatrix(object):
+    def __init__(self, parent):
+        self.parent = parent
+        self.params = parent.params
+
+    def operate(self, y):
+        """
+        multiplication operator for the decorrelated matrix
+        (matrix times vector)
+        """
+
+        # TODO: This really tells us that we should not be using
+        # operator overload blindly as we do here.
+        if isinstance(y, DecorrelatedMatrix):
+            raise ValueError("please do not do things like MQ*MQ")
+
+        if self.params.is_nullspace_right():
+            return self.parent.operate(self.parent.Q * y)
+        else:
+            return self.parent.Q.transpose() * self.parent.operate(y)
+
+    def operate_transpose(self, x):
+        """
+        multiplication operator for the decorrelated matrix
+        (vector time matrixvector)
+        """
+
+        # TODO: This really tells us that we should not be using
+        # operator overload blindly as we do here.
+        if isinstance(x, DecorrelatedMatrix):
+            raise ValueError("please do not do things like MQ*MQ")
+
+        if self.params.is_nullspace_right():
+            return self.parent.Q.transpose() * self.parent.operate_transpose(x)
+        else:
+            return self.parent.operate_transpose(self.parent.Q * x)
+
+    def __pow__(self, exponent):
+        return BwcMatrixPower(self, exponent)
 
 
 class BwcMatrix(object):
@@ -32,14 +74,238 @@ class BwcMatrix(object):
 
     For cases where the decorrelated matrix M*Q is needed instead, a thin
     wrapper class is provided.
+
     """
     def __init__(self,
                  params: BwcParameters,
                  matrix=None,
                  wdir=None,
-                 balancing_filename=None):
+                 balancing_filename=None,
+                 multi_matrix=False
+                 ):
+        if wdir is None:
+            self.wdir = os.path.dirname(matrix)
+        else:
+            self.wdir = wdir
+        self.params = params
+        self.multi_matrix = multi_matrix
+
+        self.chain = []
+        if not multi_matrix:
+            self.chain = [BwcOneMatrix(params,
+                                       matrix,
+                                       wdir,
+                                       balancing_filename=balancing_filename)]
+        else:
+            mm = matrix.split(",")
+            if balancing_filename:
+                bb = balancing_filename.split(",")
+                if len(mm) != len(bb):
+                    these = "matrix= and balancing_filename="
+                    suck = "should have the same number of items"
+                    raise ValueError(f"{these} {suck}")
+            else:
+                bb = [None for m in mm]
+            self.chain = [BwcOneMatrix(params,
+                                       mm[i],
+                                       wdir,
+                                       balancing_filename=bb[i])
+                          for i in range(len(mm))]
+
+        self.nrows = None
+        self.ncols = None
+
+    @property
+    def ncols_orig(self):
+        return self.chain[-1].ncols_orig
+
+    @property
+    def nrows_orig(self):
+        return self.chain[0].nrows_orig
+
+    def dimensions(self):
+        assert self.nrows is not None
+        if self.params.is_nullspace_right():
+            return (self.nrows, self.ncols)
+        else:
+            return (self.ncols, self.nrows)
+
+    def read(self, force_square=False):
+        d = dict(force_square=force_square)
+        if len(self.chain) > 1:
+            d = {}
+        for c in self.chain:
+            c.read(**d)
+
+        self.nrows = self.chain[0].nrows
+        self.ncols = self.chain[-1].ncols
+
+        if force_square:
+            # what happens if we have a non trivial chain?
+            assert self.nrows == self.ncols
+
+    def decorrelated(self):
+        return DecorrelatedMatrix(self)
+
+    def operate(self, y):
+        """
+        multiplication operator for this matrix (matrix times vector).
+        This multiplication does not include any decorrelated
+        permutation.
+
+        y is expected to be a vertical vector with as many rows as the
+        dimension of interest of the first matrix that participates in
+        the evaluation (i.e., self.ncols, which is the number of columns
+        of self.chain[-1] if nullspace=right, and self.nrows, which is
+        the number of rows of self.chain[0], otherwise).
+        """
+        if self.params.is_nullspace_right():
+            # we want a right fold, but functools.reduce is a left fold.
+            # We can get by with a few reversals, including a reversal of
+            # the actual multiplication operation...
+            return functools.reduce(lambda v, m: m.operate(v),
+                                    reversed(self.chain),
+                                    y)
+        else:
+            # same as: prod(self.chain, y.transpose()).transpose()
+            return functools.reduce(lambda v, m: m.operate(v),
+                                    self.chain,
+                                    y)
+
+    def operate_transpose(self, x):
+        """
+        multiplication operator for this matrix (vector times matrix),
+        This multiplication does not include any decorrelated
+        permutation.
+
+        x is expected to be a vertical vector with as many rows as the
+        dimension of interest of the first matrix that participates in
+        the evaluation. Because we're implementing the transpose operator
+        here, this means the number of rows of self.chain[0] if
+        nullspace=right, and the number of columns of self.chain[-1]
+        otherwise)
+        """
+        if self.params.is_nullspace_right():
+            # same as: prod(self.chain, x.transpose()).transpose()
+            return functools.reduce(lambda v, m: m.operate_transpose(v),
+                                    self.chain,
+                                    x)
+        else:
+            return functools.reduce(lambda v, m: m.operate_transpose(v),
+                                    reversed(self.chain),
+                                    x)
+
+    def fetch_balancing(self, nh, nv):
+        """
+        Based on the filename of the matrix, try to see if a balancing is
+        defined, read it, and read all submatrices. Of course this
+        assumes that the submatrices were savec during the balancing
+        operation done by the C++ code
+        """
+        for i, c in enumerate(self.chain):
+            if (i & 1) == 0:
+                c.fetch_balancing(nh, nv)
+            else:
+                c.fetch_balancing(nv, nh)
+
+        self.Q = self.chain[-1].S.shuf.matrix()
+
+    def check_balancing_submatrices_are_well_formed(self):
+        """
+        This checks that given the balancing permutation sigma, the
+        concatenation of the different submatrices at least gives a
+        matrix that is consistent with the number of rows and columns of
+        the matrix we supposedly started with.
+
+        It is important to understand that this function does not check
+        data that is read by self.read(), and it's on purpose.
+        """
+
+        for c in self.chain:
+            c.check_balancing_submatrices_are_well_formed()
+
+    def check_balancing_submatrices_consistency_with_M(self):
+        """
+        This does what the previous code does not do: check that the
+        concatenation of the submatrices is consistent with the matrix we
+        started with. Of course, to do so, we must have called
+        self.read() first.
+        """
+
+        for c in self.chain:
+            c.check_balancing_submatrices_consistency_with_M()
+
+    def check(self):
+        what = "that submatrices are consistent with the balancing"
+        print(f"Checking {what} ...")
+        self.check_balancing_submatrices_are_well_formed()
+        print(f"Checking {what} ...  {OK}")
+
+        what = "that submatrices are consistent with the matrix M"
+        print(f"Checking {what} ...")
+        self.check_balancing_submatrices_consistency_with_M()
+        print(f"Checking {what} ... {OK}")
+
+    def __pow__(self, exponent):
+        return BwcMatrixPower(self, exponent)
+
+    def __str__(self):
+        files = ", ".join([x.filename for x in self.chain])
+        if self.nrows is not None:
+            dims = f"{self.nrows}x{self.ncols} matrix"
+            me = f"{dims} from {files}"
+        else:
+            me = f"matrix from {files} (not read yet)"
+        if self.params.is_nullspace_left():
+            me += ", operating as vector times matrix"
+        else:
+            me += ", operating as matrix times vector"
+        return me
+
+    def __repr__(self):
+        me = [repr(self.params)]
+        files = ",".join([x.filename for x in self.chain])
+        me.append(f"'{files}'")
+        me.append(f"wdir='{self.wdir}'")
+        if self.chain[0].balancing is not None:
+            bb = ",".join([x.balancing.filename for x in self.chain])
+            me.append(f"balancing_filename='{bb}'")
+        if len(self.chain) > 1:
+            me.append('multi_matrix=True')
+        me = ", ".join(me)
+        return f"BwcMatrix({me})"
+
+
+
+class BwcOneMatrix(object):
+    """
+    This class contains stuff to read a matrix in serialized format, but
+    also to fetch information related to a given balancing of a matrix.
+
+    This type
+    Sanity checks that compare the on-disk representation with the
+    original matrix are included.
+
+    The left and right multiplication operators do not include the
+    decorrelating permutation. This means that multplying by this matrix
+    is really the same as multiplying by the original matrix that is
+    pointed to by the filename, and eventually the output of the whole
+    calculation can be checked against this algorithm.
+
+    For cases where the decorrelated matrix M*Q is needed instead, a thin
+    wrapper class is provided.
+
+    """
+    def __init__(self,
+                 params: BwcParameters,
+                 matrix=None,
+                 wdir=None,
+                 balancing_filename=None,
+                 chain_position=0
+                 ):
         self.params = params
         self.filename = matrix
+        self.chain_position = chain_position
         if wdir is None:
             self.wdir = os.path.dirname(self.filename)
         else:
@@ -52,6 +318,29 @@ class BwcMatrix(object):
 
         self.__clear_fields_for_read()
         self.__clear_fields_for_fetch_balancing()
+
+        # The submatrices may be stored in transposed order. This is done
+        # because it is convenient for the matmul layers to read them so.
+        # Sometimes. In truth, we should perhaps get rid of this
+        # complication, I don't really know.
+        #
+        # Anyway, we have a bit of a problem here. Whether the matrices
+        # are stored transposed or not depends on the implementation that
+        # got used (because the MM layer "suggests" the good dispatching
+        # direction to the layer above). However we don't know what layer
+        # is used in this particular code.
+        #
+        # As a matter of fact, all layers currently in use seem to have
+        # MM_DIR0_PREFERS_TRANSP_MULT == 1, which means that if dir==0
+        # (nullspace=left), then yes, the layer prefers to see the
+        # transposed matrix in ram. And if dir==1, then because 1 xor 1 =
+        # 0, then no, it doesn't need that.
+        if self.params.is_nullspace_left() and self.params.p == 2:
+            self.submatrices_are_transposed = True
+        elif self.params.is_nullspace_right() and self.params.p != 2:
+            self.submatrices_are_transposed = False
+        else:
+            raise NotImplementedError("Does the MM layer in this case store matrices in transposed order or not ?")
 
     def dimensions(self):
         """
@@ -105,70 +394,34 @@ class BwcMatrix(object):
                   file=sys.stderr)
             raise e
 
-    class DecorrelatedMatrix(object):
-        def __init__(self, parent):
-            self.parent = parent
-            self.params = parent.params
-
-        def __mul__(self, y):
-            """
-            multiplication operator for the decorrelated matrix
-            (matrix times vector)
-            """
-
-            # TODO: This really tells us that we should not be using
-            # operator overload blindly as we do here.
-            if isinstance(y, BwcMatrix.DecorrelatedMatrix):
-                raise ValueError("please do not do things like MQ*MQ")
-
-            if self.params.is_nullspace_right():
-                Qy = self.parent.Q * y
-                return self.parent.M * Qy
-            else:
-                yM = y.transpose() * self.parent.M
-                return (yM * self.parent.Q).transpose()
-
-        def __rmul__(self, x):
-            """
-            multiplication operator for the decorrelated matrix
-            (vector time matrixvector)
-            """
-
-            # TODO: This really tells us that we should not be using
-            # operator overload blindly as we do here.
-            if isinstance(x, BwcMatrix.DecorrelatedMatrix):
-                raise ValueError("please do not do things like MQ*MQ")
-
-            if self.params.is_nullspace_right():
-                xM = x.transpose() * self.parent.M
-                return (xM * self.parent.Q).transpose()
-            else:
-                Qx = self.parent.Q * x
-                return self.parent.M * Qx
-
-        def __pow__(self, exponent):
-            return BwcMatrixPower(self, exponent)
-
-    def decorrelated(self):
-        return self.DecorrelatedMatrix(self)
+    def __repr__(self):
+        ma = f"matrix#{self.chain_position}"
+        if self.nrows is not None:
+            dims = f"{self.nrows}x{self.ncols} {ma} ({self.ncoeffs} coeffs)"
+            return f"{dims} from {self.filename}"
+        else:
+            return f"{ma} from {self.filename} (not read yet)"
 
     # Not absolutely sure we want to keep these two operators, in fact
-    def __mul__(self, y):
+    def operate(self, y):
         """
-        multiplication operator for this matrix (matrix times vector).
-        This multiplication does not include any decorrelated
-        permutation.
+        this implements the multiplication operator for this matrix. What
+        this actually does depends on whether we are going to use this
+        matrix for a left or a right operation. For this reason, we
+        prefer to avoid operator overloading, as much as possible.
+
+        y is expected to be a vertical vector with as many rows as the
+        dimension of interest of the matrix (i.e., its number of columns
+        if nullspace=right, its number of rows otherwise).
         """
         if self.params.is_nullspace_right():
             return self.M * y
         else:
             return (y.transpose() * self.M).transpose()
 
-    def __rmul__(self, x):
+    def operate_transpose(self, x):
         """
-        multiplication operator for this matrix (vector times matrix),
-        This multiplication does not include any decorrelated
-        permutation.
+        This does the transpose operation of self.operate()
         """
         if self.params.is_nullspace_right():
             return (x.transpose() * self.M).transpose()
@@ -350,27 +603,34 @@ class BwcMatrix(object):
                 fname = os.path.join(dir, sdir, f"{sdir}.{id}.bin")
                 nrp = bal.tr // bal.nh
                 ncp = bal.tc // bal.nv
-                self.submatrices[i][j] = BwcMatrix(self.params, fname)
-                self.submatrices[i][j].__read(nrows=nrp, ncols=ncp)
+                self.submatrices[i][j] = BwcOneMatrix(self.params, fname)
+                if self.submatrices_are_transposed:
+                    self.submatrices[i][j].__read(nrows=ncp, ncols=nrp)
+                else:
+                    self.submatrices[i][j].__read(nrows=nrp, ncols=ncp)
         # Now we want to check the consistency of the matrix that we just
         # read.
 
-        # The submatrices may be stored in transposed order. This is done
-        # because it is convenient for the matmul layers to read them so.
-        # Sometimes. In truth, we should perhaps get rid of this
-        # complication, I don't really know.
-        t = lambda x:x
-        if self.params.is_nullspace_left():
-            t = lambda x:x.transpose()
-
+        t = lambda x: x  # noqa: E731
+        if self.submatrices_are_transposed:
+            t = lambda x: x.transpose()  # noqa: E731
 
         self.Mx = block_matrix(nh, nv,
                                [t(self.__subM(i, j))
                                 for i in range(nh)
                                 for j in range(nv)])
-        self.sigma = self.S.sc.matrix()
-        self.Q = self.S.shuf.matrix()
-        self.xQ = self.S.xshuf.matrix()
+        if self.S.sc is not None:
+            self.sigma = self.S.sc.matrix()
+        else:
+            self.sigma = identity_matrix(GF(self.params.p), self.balancing.tc)
+
+        if self.S.shuf is not None:
+            self.Q = self.S.shuf.matrix()
+            self.xQ = self.S.xshuf.matrix()
+        else:
+            self.Q = identity_matrix(GF(self.params.p), self.balancing.nc)
+            self.xQ = identity_matrix(GF(self.params.p), self.balancing.tc)
+
         self.P = self.S.pr.matrix()
 
     def check_balancing_submatrices_are_well_formed(self):
@@ -385,6 +645,8 @@ class BwcMatrix(object):
         """
 
         bal = self.balancing
+
+        print(f"Checking {self.filename} ({bal.nh}x{bal.nv} balancing)")
 
         A = (self.P*self.sigma).transpose() * self.Mx * self.sigma
 
@@ -455,14 +717,14 @@ class BwcMatrixPower(object):
         self.M = M
         self.exponent = exponent
 
-    def __mul__(self, y):
+    def operate(self, y):
         v = copy.copy(y)
         for i in range(self.exponent):
-            v = self.M * v
+            v = self.M.operate(v)
         return v
 
-    def __rmul__(self, y):
+    def operate_transpose(self, y):
         v = copy.copy(y)
         for i in range(self.exponent):
-            v = v * self.M
+            v = self.M.operate_transpose(v)
         return v

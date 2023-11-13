@@ -174,5 +174,5 @@ class BwcAFiles(object):
                 if x.X.transpose()*w != mcoeff(self.A, k)[:, v.j0:v.j1]:
                     where = f"at coefficient {k}"
                     raise ValueError(f"Inconsistency in A files {where}")
-                w = M * w
+                w = M.operate(w)
             print(f"Check {what} using {v.filename} {OK}")

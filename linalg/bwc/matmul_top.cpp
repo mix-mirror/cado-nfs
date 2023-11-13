@@ -866,6 +866,9 @@ static std::string matrix_get_derived_cache_subdir(std::string const & matrixnam
     return s;
 }
 
+/* The swap parameter indicates whether the wiring dimensions (nh and nv)
+ * must be swapped or not)
+ */
 static void matrix_create_derived_cache_subdir(std::string const & matrixname, int swap, parallelizing_info_ptr pi)
 {
     std::string d = matrix_get_derived_cache_subdir(matrixname, swap, pi);

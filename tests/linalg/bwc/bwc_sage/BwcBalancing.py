@@ -100,7 +100,7 @@ class BwcShuffling(object):
         self.sr = None
         if bal.rowperm is not None:
             self.sr = Sr(bal.rowperm)
-            self.scinv = self.sc**-1
+            self.srinv = self.sr**-1
 
         try:
             self.pr = Sr([self.__pr(Integer(x)) for x in range(bal.tr)])

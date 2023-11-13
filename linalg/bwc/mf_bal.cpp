@@ -445,14 +445,15 @@ void mf_bal_n(struct mf_bal_args * mbas, size_t n)
 
     /* {{{ Compute the de-correlating permutation.
      * This only makes sense on the last matrix (since it amounts to
-     * changing it from M to M*S for some S)
+     * changing it from M to M*S for some S). For consistency of the data
+     * in general, we put info that reflects an identity transformation
+     * for the other matrices too.
      */
-    {
-        size_t midx = n - 1;
+    for(size_t midx = 0 ; midx < n ; midx++) {
         balancing & bal = bals[midx];
         struct mf_bal_args * mba = &mbas[midx];
 
-        if (mba->skip_decorrelating_permutation) {
+        if (midx != n - 1 || mba->skip_decorrelating_permutation) {
             /* internal, for debugging. This removes the de-correlating
              * permutation. Nothing to do with what is called
              * "shuffled-product" elsewhere, except that both are taken care

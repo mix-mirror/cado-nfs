@@ -172,11 +172,11 @@ class BwcFFiles(object):
         V = v.parent()()
         for k in range(self.degree()+1):
             V += v * mcoeff(self.F, k)
-            v = MQ * v
+            v = MQ.operate(v)
 
         print("Checking solutions derived from the linear generator")
 
-        should_be_zero = rhs * U + MQ * V
+        should_be_zero = rhs * U + MQ.operate(V)
         if should_be_zero != 0:
             rk = should_be_zero.rank()
             event = f"rhs * U + MQ * V has rank {rk} (should be zero)"

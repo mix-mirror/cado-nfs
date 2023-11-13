@@ -44,7 +44,7 @@ class BwcSVector(BwcVectorBase):
         s = self.V.parent()()
         for k in range(self.start, self.end):
             s += vs * mcoeff(F, k)[:, self.j0:self.j1]
-            vs = MQ * vs
+            vs = MQ.operate(vs)
 
         if self.V != s:
             raise ValueError(f"check failed {NOK}")

@@ -57,7 +57,7 @@ class BwcVectorSet(BwcVectorSetBase):
             for t in iW:
                 doing = f"Checking {t.filename}"
                 print(doing)
-                V = mat**(t.iteration-i) * V
+                V = (mat**(t.iteration-i)).operate(V)
                 i = t.iteration
                 assert V == t.V
                 print(f"{doing} ... {OK}")
