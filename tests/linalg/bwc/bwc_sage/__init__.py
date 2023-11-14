@@ -1,14 +1,15 @@
 """
-This package is work in progress. As of late 2023, it is still far from
-the functionality level of the original magma script
+This package is work in progress.
 
 The work plan is:
     1. prime field case (nullspace=right), with arbitrary balancing
-        ✅ This works for a few automated tests, at least as far lingen
+        ✅ This works for a few automated tests.
     2. we want to use this to debug the double matrix setting
+        - WIP currently
     3. extend to the binary case (nullspace=left). We know that there are
        a few monsters down that path, like m4ri data being hard to
        initialize totally freely from within sage
+        ✅ It works in basic cases like mod2_plain.
     4. address the remaining cases like interleaving and so on.
 """
 

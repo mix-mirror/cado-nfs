@@ -186,16 +186,9 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS})
     endif()
 endforeach()
         
-add_custom_target(all_magma_test_dependencies)
 add_custom_target(all_sagemath_test_dependencies)
 
-macro(create_magma_sage_diversions t)
-    if(MAGMA)
-        divert_bwc_test(${t} with_magma APPEND_ARGUMENTS magma=${MAGMA}
-            TIMEOUT 120
-        )
-        add_dependencies(all_magma_test_dependencies test_bwc_${t}_with_magma_dependencies)
-    endif()
+macro(create_sage_diversions t)
     if(SAGE)
         divert_bwc_test(${t} with_sagemath APPEND_ARGUMENTS wordsize=${ULONG_BITS} sage=${SAGE}
             TIMEOUT 120
@@ -239,7 +232,7 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                     TARGET_DEPENDENCIES
                     lingen_pz lingen_${layer}
                 )
-                create_magma_sage_diversions(${t})
+                create_sage_diversions(${t})
             endif()
 
             set(t modp_inhomogeneous_minimal_2rhs_mn4)
@@ -256,7 +249,7 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                     random_matrix_size=200 nrhs=2 m=4 n=4 seed=1
                     TARGET_DEPENDENCIES
                     lingen_pz lingen_${layer})
-                create_magma_sage_diversions(${t})
+                create_sage_diversions(${t})
             endif()
 
             if(DEFINED ENV{CHECKS_EXPENSIVE})
@@ -265,7 +258,7 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                     prime=1009 random_matrix_size=50 nrhs=1 m=1 n=1 seed=1
                 TARGET_DEPENDENCIES
                     lingen_pz lingen_${layer})
-                create_magma_sage_diversions(${t})
+                create_sage_diversions(${t})
             endif()
 
             # This one is a bit of a lie, to be honest. Depending on the
@@ -283,7 +276,7 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                 random_matrix_minkernel=1
                 TARGET_DEPENDENCIES
                 lingen_pz lingen_${layer})
-            create_magma_sage_diversions(${t})
+            create_sage_diversions(${t})
 
             ## this one isn't really useful
             # set(t modp_inhomogeneous_minimal_2rhs_mn2)
@@ -292,7 +285,7 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
             #   seed=1
             #   TARGET_DEPENDENCIES
             #   lingen_pz lingen_${layer})
-            # create_magma_sage_diversions(${t})
+            # create_sage_diversions(${t})
         endif()
 
         set(t modp_secure_continuation_${layer})
@@ -548,7 +541,7 @@ set(mod2_plain_mpi_tests mpi_rect1 mpi_rect2 mpi_square1 mpi_square2)
 add_bwc_test(mod2_plain bwc-ptrace.sh prime=2 nullspace=left
     random_matrix_size=800 m=64 n=64 seed=1 thr=2x2
     TARGET_DEPENDENCIES mf_scan)
-create_magma_sage_diversions(mod2_plain)
+create_sage_diversions(mod2_plain)
 if(SAGE)
 set_property(TEST test_bwc_mod2_plain_with_sagemath PROPERTY TIMEOUT 360)
 endif()

@@ -1165,7 +1165,6 @@ tests/linalg/bwc/A.21744
 tests/linalg/bwc/CMakeLists.txt
 tests/linalg/bwc/Makefile
 tests/linalg/bwc/bwc-dispatch-matmul.sh
-tests/linalg/bwc/bwc-ptrace.m
 tests/linalg/bwc/bwc-ptrace.sh
 tests/linalg/bwc/bwc-test-double-matrix.sh
 tests/linalg/bwc/bwc-test-secure-consistent-defaults.sh
@@ -1186,7 +1185,6 @@ tests/linalg/bwc/bwc_sage/BwcVectorSetBase.py
 tests/linalg/bwc/bwc_sage/BwcXVector.py
 tests/linalg/bwc/bwc_sage/__init__.py
 tests/linalg/bwc/bwc_sage/tools.py
-tests/linalg/bwc/convert_magma.pl
 tests/linalg/bwc/cpubind_config_file_for_tests.conf
 tests/linalg/bwc/create-fake-dble-matrices.pl
 tests/linalg/bwc/flint-fft/CMakeLists.txt
