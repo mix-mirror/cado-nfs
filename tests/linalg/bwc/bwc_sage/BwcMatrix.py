@@ -117,10 +117,20 @@ class BwcMatrix(object):
 
     @property
     def ncols_orig(self):
+        """
+        This property is exposed just for convenience, for compatibility
+        with the single-matrix case. Note that M.read() must have been
+        called first
+        """
         return self.chain[-1].ncols_orig
 
     @property
     def nrows_orig(self):
+        """
+        This property is exposed just for convenience, for compatibility
+        with the single-matrix case. Note that M.read() must have been
+        called first
+        """
         return self.chain[0].nrows_orig
 
     def dimensions(self):

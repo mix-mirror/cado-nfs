@@ -40,7 +40,20 @@
                                    we get conjugated permutations.
                                    */
 
-#define BALANCING_MAGIC UINT32_C(0xba1a0000)
+#define BALANCING_MAGIC UINT32_C(0xba1a0001)
+/*
+ * 0xba1a0001 (2023-11-14):
+ *
+ * add the nrows_outer and ncols_outer fields.  These are zero in the
+ * single matrix case. In the case of a matrix chain with multiple
+ * matrices, these correspond to the dimension to which we need to pad in
+ * order to have a square chain. I.e. if the chain is M_0*...*M_{k-1} and
+ * we want a square, then
+ *      M_0.nrows_outer = M_{k-1}.ncols
+ * and  M_{k-1}.ncols_outer = M_0.nrows
+ *
+ *
+ */
 
 #define MINIMUM_ITEMS_IN_BWC_CHUNKS     8
 
@@ -62,6 +75,8 @@ struct balancing_header {
     uint32_t ncols = 0;
     uint32_t nzrows = 0;
     uint32_t nzcols = 0;
+    uint32_t nrows_outer = 0;
+    uint32_t ncols_outer = 0;
     uint64_t ncoeffs = 0;
     uint32_t checksum = 0;
     uint32_t flags = 0;

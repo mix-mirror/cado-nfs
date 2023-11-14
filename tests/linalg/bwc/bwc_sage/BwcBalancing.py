@@ -29,7 +29,7 @@ class BwcBalancing(object):
         with open(self.filename, 'rb') as f:
             zero, magic = u32(f, repeat=2)
             assert zero == 0
-            assert magic == 0xba1a0000
+            assert magic == 0xba1a0001
             self.nh, self.nv = u32(f, repeat=2)
             # (nr, nc) are the same as (nrows_orig, ncols_orig) in the
             # original matrix. However (nrows, ncols) in the BwcMatrix
@@ -37,6 +37,9 @@ class BwcBalancing(object):
             # fail to match the (nr, nc) that we have here.
             self.nr, self.nc = u32(f, repeat=2)
             self.nzr, self.nzc = u32(f, repeat=2)
+            # nro nco are the "outer" nrows and ncols that determine if
+            # we need to pad if we are dealing with a matrix chain
+            self.nro, self.nco = u32(f, repeat=2)
             self.ncoeffs = u64(f)
             self.checksum, flags = u32(f, repeat=2)
 
@@ -52,8 +55,8 @@ class BwcBalancing(object):
             # copy b111d37a5: now the alignment is always on multiples of 8
             chunk = 8
 
-            self.tr = pad(self.nr, self.nh * self.nv, chunk)
-            self.tc = pad(self.nc, self.nh * self.nv, chunk)
+            self.tr = pad(max(self.nr, self.nro), self.nh * self.nv, chunk)
+            self.tc = pad(max(self.nc, self.nco), self.nh * self.nv, chunk)
 
             if 'replicate' in self.txflags:
                 self.tr = max(self.tr, self.tc)

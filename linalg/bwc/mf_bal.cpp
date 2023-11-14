@@ -893,13 +893,20 @@ void mf_bal_n(struct mf_bal_args * mbas, size_t n)
      * "replicating" a permutation means connecting the rows
      * of the first matrix with the columns of the last one.
      *
-     * In the multi matrix case, we're not quite sure that we want to use
-     * this flag, but for consistency with the behaviour of the single
-     * matrix code, we keep the old behaviour that if the matrix is
-     * square, we forcibly do this replication
+     * In the multi matrix case, we don't have the same flag on the
+     * per-matrix level, so we use the nrows_outer and ncols_outer
+     * fields.
+     *
+     * The FLAG_REPLICATE flag is therefore used _only_ to indicate that
+     * storage for the permutations is optimized, in the single matrix
+     * case only
      */
-    if (n == 1 && !rectangular) {
-        bals[0].flags |= FLAG_REPLICATE;
+    if (!rectangular) {
+
+        if (n == 1)
+            bals[0].flags |= FLAG_REPLICATE;
+        bals.front().nrows_outer = bals.back().ncols;
+        bals.back().ncols_outer = bals.front().nrows;
     }
 
     for(size_t midx = 0 ; midx < n ; midx++) {

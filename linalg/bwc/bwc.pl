@@ -1327,12 +1327,13 @@ sub get_cached_balancing_header {
     if (defined(my $z = $cache->{$key})) { return @$z; }
     defined(my $balancing = get_cached_bfile) or confess "\$balancing undefined";
     sysopen(my $fh, $balancing, O_RDONLY) or die "$balancing: $!";
+    # We're only reading a small part of the header.
     sysread($fh, my $bhdr, 24);
-    my @x = unpack("LLLLLL", $bhdr);
+    my @x = unpack("L2L4", $bhdr);
     my $zero = shift @x;
     die "$balancing: no leading 32-bit zero" unless $zero == 0;
     my $magic = shift @x;
-    die "$balancing: bad file magic" unless $magic == 0xba1a0000;
+    die "$balancing: bad file magic" unless ($magic == 0xba1a0001 || $magic == 0xba1a0000);
     $cache->{$key} = \@x;
     close($fh);
     return @x;
