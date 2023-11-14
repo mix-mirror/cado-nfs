@@ -872,8 +872,14 @@ cado_define_test(TEST_NAME test-multi-matrix
     TARGET_DEPENDENCIES
     bwc_full
 )
-cado_divert_test(test-multi-matrix thr11 APPEND_ARGUMENTS --thr 1x1 --test "159 193 129 STRETCH STRETCH")
-cado_divert_test(test-multi-matrix thr22 APPEND_ARGUMENTS --thr 2x2 --test "159 193 129 STRETCH STRETCH")
+cado_divert_test(test-multi-matrix thr11
+    APPEND_ARGUMENTS --thr 1x1 --test "159 193 129 STRETCH STRETCH")
+cado_divert_test(test-multi-matrix thr21
+    APPEND_ARGUMENTS --thr 2x1 --test "159 193 129 URANDOM4 URANDOM10")
+cado_divert_test(test-multi-matrix thr12
+    APPEND_ARGUMENTS --thr 1x2 --test "159 193 129 URANDOM4 URANDOM10")
+cado_divert_test(test-multi-matrix thr22
+    APPEND_ARGUMENTS --thr 2x2 --test "159 193 129 STRETCH STRETCH")
 
 
 #########################################################################

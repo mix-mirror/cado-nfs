@@ -10,7 +10,14 @@ struct matmul_top_data;
 #include "matmul_top.hpp"
 
 class mmt_vector_pair : private std::vector<mmt_vec> {
-    /* if direction = 0 we have:
+    /*
+     * the wiring of w.input_vector() must be
+     * mmt.input_vector_wiring_direction(w.direction)
+     *
+     * the wiring of w.output_vector() must be
+     * mmt.output_vector_wiring_direction(w.direction)
+     *
+     * if direction = 0 we have:
      * [1] = [0] * M0
      * [2] = [1] * M1
      * [...]

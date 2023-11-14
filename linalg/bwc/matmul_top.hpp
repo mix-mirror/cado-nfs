@@ -64,6 +64,7 @@ struct matmul_top_data {
     arith_generic * abase;
     parallelizing_info_ptr pi;
     pi_datatype_ptr pitype;
+
     /* These n[] and n0[] correspond to the dimensions of the product
      *
      * n[0] is matrices[0]->n[0]
@@ -79,9 +80,66 @@ struct matmul_top_data {
      */
     std::vector<matmul_top_matrix> matrices;
 
-    /* optimized direction is whether like to compute x*M
-     * (optimized_direction==0) or M*x (optimized_direction==1).
+
+    /* d is whether we like to compute x*M (d==0) or M*x (d==1).
+     *
+     * This direction parameter is passed informationally to the mm
+     * layer in order to  determine which direction should be optimized.
+     * As such, it has an impact on the internal layout of data. It is
+     * probably better to use the same argument throughout the
+     * computation.
+     *
+     * Changing d changes close to nothing in the api of the mmt structure,
+     * because mmt can do both the product and its transpose (by changing
+     * the direction argument of the mmt_vector_pair that is passed to
+     * matmul_top_mul).
+     *
+     * However we need to know what are the expected wiring direction of
+     * vectors when we do products.  Perhaps surprisingly, the answer to
+     * this is not totally obvious. This discussion is relevant to the
+     * mmt_vector_par structure as well.
+     *
+     *
+     * matmul_top_mul gets passed a mmt_vector_pair structure w, which
+     * has a direction w.direction.
+     * 
+     * if w.direction==0 we compute
+     *  w.input_vector * M_0 * M_1 * ... * M_{k-1}
+     *
+     * if w.direction==1 we compute
+     *  M_0 * M_1 * ... * M_{k-1} * w.input_vector 
+     *
+     * with k == mmt.matrices.size()
+     *
+     * - The easy case is if k==1, i.e. if there is just one matrix M0 (or
+     *   more generally if the number of matrices k is odd). The wiring
+     *   of w.input_vector is w.direction, and the wiring of the output
+     *   vector is !w.direction.
+     *
+     * - The case with k even is more disturbing. Because the wiring
+     *   alternates at intermediate products, both the w.input_vector and
+     *   w.output_vector must have the same wiring
+     *   direction, and this is where mmt.d kicks in: by convention, this
+     *   wiring direction must be d.
      */
+    int d;
+
+    /* return the expected wiring direction of the input vector for a
+     * product in direction d
+     */
+    inline int input_vector_wiring_direction(int d) const {
+        return (matrices.size() & 1) ? d : this->d;
+    }
+
+    /* return the expected wiring direction of the output vector for a
+     * product in direction d
+     */
+    inline int output_vector_wiring_direction(int d) const {
+        return (matrices.size() & 1) ? !d : this->d;
+    }
+
+
+
     matmul_top_data(
         arith_generic * abase,
         parallelizing_info_ptr pi,

@@ -8,6 +8,6 @@
 void balancing_decl_usage(param_list_ptr pl);
 void balancing_lookup_parameters(param_list_ptr pl);
 
-void balancing_get_matrix_u32(parallelizing_info_ptr pi, param_list_ptr pl, matrix_u32_ptr arg);
+void balancing_get_matrix_u32(parallelizing_info_ptr pi, bool swap_wirings, param_list_ptr pl, matrix_u32_ptr arg);
 
 #endif	/* BALANCING_WORKHORSE_HPP_ */

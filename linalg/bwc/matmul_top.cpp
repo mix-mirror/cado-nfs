@@ -88,32 +88,44 @@ void matmul_top_lookup_parameters(param_list_ptr pl)
  * The input vector is w.input_vector(), and the result is put in
  * w.input_vector() again.
  *
- * The direction in which we apply the product is given by w.d, and it
- * remains constant throughout the chain. However, note that this may
- * differ from the wiring of individual vectors, and some products are
- * transposed, although this is only for data presentation reasons.
+ * The direction in which we apply the product is given by w.direction
+ * and it remains constant throughout the chain.
  *
- * For w.d == 0, we do w*M. For w.d==1, we do M*w
+ * The wiring of individual vectors is not always along the same
+ * direction. Importantly, w.direction is not necessarily the same as
+ * w.input_vector().direction
  *
- * In all cases, w[0].d = w.input_vector().d is == w.d
+ * For d == 0, we do w*M. For w.d==1, we do M*w
  *
  * We use temporaries as follows (this is also in mmt_vector_pair):
  *
- * For w.d == w[0].d == 0:
- *  w[1] <- w[0] * M0 ; w[1].d == 1
- *  w[2] <- w[1] * M1 ; w[2].d == 0
- *  if n is odd:
- *  w[n] <- w[n-1] * M_{n-1} ; w[n].d == 1
- *  if n is even:
- *  w[0] <- w[n-1] * M_{n-1} ; w[0].d == 0
+ * For w.direction == 0 and n odd, w.input_vector().d == 0
+ *                             w[0].d == 0
+ *  w[1] <- w[0] * M0        ; w[1].d == 1
+ *  w[2] <- w[1] * M1        ; w[2].d == 0
+ *       ...                    ...
+ *  w[n] <- w[n-1] * M_{n-1} ; w[n].d == 1   (w.output_vector())
  *
- * For w[0].d == w[0].d == 1:
+ * For w.direction == 1 and n odd, w.input_vector().d == 1
+ *                           w[0].d == 1
  *  w[1] <- M_{n-1} * w[0] ; w[1].d == 0
  *  w[2] <- M_{n-2} * w[1] ; w[2].d == 1
- *  if n is odd:
- *  w[n] <- M_{0} * w[n-1] ; w[n].d == 0
- *  if n is even:
- *  w[0] <- M_{0} * w[n-1] ; w[0].d == 1
+ *       ...                    ...
+ *  w[n] <- M_{0} * w[n-1] ; w[n].d == 0   (w.output_vector())
+ *
+ * For w.direction == 0 and n even, w.input_vector().d == mmt.d
+ *                             w[0].d == d
+ *  w[1] <- w[0] * M0        ; w[1].d == !d
+ *  w[2] <- w[1] * M1        ; w[2].d == d
+ *       ...                    ...
+ *  w[0] <- w[n-1] * M_{n-1} ; w[0].d == d   (w.output_vector())
+ *
+ * For w.direction == 1 and n even, w.input_vector().d == mmt.d
+ *                           w[0].d == d
+ *  w[1] <- M_{n-1} * w[0] ; w[1].d == !d
+ *  w[2] <- M_{n-2} * w[1] ; w[2].d == d
+ *       ...                    ...
+ *  w[n] <- M_{0} * w[n-1] ; w[0].d == d   (w.output_vector())
  *
  * Appropriate communication operations are run after each step.
  * Internal communication steps are done with allreduce. The last
@@ -613,26 +625,27 @@ void mmt_vec_apply_T(matmul_top_data & mmt, mmt_vec & v)
 /* returns the two intervals such that for all pairs (i,j) in
  * mmt.perm->x, we have ii[0] <= i < ii[1], and jj[0] <= j < jj[1]
  */
-static void get_local_permutations_ranges(matmul_top_data & mmt, int d, unsigned int ii[2], unsigned int jj[2])
+static void get_local_permutations_ranges(matmul_top_data & mmt, bool swap_wirings, int d, unsigned int ii[2], unsigned int jj[2])
 {
     int pos[2];
 
     for(int dir = 0 ; dir < 2 ; dir++)  {
-        pi_comm_ptr piwr = mmt.pi->wr[dir];
+        pi_comm_ptr piwr = mmt.pi->wr[dir ^ swap_wirings];
         pos[dir] = piwr->jrank * piwr->ncores + piwr->trank;
     }
 
     size_t e = mmt.n[d] / mmt.pi->m->totalsize;
-    ii[0] = e *  pos[!d]    * mmt.pi->wr[d]->totalsize;
-    ii[1] = e * (pos[!d]+1) * mmt.pi->wr[d]->totalsize;
-    jj[0] = e *  pos[d]     * mmt.pi->wr[!d]->totalsize;
-    jj[1] = e * (pos[d]+1)  * mmt.pi->wr[!d]->totalsize;
+    ii[0] = e *  pos[!d]    * mmt.pi->wr[swap_wirings ^ d]->totalsize;
+    ii[1] = e * (pos[!d]+1) * mmt.pi->wr[swap_wirings ^ d]->totalsize;
+    jj[0] = e *  pos[d]     * mmt.pi->wr[swap_wirings ^ !d]->totalsize;
+    jj[1] = e * (pos[d]+1)  * mmt.pi->wr[swap_wirings ^ !d]->totalsize;
 }
 
 void indices_twist(matmul_top_data & mmt, uint32_t * xs, unsigned int n, int d)
 {
     int midx = d == 0 ? 0 : (mmt.matrices.size() - 1);
     matmul_top_matrix & Mloc = mmt.matrices[midx];
+    bool swap_wirings = midx & 1;
     /* d == 1: twist(v) = v*Sc^-1
      * d == 0: twist(v) = v*Sr^-1
      */
@@ -643,7 +656,7 @@ void indices_twist(matmul_top_data & mmt, uint32_t * xs, unsigned int n, int d)
         /* coordinate S[i] in the original vector becomes i in the
          * twisted vector.
          */
-        get_local_permutations_ranges(mmt, d, ii, jj);
+        get_local_permutations_ranges(mmt, swap_wirings, d, ii, jj);
         unsigned int * r = (unsigned int *) malloc((jj[1] - jj[0]) * sizeof(unsigned int));
         memset(r, 0, (jj[1] - jj[0]) * sizeof(unsigned int));
         for(auto const & uv : Mloc.perm[d]) {
@@ -669,7 +682,7 @@ void indices_twist(matmul_top_data & mmt, uint32_t * xs, unsigned int n, int d)
          * direction, because the pieces we have are for the other
          * ranges, which is a bit disturbing...
          */
-        get_local_permutations_ranges(mmt, !d, ii, jj);
+        get_local_permutations_ranges(mmt, swap_wirings, !d, ii, jj);
         unsigned int * r = (unsigned int *) malloc((jj[1] - jj[0]) * sizeof(unsigned int));
         memset(r, 0, (jj[1] - jj[0]) * sizeof(unsigned int));
         for(auto const & uv : Mloc.perm[!d]) {
@@ -842,12 +855,12 @@ static void matmul_top_read_submatrix(matmul_top_data & mmt, int midx, param_lis
 /* see matmul_top2.cpp */
 extern char * matrix_list_get_item(param_list_ptr pl, const char * key, int midx);
 
-static std::string matrix_get_derived_cache_subdir(std::string const & matrixname, int swap, parallelizing_info_ptr pi)
+static std::string matrix_get_derived_cache_subdir(std::string const & matrixname, bool swap_wirings, parallelizing_info_ptr pi)
 {
     /* input is NULL in the case of random matrices */
     if (matrixname.empty()) return std::string();
-    unsigned int nh = pi->wr[1 ^ swap]->totalsize;
-    unsigned int nv = pi->wr[0 ^ swap]->totalsize;
+    unsigned int nh = pi->wr[1 ^ swap_wirings]->totalsize;
+    unsigned int nv = pi->wr[0 ^ swap_wirings]->totalsize;
     char * copy = strdup(matrixname.c_str());
     char * t;
     if (strlen(copy) > 4 && strcmp((t = copy + strlen(copy) - 4), ".bin") == 0) {
@@ -866,12 +879,12 @@ static std::string matrix_get_derived_cache_subdir(std::string const & matrixnam
     return s;
 }
 
-/* The swap parameter indicates whether the wiring dimensions (nh and nv)
- * must be swapped or not)
+/* The swap_wirings parameter indicates whether the wiring dimensions (nh
+ * and nv) must be swapped or not)
  */
-static void matrix_create_derived_cache_subdir(std::string const & matrixname, int swap, parallelizing_info_ptr pi)
+static void matrix_create_derived_cache_subdir(std::string const & matrixname, bool swap_wirings, parallelizing_info_ptr pi)
 {
-    std::string d = matrix_get_derived_cache_subdir(matrixname, swap, pi);
+    std::string d = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     struct stat sbuf[1];
     int rc = stat(d.c_str(), sbuf);
     if (rc < 0 && errno == ENOENT) {
@@ -885,11 +898,11 @@ static void matrix_create_derived_cache_subdir(std::string const & matrixname, i
 /* return an allocated string with the name of a balancing file for this
  * matrix and this mpi/thr split.
  */
-static std::string matrix_get_derived_balancing_filename(std::string const & matrixname, int swap, parallelizing_info_ptr pi)
+static std::string matrix_get_derived_balancing_filename(std::string const & matrixname, bool swap_wirings, parallelizing_info_ptr pi)
 {
     /* input is NULL in the case of random matrices */
     if (matrixname.empty()) return std::string();
-    std::string dn = matrix_get_derived_cache_subdir(matrixname, swap, pi);
+    std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     char * t;
     int rc = asprintf(&t, "%s/%s.bin", dn.c_str(), dn.c_str());
     ASSERT_ALWAYS(rc >=0);
@@ -898,7 +911,7 @@ static std::string matrix_get_derived_balancing_filename(std::string const & mat
     return s;
 }
 
-static std::string matrix_get_derived_cache_filename_stem(std::string const & matrixname, int swap, parallelizing_info_ptr pi, uint32_t checksum)
+static std::string matrix_get_derived_cache_filename_stem(std::string const & matrixname, bool swap_wirings, parallelizing_info_ptr pi, uint32_t checksum)
 {
     /* input is NULL in the case of random matrices */
     if (matrixname.empty()) return std::string();
@@ -917,7 +930,7 @@ static std::string matrix_get_derived_cache_filename_stem(std::string const & ma
         pi_comm_ptr wr = pi->wr[d];
         pos[d] = wr->jrank * wr->ncores + wr->trank;
     }
-    std::string dn = matrix_get_derived_cache_subdir(matrixname, swap, pi);
+    std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     int rc = asprintf(&t, "%s/%s.%08" PRIx32 ".h%d.v%d",
             dn.c_str(), dn.c_str(), checksum, pos[1], pos[0]);
     ASSERT_ALWAYS(rc >=0);
@@ -927,7 +940,7 @@ static std::string matrix_get_derived_cache_filename_stem(std::string const & ma
     return s;
 }
 
-static std::string matrix_get_derived_submatrix_filename(std::string const & matrixname, int swap, parallelizing_info_ptr pi)
+static std::string matrix_get_derived_submatrix_filename(std::string const & matrixname, bool swap_wirings, parallelizing_info_ptr pi)
 {
     /* input is empty in the case of random matrices */
     if (matrixname.empty()) return std::string();
@@ -946,7 +959,7 @@ static std::string matrix_get_derived_submatrix_filename(std::string const & mat
         pi_comm_ptr wr = pi->wr[d];
         pos[d] = wr->jrank * wr->ncores + wr->trank;
     }
-    std::string dn = matrix_get_derived_cache_subdir(matrixname, swap, pi);
+    std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     int rc = asprintf(&t, "%s/%s.h%d.v%d.bin",
             dn.c_str(), dn.c_str(), pos[1], pos[0]);
     ASSERT_ALWAYS(rc >=0);
@@ -1037,8 +1050,9 @@ static void matmul_top_fill_balancing_for_all_matrices(matmul_top_data & mmt, pa
                 mba.mfile = Mloc.mname.empty() ? NULL : Mloc.mname.c_str();
                 mba.bfile = Mloc.bname.empty() ? NULL : Mloc.bname.c_str();
                 mba.quiet = 0;
-                mba.nh = (int) mmt.pi->wr[1]->totalsize;
-                mba.nv = (int) mmt.pi->wr[0]->totalsize;
+                /* matrices are split in alternating orders */
+                mba.nh = (int) mmt.pi->wr[1 ^ (i & 1)]->totalsize;
+                mba.nv = (int) mmt.pi->wr[0 ^ (i & 1)]->totalsize;
                 mba.rectangular = 0;
                 mba.skip_decorrelating_permutation = 0;
                 mba.do_perm[0] = mf_bal_args::MF_BAL_PERM_AUTO;
@@ -1083,9 +1097,12 @@ static void matmul_top_fill_balancing_for_all_matrices(matmul_top_data & mmt, pa
     mmt.n0[1] = mmt.matrices[mmt.matrices.size()-1].n0[1];
 }
 
-static void matmul_top_init_prepare_local_permutations(matmul_top_data & mmt, int i)
+static void matmul_top_init_prepare_local_permutations(matmul_top_data & mmt, int midx)
 {
-    matmul_top_matrix & Mloc = mmt.matrices[i];
+    matmul_top_matrix & Mloc = mmt.matrices[midx];
+
+    bool swap_wirings = midx & 1;
+
     /* Here, we get a copy of the rowperm and colperm.
      *
      * For each (job,thread), two pairs of intervals are defined.
@@ -1094,10 +1111,10 @@ static void matmul_top_init_prepare_local_permutations(matmul_top_data & mmt, in
      * for col indices: [i0[1], i1[1][ = [mcol->i0, mcol->i1[ and [Xi0[1], Xi1[1][
      *
      * The parts we get are:
-     *      [i, rowperm[i]] for    i in [mrow->i0, mrow->i1[
-     *                         and rowperm[i] in [X0, X1[
+     *      [midx, rowperm[midx]] for    midx in [mrow->i0, mrow->i1[
+     *                         and rowperm[midx] in [X0, X1[
      *      [j, colperm[j]] for    j in [mcol->i0, mcol->i1[
-     *                         and colperm[i] in [Y0, Y1[
+     *                         and colperm[midx] in [Y0, Y1[
      * where X0 is what would be mcol->i0 if the matrix as many columns as
      * rows, and ditto for X1,Y0,Y1.
      */
@@ -1146,7 +1163,7 @@ static void matmul_top_init_prepare_local_permutations(matmul_top_data & mmt, in
     for(int d = 0 ; d < 2 ; d++)  {
         unsigned int ii[2];
         unsigned int jj[2];
-        get_local_permutations_ranges(mmt, d, ii, jj);
+        get_local_permutations_ranges(mmt, swap_wirings, d, ii, jj);
 
         if (!balperm[d]) continue;
 
@@ -1157,10 +1174,10 @@ static void matmul_top_init_prepare_local_permutations(matmul_top_data & mmt, in
         pthread_mutex_unlock(&pp);
 
         /* now create the really local permutation */
-        for(unsigned int i = ii[0] ; i < ii[1] ; i++) {
-            unsigned int j = balperm[d][i];
+        for(unsigned int midx = ii[0] ; midx < ii[1] ; midx++) {
+            unsigned int j = balperm[d][midx];
             if (j >= jj[0] && j < jj[1])
-                Mloc.perm[d].push_back({i, j});
+                Mloc.perm[d].push_back({midx, j});
         }
 #if 0
         const char * text[2] = { "left", "right", };
@@ -1187,10 +1204,11 @@ matmul_top_data::matmul_top_data(
         /* matmul_ptr mm, */
         parallelizing_info_ptr pi,
         param_list_ptr pl,
-        int optimized_direction)
+        int d)
     : abase(abase)
     , pi(pi)
     , pitype(pi_alloc_arith_datatype(pi, abase))
+    , d(d)
 {
     matmul_top_data & mmt = *this;
 
@@ -1286,7 +1304,7 @@ matmul_top_data::matmul_top_data(
         matmul_top_init_prepare_local_permutations(mmt, i);
 
         if (!mmt.pi->interleaved) {
-            matmul_top_read_submatrix(mmt, i, pl, optimized_direction );
+            matmul_top_read_submatrix(mmt, i, pl, d );
         } else {
             /* Interleaved threads will share their matrix data. The first
              * thread to arrive will do the initialization, and the second
@@ -1299,7 +1317,7 @@ matmul_top_data::matmul_top_data(
 #define MMT_MM_MAGIC_KEY        0xaa000000UL
 
             if (mmt.pi->interleaved->idx == 0) {
-                matmul_top_read_submatrix(mmt, i, pl, optimized_direction);
+                matmul_top_read_submatrix(mmt, i, pl, d);
                 pi_store_generic(mmt.pi, MMT_MM_MAGIC_KEY + i, mmt.pi->m->trank, Mloc.mm);
             } else {
                 Mloc.mm = (matmul_ptr) pi_load_generic(mmt.pi, MMT_MM_MAGIC_KEY + i, mmt.pi->m->trank);
@@ -1427,9 +1445,15 @@ static void matmul_top_read_submatrix(matmul_top_data & mmt, int midx, param_lis
 
     matmul_top_matrix & Mloc = mmt.matrices[midx];
 
+    bool swap_wirings = midx & 1;
+    pi_comm_ptr piwr[2] {
+        mmt.pi->wr[0 ^ swap_wirings],
+        mmt.pi->wr[1 ^ swap_wirings]
+    };
+
     Mloc.mm = matmul_init(mmt.abase,
-            Mloc.n[0] / mmt.pi->wr[1]->totalsize,
-            Mloc.n[1] / mmt.pi->wr[0]->totalsize,
+            Mloc.n[0] / mmt.pi->wr[1 ^ swap_wirings]->totalsize,
+            Mloc.n[1] / mmt.pi->wr[0 ^ swap_wirings]->totalsize,
             Mloc.locfile.empty() ? NULL : Mloc.locfile.c_str(),
             NULL  /* means: choose mm_impl from pl */,
             pl, optimized_direction);
@@ -1441,6 +1465,8 @@ static void matmul_top_read_submatrix(matmul_top_data & mmt, int midx, param_lis
 
     int cache_loaded = 0;
 
+    /* TODO: do we routine-check this or not at all ? How does it deal
+     * with swap_wirings ? */
     if (export_cache_list_if_requested(Mloc, mmt.pi, pl)) {
         /* If we are being called from dispatch, once all submatrices
          * have had their list of required files printed, the program
@@ -1536,10 +1562,10 @@ static void matmul_top_read_submatrix(matmul_top_data & mmt, int midx, param_lis
              * the padding area.
              */
 
-            unsigned int data_nrows = local_fraction(Mloc.n0[0], mmt.pi->wr[1]);
-            unsigned int data_ncols = local_fraction(Mloc.n0[1], mmt.pi->wr[0]);
-            unsigned int padded_nrows = Mloc.n[0] / mmt.pi->wr[1]->totalsize;
-            unsigned int padded_ncols = Mloc.n[1] / mmt.pi->wr[0]->totalsize;
+            unsigned int data_nrows = local_fraction(Mloc.n0[0], piwr[1]);
+            unsigned int data_ncols = local_fraction(Mloc.n0[1], piwr[0]);
+            unsigned int padded_nrows = Mloc.n[0] / piwr[1]->totalsize;
+            unsigned int padded_ncols = Mloc.n[1] / piwr[0]->totalsize;
 
             random_matrix_get_u32(mmt.pi, pl, m,
                     data_nrows, data_ncols, padded_nrows, padded_ncols);
@@ -1556,7 +1582,7 @@ static void matmul_top_read_submatrix(matmul_top_data & mmt, int midx, param_lis
                 matrix_create_derived_cache_subdir(Mloc.mname, midx & 1, mmt.pi);
             serialize_threads(mmt.pi->m);
 
-            balancing_get_matrix_u32(mmt.pi, pl, m);
+            balancing_get_matrix_u32(mmt.pi, swap_wirings, pl, m);
 
             int ssm = 0;
             param_list_parse_int(pl, "save_submatrices", &ssm);

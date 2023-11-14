@@ -68,6 +68,8 @@ template<typename T> T integrate(std::vector<T> & v) /*{{{*/
 
 struct dispatcher {/*{{{*/
     parallelizing_info_ptr pi;
+    bool swap_wirings;
+    pi_comm_ptr piwr[2];
     std::string mfile;
     std::string bfile;
     std::string check_vector_filename;
@@ -210,9 +212,12 @@ struct dispatcher {/*{{{*/
     void stats();
 
     dispatcher(parallelizing_info_ptr pi,/*{{{*/
+            bool swap_wirings,
             param_list_ptr pl,
             matrix_u32_ptr * args_per_thread)
         : pi(pi)
+        , swap_wirings(swap_wirings)
+        , piwr { pi->wr[0 ^ swap_wirings], pi->wr[1 ^ swap_wirings] }
         , mfile(args_per_thread[0]->mfile)
         , bfile(args_per_thread[0]->bfile)
         , withcoeffs(args_per_thread[0]->withcoeffs)
@@ -252,8 +257,8 @@ struct dispatcher {/*{{{*/
             balancing_read_header(bal, bfile.c_str());
         MPI_Bcast(&bal, sizeof(balancing), MPI_BYTE, 0, pi->m->pals);
 
-        nhjobs = pi->wr[1]->njobs;
-        nvjobs = pi->wr[0]->njobs;
+        nhjobs = piwr[1]->njobs;
+        nvjobs = piwr[0]->njobs;
         rows_chunk_big = bal.trows / nhjobs;
         cols_chunk_big = bal.tcols / nvjobs;
         rows_chunk_small = bal.trows / bal.nh;
@@ -282,7 +287,9 @@ struct dispatcher {/*{{{*/
  *      arg->size
  *      arg->p
  */
-void balancing_get_matrix_u32(parallelizing_info_ptr pi, param_list pl,
+void balancing_get_matrix_u32(parallelizing_info_ptr pi,
+        bool swap_wirings,
+        param_list pl,
         matrix_u32_ptr arg)
 {
     // REQUIRED: arg->mfile      -- URLs no longer supported.
@@ -296,7 +303,7 @@ void balancing_get_matrix_u32(parallelizing_info_ptr pi, param_list pl,
     serialize_threads(pi->m);
 
     if (pi->m->trank == 0) {
-        dispatcher D(pi, pl, args_per_thread);
+        dispatcher D(pi, swap_wirings, pl, args_per_thread);
         D.main();
         D.stats();
     }
@@ -809,7 +816,7 @@ void dispatcher::reader_fill_index_maps()/*{{{*/
     for (uint32_t j = 0; j < xbal.trows; j++) {
         ttab[fw_rowperm[j] / rows_chunk_small]++;
     }
-    ASSERT_ALWAYS(xbal.nh == pi->wr[1]->totalsize);
+    ASSERT_ALWAYS(xbal.nh == piwr[1]->totalsize);
     for (uint32_t k = 0; k < xbal.nh; k++) {
         ASSERT_ALWAYS(ttab[k] == quo_r);
     }
@@ -910,8 +917,8 @@ void dispatcher::endpoint_thread_data::endpoint_handle_incoming(std::vector<uint
         uint32_t rs = *next++;
         if (D.pass_number == 2 && D.withcoeffs) rs/=2;
 
-        unsigned int n_row_groups = pi->wr[1]->ncores;
-        unsigned int n_col_groups = pi->wr[0]->ncores;
+        unsigned int n_row_groups = D.piwr[1]->ncores;
+        unsigned int n_col_groups = D.piwr[0]->ncores;
         unsigned int row_group = (rr / D.rows_chunk_small) % n_row_groups;
         unsigned int row_index = rr % D.rows_chunk_small;
 
