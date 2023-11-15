@@ -22,7 +22,7 @@ while [ $# -gt 0 ] ; do
     if [ "$a" = "--" ] ; then
         break
     else
-        if [[ $a =~ ^(prime|m|n|wdir|interval|seed|nullspace|mpi|thr|simd)= ]] ; then
+        if [[ $a =~ ^(prime|m|n|wdir|interval|matrix|multi_matrix|balancing_options|seed|nullspace|mpi|thr|simd)= ]] ; then
             # There are quite a few parameters that we parse here and
             # pass to bwcpl anyway, so let's not put them in
             # pass_bwcpl_args.
@@ -59,6 +59,7 @@ done
 : ${thr:=2x2}
 # Set the "matrix" variable in order to work on a real matrix.
 : ${matrix=}
+: ${multi_matrix=}
 # Set the "bindir" variable to use pre-built binaries (must point to the
 # directories with the bwc binaries)
 : ${bindir=}
@@ -201,19 +202,6 @@ prepare_wdir() {
 
 
 create_test_matrix_if_needed() {
-    if [ "$matrix" ] ; then
-        if ! [ -e "$matrix" ] ; then
-            echo "matrix=$matrix inaccessible" >&2
-            usage
-        fi
-        # Get absolute path.
-        matrix=$(readlink /proc/self/fd/99 99< $matrix)
-        if [ -e "$rhsfile" ] ; then
-            rhsfile=$(readlink /proc/self/fd/99 99< $rhsfile)
-        fi
-        return
-    fi
-
     # It's better to look for a kernel which is not trivial. Thus
     # specifying --kright for random generation is a good move prior to
     # running this script for nullspace=right
@@ -348,6 +336,7 @@ prepare_common_arguments() {
     )
     if [ "$mm_impl" ] ; then common+=(mm_impl=$mm_impl) ; fi
     if [ "$prime" != 2 ] ; then common+=(lingen_mpi=$lingen_mpi) ; fi
+    if [ "$multi_matrix" ] ; then common+=(multi_matrix=$multi_matrix) ; fi
 }
 
 argument_checking
@@ -358,12 +347,19 @@ if ! [ "$matrix" ] ; then
     # This also sets rwfile cwfile nrows ncols
     create_test_matrix_if_needed
 else
-    # This also sets rwfile cwfile nrows ncols
-    create_auxiliary_weight_files
+    if ! [ "$multi_matrix" ] ; then
+        # This also sets rwfile cwfile nrows ncols
+        create_auxiliary_weight_files
+    else
+        # in the multi matrix case, we don't care.
+        :
+    fi
 fi
-for f in matrix cwfile rwfile ; do
-    if ! [ -f "${!f}" ] ; then echo "Missing file $f=${!f}" >&2 ; exit 1 ; fi
-done
+if ! [ "$multi_matrix" ] ; then
+    for f in matrix ; do
+        if ! [ -f "${!f}" ] ; then echo "Missing file $f=${!f}" >&2 ; exit 1 ; fi
+    done
+fi
 
 prepare_common_arguments
 
@@ -443,23 +439,10 @@ sage_check_parameters() { # {{{
     # m
     # n
     # prime
-    # interval
-    # splitwidth
-    # cmd (pay attention to dirname $0 above !)
-    # rwfile
-    # cwfile
-    # nullspace
 
-    for v in wdir matrix m n prime interval splitwidth cmd rwfile cwfile nullspace ; do
+    for v in wdir matrix m n prime ; do
         if ! [ "${!v}" ] ; then echo "Missing parameter \$$v" >&2 ; fi
     done
-
-    # nrows and ncols are also needed, but can be deduced from rwfile and
-    # cwfile easily.
-    : ${ncols=$((`wc -c < $cwfile` / 4))}
-    : ${nrows=$((`wc -c < $rwfile` / 4))}
-
-    mdir=$wdir
 
     if ! [[ "$mpi,$thr" =~ ^([0-9]*)x([0-9]*),([0-9]*)x([0-9]*)$ ]] ; then
         echo "bad format for mpi=$mpi and thr=$thr" >&2
@@ -468,15 +451,10 @@ sage_check_parameters() { # {{{
 
     Nh=$((${BASH_REMATCH[1]}*${BASH_REMATCH[3]}))
     Nv=$((${BASH_REMATCH[2]}*${BASH_REMATCH[4]}))
-
-    bfile="`basename $matrix .bin`.${Nh}x${Nv}/`basename $matrix .bin`.${Nh}x${Nv}.bin"
-
-    : ${nrhs:=0}
 }
 # }}}
 
 if [ "$sage" ] ; then
-    cmd=/bin/true
     sage_check_parameters
     cd `dirname "$0"`
     export PYTHONUNBUFFERED=true
@@ -488,9 +466,8 @@ if [ "$sage" ] ; then
                 wdir=$wdir matrix=$matrix
                 nh=$Nh nv=$Nv
     )
-    if [ "$wordsize" != 64 ] ; then
-        sage_args+=(wordsize=$wordsize)
-    fi
+    if [ "$wordsize" != 64 ] ; then sage_args+=(wordsize=$wordsize) ; fi
+    if [ "$multi_matrix" ] ; then sage_args+=(multi_matrix=$multi_matrix) ; fi
     if [ "$CADO_DEBUG" ] ; then set -x ; fi
     set -eo pipefail
     "$sage" bwc.sage "${sage_args[@]}" >&${check_script_diagnostic_fd}

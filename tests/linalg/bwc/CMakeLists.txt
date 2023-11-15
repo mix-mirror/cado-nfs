@@ -865,21 +865,69 @@ cado_define_test(TEST_NAME test-blocklanczos-staged
 
 #########################################################################
 
-cado_define_test(TEST_NAME test-multi-matrix
-    PROGRAM ${CMAKE_CURRENT_SOURCE_DIR}/bwc-test-double-matrix.sh
-        --bindir ${CADO_NFS_BINARY_DIR}/linalg/bwc
-    NO_DEFAULT_RUN
-    TARGET_DEPENDENCIES
-    bwc_full
-)
-cado_divert_test(test-multi-matrix thr11
-    APPEND_ARGUMENTS --thr 1x1 --test "159 193 129 STRETCH STRETCH")
-cado_divert_test(test-multi-matrix thr21
-    APPEND_ARGUMENTS --thr 2x1 --test "159 193 129 URANDOM4 URANDOM10")
-cado_divert_test(test-multi-matrix thr12
-    APPEND_ARGUMENTS --thr 1x2 --test "159 193 129 URANDOM4 URANDOM10")
-cado_divert_test(test-multi-matrix thr22
-    APPEND_ARGUMENTS --thr 2x2 --test "159 193 129 STRETCH STRETCH")
+macro(create_double_matrix_test id testcase)
+    set(prime)
+    set(seed)
+    foreach(x ${ARGN})
+        string(REGEX MATCH "^seed=([0-9]+)$" t "${x}")
+        if(t)
+            set(seed ${CMAKE_MATCH_1})
+        endif()
+        string(REGEX MATCH "^prime=([0-9]+)$" t "${x}")
+        if(t)
+            set(prime ${CMAKE_MATCH_1})
+        endif()
+    endforeach()
+    if(NOT seed OR NOT prime)
+        message(FATAL_ERROR "prime= and seed= must be set")
+    endif()
+    set(t double_matrix_${id})
+    set(mdir ${CMAKE_CURRENT_BINARY_DIR}/${t})
+    add_test(
+        NAME fixture_test_bwc_mkdir_${t}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${mdir})
+    add_test(
+        NAME fixture_test_bwc_matrices_${t}
+        COMMAND
+        ${CMAKE_CURRENT_SOURCE_DIR}/create-fake-dble-matrices.pl --prime
+        ${prime} --dstdir ${mdir} --seed ${seed} ${testcase})
+    set_tests_properties(
+        fixture_test_bwc_mkdir_${t}
+        fixture_test_bwc_matrices_${t}
+        PROPERTIES FIXTURES_SETUP ${t})
+    set_tests_properties(
+        fixture_test_bwc_matrices_${t}
+        PROPERTIES DEPENDS fixture_test_bwc_mkdir_${t}
+    )
+    # add_test(
+    #     NAME fixture_test_bwc_cleanup_${t}
+    #     COMMAND
+    #     ${CMAKE_COMMAND} -E rm -rf ${mdir})
+    # set_tests_properties(
+    #     fixture_test_bwc_cleanup_${t}
+    #     PROPERTIES FIXTURES_CLEANUP ${t})
+    add_bwc_test(${t}
+        bwc-ptrace.sh
+        matrix=${mdir}/M0.bin,${mdir}/M1.bin
+        multi_matrix=1
+        ${ARGN}
+        TARGET_DEPENDENCIES bwc_full
+        FIXTURES_REQUIRED ${t}
+    )
+endmacro()
+
+create_double_matrix_test(thr11 "159 193 129 STRETCH STRETCH"
+    balancing_options=reorder=none,skip_decorrelating_permutation=1
+    seed=1 prime=2 nullspace=left thr=1x1 m=64 n=64)
+create_double_matrix_test(thr21 "159 193 129 URANDOM4 URANDOM10"
+    balancing_options=reorder=none,skip_decorrelating_permutation=1
+    seed=1 prime=2 nullspace=left thr=2x1 m=64 n=64)
+create_double_matrix_test(thr12 "159 193 129 URANDOM4 URANDOM10"
+    balancing_options=reorder=none,skip_decorrelating_permutation=1
+    seed=1 prime=2 nullspace=left thr=1x2 m=64 n=64)
+create_double_matrix_test(thr22 "159 193 129 STRETCH STRETCH"
+    balancing_options=reorder=none,skip_decorrelating_permutation=1
+    seed=1 prime=2 nullspace=left thr=2x2 m=64 n=64)
 
 
 #########################################################################

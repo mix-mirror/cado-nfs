@@ -34,12 +34,12 @@ my $matrices_list;
 my $withcoeffs;
 
 while (defined($_=shift @ARGV)) {
-    if (/^\d+$/) {
+    if (/\s/) {
+        unshift @ARGV, split(' ', $_);
+    } elsif (/^\d+$/) {
         push @dims, $_;
-        next;
     } elsif (/^[A-Z]+\d*$/) {
         push @modes, $_;
-        next;
     } elsif (/--seed/) {
         defined(my $seed = shift(@ARGV)) or usage "missing argument to $_";
         $seed =~ /^\d+$/ or usage "bad seed: $seed";

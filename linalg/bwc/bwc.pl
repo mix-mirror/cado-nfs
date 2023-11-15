@@ -54,7 +54,10 @@ simd                 SIMD width to be used for krylov (ys=) and mksol,
                      prime=2 or 1 otherwise
 lingen_mpi           like mpi, but for lingen only
 
-matrix               input matrix file. Must be a complete path. Binary, 32-b LE
+matrix               input matrix file. Must be a complete path.
+                     The expected format is binary, 32-b LE
+multi_matrix         Tell if the matrix argument must be interpreted as a
+                     comma-separated list of matrices.
 rhs                  rhs file for inhomogeneous systems (ascii with header)
                      Note that inhomogeneous systems over GF(2) are not
                      supported yet (but we're not that far), and the file
@@ -193,6 +196,7 @@ my $nv;
 
 my $wdir;
 my $matrix;
+my $multi_matrix;
 my $random_matrix;
 my $rhs;
 my $nrhs=0;
@@ -280,6 +284,7 @@ while (my ($k,$v) = each %$param) {
     # the bwc programs, so we'll set a variable based on their value, and
     # also copy them to the @main_args array.
     if ($k eq 'matrix') { $matrix=$v; }
+    if ($k eq 'multi_matrix') { $multi_matrix=$v; }
     if ($k eq 'random_matrix') { $random_matrix=$v; }
     # Some parameters which are simply _not_ relevant to the bwc programs.
     if ($k eq 'hostfile') { $hostfile=$v; next; }
@@ -356,7 +361,7 @@ if ($main =~ /^:(?:mpi|s)run(?:_single)?$/) {
     # magic in this script, which we would like to use. So the :mpirun
     # meta-command is just for that. Of course the argument requirements
     # are mostly waived in this case.
-    $matrix=$param->{'matrix'}=$0;
+    $matrix=$param->{'matrix'}=$0; ## XXX why $0 ????
     $param->{'prime'}=2;
     $param->{'simd'}=$simd=64;
     $m=$n=64;
@@ -380,9 +385,16 @@ if ($main =~ /^:(?:mpi|s)run(?:_single)?$/) {
     }
 }
 
-if (defined($param->{'matrix'})) {
-    $param->{'matrix'} =~ s/~/$ENV{HOME}/g;
-    die "$param->{'matrix'}: $!" unless -f $param->{'matrix'};
+sub list_of_matrices {
+    return unless defined $matrix;
+    my @ms = ($matrix);
+    @ms = split(",", $matrix) if $multi_matrix;
+    return @ms;
+}
+
+for my $x (list_of_matrices) {
+    $x =~ s/~/$ENV{HOME}/g;
+    die "$x: $!" unless -f $x;
 }
 
 if ($prime == 2 && (($m % 64 != 0) || ($n % 64 != 0))) {
@@ -436,7 +448,8 @@ if ($m % $lingen_mpi_split[0] != 0 || $n % $lingen_mpi_split[0] != 0) {
 
 if (!defined($random_matrix)) {
     if (!defined($param->{'wdir'}) && defined($param->{'matrix'})) {
-        # ok, we're doing this a bit ahead of time
+        # ok, we're doing this a bit ahead of time.
+        die "Please specify wdir"; # i'm not even sure we ever use this code path. And do we want it, really?
         $wdir=$param->{'wdir'}="$param->{'matrix'}-${nh}x${nv}";
         push @main_args, "wdir=$wdir";
     }
@@ -1293,13 +1306,13 @@ sub rename_file_on_leader {
     }
 }
 
-
-# {{{ get_cached_bfile -> check for balancing file.
-sub get_cached_bfile {
+# {{{ get_cached_bfiles -> check for balancing file (or files, in the
+# multi_matrix case)
+sub get_cached_bfiles {
     my $key = 'balancing';
     return undef if defined($random_matrix);
     if ($param->{$key}) {
-        $cache->{$key}=$param->{$key};
+        $cache->{$key}=[$param->{$key}];
     }
     if (defined(my $z = $cache->{$key})) {
         return $z;
@@ -1308,35 +1321,51 @@ sub get_cached_bfile {
     # don't really mind if they don't see the balancing file.
     # sense.
     my $pat;
-    my $x = $matrix;
-    $x =~ s{^(?:.*/)?([^/]+)$}{$1};
-    $x =~ s/\.(?:bin|txt)$//;
-    my $bfile = "$wdir/$x.${nh}x${nv}/$x.${nh}x${nv}.bin";
-    if (!-f $bfile) {
-        print STDERR "$bfile: not found\n";
-        return undef;
+    my @bs = ();
+    my $swap_wirings = 0;
+    for my $x (list_of_matrices) {
+        $x =~ s{^(?:.*/)?([^/]+)$}{$1};
+        $x =~ s/\.(?:bin|txt)$//;
+        my $nhnv = "${nh}x${nv}";
+        $nhnv = "${nv}x${nh}" if $swap_wirings;
+        my $bfile = "$wdir/$x.${nhnv}/$x.${nhnv}.bin";
+        if (!-f $bfile) {
+            print STDERR "$bfile: not found\n";
+            return undef;
+        }
+        push @bs, $bfile;
+        $swap_wirings = 1 - $swap_wirings;
     }
-    $cache->{$key} = $bfile;
-    return $bfile;
+    $cache->{$key} = \@bs;
+    return \@bs;
 }
 # }}}
 
-sub get_cached_balancing_header {
+sub get_cached_balancing_headers {
     return undef if defined $random_matrix;
-    my $key = 'balancing_header';
+    my $key = 'balancing_headers';
     if (defined(my $z = $cache->{$key})) { return @$z; }
-    defined(my $balancing = get_cached_bfile) or confess "\$balancing undefined";
-    sysopen(my $fh, $balancing, O_RDONLY) or die "$balancing: $!";
-    # We're only reading a small part of the header.
-    sysread($fh, my $bhdr, 24);
-    my @x = unpack("L2L4", $bhdr);
-    my $zero = shift @x;
-    die "$balancing: no leading 32-bit zero" unless $zero == 0;
-    my $magic = shift @x;
-    die "$balancing: bad file magic" unless ($magic == 0xba1a0001 || $magic == 0xba1a0000);
-    $cache->{$key} = \@x;
-    close($fh);
-    return @x;
+    defined(my $balancings = get_cached_bfiles) or confess "\$balancings undefined";
+    my @bhs;
+    for my $balancing (@$balancings) {
+        sysopen(my $fh, $balancing, O_RDONLY) or die "$balancing: $!";
+        # We're only reading a small part of the header.
+        sysread($fh, my $bhdr, 24);
+        my @x = unpack("L2L4", $bhdr);
+        my $zero = shift @x;
+        die "$balancing: no leading 32-bit zero" unless $zero == 0;
+        my $magic = shift @x;
+        die "$balancing: bad file magic" unless ($magic == 0xba1a0001 || $magic == 0xba1a0000);
+        push @bhs, {
+            nh=>$x[0],
+            nv=>$x[1],
+            bnrows=>$x[2],
+            bncols=>$x[3]
+        };
+        close($fh);
+    }
+    $cache->{$key} = \@bhs;
+    return \@bhs;
 }
 sub get_nrows_ncols {
     my $key = 'nrows_ncols';
@@ -1360,29 +1389,30 @@ sub get_nrows_ncols {
     }
 
 
-    if (defined(my $z = $cache->{'balancing_header'})) {
-        my @x = @$z;
-        shift @x;
-        shift @x;
-        $cache->{$key} = \@x;
-        return @x;
-    }
-    if (defined(my $balancing = get_cached_bfile)) {
-        my ($bnh, $bnv, $bnrows, $bncols) = get_cached_balancing_header;
+    if (defined(my $bhs = get_cached_balancing_headers)) {
+        my $bnrows = $bhs->[0]->{'bnrows'};
+        my $bncols = $bhs->[$#$bhs]->{'bncols'};
         my @x = ($bnrows, $bncols);
         $cache->{$key} = \@x;
         return @x;
     }
-    (my $mrw = $matrix) =~ s/(\.(?:bin|txt))$/.rw$1/;
-    (my $mcw = $matrix) =~ s/(\.(?:bin|txt))$/.cw$1/;
-    if ($mrw ne $matrix && $mcw ne $matrix && -f $mrw && -f $mcw) {
-        my $nrows = ((stat $mrw)[7] / 4);
-        my $ncols = ((stat $mcw)[7] / 4);
-        my @x = ($nrows, $ncols);
-        $cache->{$key} = \@x;
-        return @x;
+    my @nrncs=();
+    for my $x (list_of_matrices) {
+        (my $mrw = $x) =~ s/(\.(?:bin|txt))$/.rw$1/;
+        (my $mcw = $x) =~ s/(\.(?:bin|txt))$/.cw$1/;
+        if ($mrw ne $x && $mcw ne $x && -f $mrw && -f $mcw) {
+            my $nrows = ((stat $mrw)[7] / 4);
+            my $ncols = ((stat $mcw)[7] / 4);
+            push @nrncs, [$nrows, $ncols];
+        } else {
+            confess "Cannot find any way to get nrows and ncols for $x ???";
+        }
     }
-    confess "Cannot find nrows and ncols ???";
+    my $nrows = $nrncs[0]->[0];
+    my $ncols = $nrncs[$#nrncs]->[1];
+    my @x = ($nrows, $ncols);
+    $cache->{$key} = \@x;
+    return @x;
 }
 # }}}
 
@@ -1865,7 +1895,7 @@ sub subtask_secure {
 sub task_dispatch {
     task_begin_message;
     return if defined $random_matrix;
-    if (defined(get_cached_bfile)) {
+    if (defined(get_cached_bfiles)) {
         task_check_message 'ok', "All balancing files are present, good.\n";
         return;
     }
