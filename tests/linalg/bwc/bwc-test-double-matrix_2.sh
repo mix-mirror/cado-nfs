@@ -26,4 +26,4 @@ fi
 afile="${afiles[0]}"
 ffile="$afile.gen"
 ./build/`hostname`/linalg/bwc/lingen_b64 wdir=$d/bwc mn=64 prime=2 afile="$afile" ffile=F rhs=none split-output-file=1
-./build/`hostname`/linalg/bwc/mksol multi_matrix=1 matrix=$d/L.bin,$d/R.bin wdir=$d/bwc mn=64 thr=1x1 prime=2 balancing_options=reorder=none,skip_decorrelating_permutation=1 solutions=0..64
+./build/`hostname`/linalg/bwc/mksol multi_matrix=1 matrix=$d/L.bin,$d/R.bin wdir=$d/bwc mn=64 thr=1x1 prime=2 balancing_options=reorder=none,skip_decorrelating_permutation=1 solutions=0-64
