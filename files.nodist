@@ -142,6 +142,7 @@ sieve/strategies/script_str_r.sh
 sieve/strategies/test_strategy_cado.cpp
 sqrt/CMakeLists-nodist.txt
 sqrt/lift.c
+tests/linalg/bwc/bwc-test-double-matrix_2.sh
 tests/utils/build-testcases-rootfinder.m
 utils/CMakeLists-nodist.txt
 utils/README_POLYNOMIALS
