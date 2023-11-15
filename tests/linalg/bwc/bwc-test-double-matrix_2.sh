@@ -17,5 +17,13 @@ cd $p
 ./build/`hostname`/linalg/bwc/prep multi_matrix=1 matrix=$d/L.bin,$d/R.bin wdir=$d/bwc mn=64 balancing_options=reorder=columns thr=2x2
 ./build/`hostname`/linalg/bwc/secure multi_matrix=1 matrix=$d/L.bin,$d/R.bin wdir=$d/bwc mn=64 thr=1x1 prime=2 balancing_options=reorder=none,skip_decorrelating_permutation=1 
 ./build/`hostname`/linalg/bwc/krylov multi_matrix=1 matrix=$d/L.bin,$d/R.bin wdir=$d/bwc mn=64 thr=1x1 prime=2 balancing_options=reorder=none,skip_decorrelating_permutation=1 ys=0..64
-./build/`hostname`/linalg/bwc/acollect wdir=$d/bwc mn=64 prime=2 ys=0..64 remove_old=1
+./build/`hostname`/linalg/bwc/acollect wdir=$d/bwc mn=64 prime=2 ys=0..64 --remove-old
+afiles=(`find $d/bwc -name "A0-*.0-*"`)
+if [ "${#afiles[@]}" != 1 ] ; then
+    echo "Error: want exactly one A file for lingen" >&2
+    exit 1
+fi
+afile="${afiles[0]}"
+ffile="$afile.gen"
+./build/`hostname`/linalg/bwc/lingen_b64 wdir=$d/bwc mn=64 prime=2 afile="$afile" ffile=F rhs=none split-output-file=1
 
