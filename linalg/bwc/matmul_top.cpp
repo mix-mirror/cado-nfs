@@ -932,7 +932,8 @@ static std::string matrix_get_derived_cache_filename_stem(std::string const & ma
     }
     std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     int rc = asprintf(&t, "%s/%s.%08" PRIx32 ".h%d.v%d",
-            dn.c_str(), dn.c_str(), checksum, pos[1], pos[0]);
+            dn.c_str(), dn.c_str(), checksum,
+            pos[1 ^ swap_wirings], pos[0 ^ swap_wirings]);
     ASSERT_ALWAYS(rc >=0);
     free(copy);
     std::string s(t);
@@ -961,7 +962,8 @@ static std::string matrix_get_derived_submatrix_filename(std::string const & mat
     }
     std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     int rc = asprintf(&t, "%s/%s.h%d.v%d.bin",
-            dn.c_str(), dn.c_str(), pos[1], pos[0]);
+            dn.c_str(), dn.c_str(),
+            pos[1 ^ swap_wirings], pos[0 ^ swap_wirings]);
     ASSERT_ALWAYS(rc >=0);
     free(copy);
     std::string s(t);

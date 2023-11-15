@@ -645,6 +645,8 @@ class BwcOneMatrix(object):
         self.S = BwcShuffling(self.params, self)
         self.submatrices = [[None for j in range(nv)] for i in range(nh)]
         bal = self.balancing
+        assert bal.nh == nh
+        assert bal.nv == nv
         for i in range(nh):
             for j in range(nv):
                 # id = f"{self.balancing.checksum:08x}.h{i}.v{j}"
