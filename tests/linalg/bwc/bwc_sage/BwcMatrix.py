@@ -533,17 +533,26 @@ class BwcOneMatrix(object):
             self.ncols_orig = len(self.col_weights)
 
         self.ncoeffs = len(inline_data)
-        r2 = sum([float(x*x) for x in inline_row_weights]) / self.nrows_orig
-        c2 = sum([float(x*x) for x in inline_col_weights]) / self.ncols_orig
-        rmean = float(self.ncoeffs / self.nrows_orig)
-        rsdev = math.sqrt(r2-rmean**2)
-        cmean = float(self.ncoeffs / self.ncols_orig)
-        csdev = math.sqrt(c2-cmean**2)
+
+        if self.nrows_orig:
+            r2 = sum([float(x*x) for x in inline_row_weights])
+            rmean = float(self.ncoeffs / self.nrows_orig)
+            rsdev = math.sqrt(r2 / self.nrows_orig - rmean**2)
+            rstats = f"row: {rmean:.2f}~{rsdev:.2f}"
+        else:
+            rstats = "[no row stats]"
+
+        if self.ncols_orig:
+            c2 = sum([float(x*x) for x in inline_col_weights])
+            cmean = float(self.ncoeffs / self.ncols_orig)
+            csdev = math.sqrt(c2 / self.ncols_orig - cmean**2)
+            cstats = f"col: {cmean:.2f}~{csdev:.2f}"
+        else:
+            cstats = "[no cols stats]"
 
         rowscols = f"{self.nrows_orig} rows {self.ncols_orig} cols"
         coeffs = f"{self.ncoeffs} coefficients"
-        stats = f"row: {rmean:.2f}~{rsdev:.2f}, col: {cmean:.2f}~{csdev:.2f}"
-        print(f"{rowscols}, {coeffs} ({stats})")
+        print(f"{rowscols}, {coeffs} ({rstats}, {cstats})")
 
         # prior to any padding, we have a matrix with dimensions
         # nrows_orig and ncols_orig
