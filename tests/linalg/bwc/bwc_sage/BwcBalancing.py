@@ -105,6 +105,17 @@ class BwcShuffling(object):
             self.sr = Sr(bal.rowperm)
             self.srinv = self.sr**-1
 
+        if 'replicate' in bal.txflags:
+            if self.sr is None and self.sc is not None:
+                self.sr = self.sc
+                self.srinv = self.scinv
+            if self.sc is None and self.sr is not None:
+                self.sc = self.sr
+                self.scinv = self.srinv
+
+        # P acts only on the left. It's not relevant in all situations,
+        # and we should work on making it more clear. XXX
+
         try:
             self.pr = Sr([self.__pr(Integer(x)) for x in range(bal.tr)])
             self.prinv = self.pr**-1

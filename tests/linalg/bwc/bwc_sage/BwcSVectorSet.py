@@ -53,8 +53,10 @@ class BwcSVectorSet(BwcVectorSetBase):
                     doing += " against known data"
                     U, V = known_solutions
                     print(doing)
-                    if sum([s.V for s in S_blocks[xj]]) != V[:, j0:j1]:
+                    this_block = sum([s.V for s in S_blocks[xj]])
+                    if this_block == V[:, j0:j1]:
+                        print(f"{doing} ... {OK}")
+                    else:
                         raise ValueError("check failed " + NOK)
-                    print(f"{doing} ... {OK}")
             else:
                 print(f"{doing}: no partial sum found {NOTHING_TO_DO}")

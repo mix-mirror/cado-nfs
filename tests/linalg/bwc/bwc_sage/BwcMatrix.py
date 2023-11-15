@@ -134,25 +134,25 @@ class BwcMatrix(object):
         return self.chain[0].nrows_orig
 
     def dimensions(self):
-        assert self.nrows is not None
+        # TODO we should probably get rid of this. There should be no
+        # such thing as the dimensions being dependent on
+        # self.params.nullspace, really
+        assert self.chain[0].nrows is not None
         if self.params.is_nullspace_right():
-            return (self.nrows, self.ncols)
+            return (self.chain[0].nrows, self.chain[-1].ncols)
         else:
-            return (self.ncols, self.nrows)
+            return (self.chain[-1].ncols, self.chain[0].nrows)
 
     def read(self, force_square=False):
-        d = dict(force_square=force_square)
-        if len(self.chain) > 1:
-            d = {}
-        for c in self.chain:
-            c.read(**d)
 
-        self.nrows = self.chain[0].nrows
-        self.ncols = self.chain[-1].ncols
+        for c in self.chain:
+            c.read()
 
         if force_square:
-            # what happens if we have a non trivial chain?
-            assert self.nrows == self.ncols
+            nro = self.chain[0].nrows_orig
+            nco = self.chain[-1].ncols_orig
+            self.chain[0].pad(outer=(nco, 0), only_extend=False)
+            self.chain[-1].pad(outer=(0, nro), only_extend=False)
 
     def decorrelated(self):
         return DecorrelatedMatrix(self)
@@ -222,7 +222,7 @@ class BwcMatrix(object):
 
     def check_balancing_submatrices_are_well_formed(self):
         """
-        This checks that given the balancing permutation sigma, the
+        This checks that given the balancing permutations, the
         concatenation of the different submatrices at least gives a
         matrix that is consistent with the number of rows and columns of
         the matrix we supposedly started with.
@@ -388,21 +388,11 @@ class BwcOneMatrix(object):
         self.submatrices = None
         self.Mx = None
         self.sigma = None
+        self.tau = None
         self.Q = None
         self.xQ = None
         self.P = None
         self.Mt = None
-
-    def read(self, force_square=False):
-        try:
-            self.__read(force_square=force_square)
-        except Exception as e:
-            # We're really in bad shape if an exception occurs here.
-            # We're not even trying to salvage the BwcMatrix object, as
-            # the error is most probably obvious.
-            print("Exception while reading {self.filename} {NOK}",
-                  file=sys.stderr)
-            raise e
 
     def __repr__(self):
         ma = f"matrix#{self.chain_position}"
@@ -438,17 +428,25 @@ class BwcOneMatrix(object):
         else:
             return self.M * x
 
-    def __read(self, nrows=None, ncols=None, force_square=False):
+    def read(self):
+        try:
+            self.__read()
+        except Exception as e:
+            # We're really in bad shape if an exception occurs here.
+            # We're not even trying to salvage the BwcMatrix object, as
+            # the error is most probably obvious.
+            print(f"Exception while reading {self.filename} {NOK}",
+                  file=sys.stderr)
+            raise e
+
+    def __read(self):
         """
         The parameters nrows and ncols are not meant for general use. We
         only use them when we know the balancing above, and the matrices
         that we're reading are just chunks of the bigger matrix
         """
 
-        if nrows is not None:
-            print(f"Reading {self.filename} (size: {nrows}*{ncols})")
-        else:
-            print(f"Reading {self.filename}")
+        print(f"Reading {self.filename}")
 
         self.__clear_fields_for_read()
 
@@ -519,6 +517,7 @@ class BwcOneMatrix(object):
                     what = f"entry {i},{j} in matrix"
                     where = f"at byte 0x{fm.tell():04x} in matrix file"
                     raise ValueError(f"Cannot set {what} {where} {NOK}")
+
         if self.row_weights:
             assert self.row_weights == inline_row_weights
         else:
@@ -533,21 +532,6 @@ class BwcOneMatrix(object):
             self.col_weights = inline_col_weights
             self.ncols_orig = len(self.col_weights)
 
-        if nrows is not None:
-            assert self.nrows_orig <= nrows
-            self.nrows = nrows
-        else:
-            self.nrows = self.nrows_orig
-
-        if ncols is not None:
-            assert self.ncols_orig <= ncols
-            self.ncols = ncols
-        else:
-            # attention. We fill it for completeness, but it can be
-            # that the matrix has some zero cols at the end. This is
-            # the main use case for ncols, in fact.
-            self.ncols = self.ncols_orig
-
         self.ncoeffs = len(inline_data)
         r2 = sum([float(x*x) for x in inline_row_weights]) / self.nrows_orig
         c2 = sum([float(x*x) for x in inline_col_weights]) / self.ncols_orig
@@ -561,12 +545,13 @@ class BwcOneMatrix(object):
         stats = f"row: {rmean:.2f}~{rsdev:.2f}, col: {cmean:.2f}~{csdev:.2f}"
         print(f"{rowscols}, {coeffs} ({stats})")
 
-        if force_square and self.nrows_orig != self.ncols_orig:
-            print("Padding to a square matrix")
-            self.nrows = max(self.nrows_orig, self.ncols_orig)
-            self.ncols = max(self.nrows_orig, self.ncols_orig)
+        # prior to any padding, we have a matrix with dimensions
+        # nrows_orig and ncols_orig
 
-        self.M = matrix(GF(self.params.p), self.nrows, self.ncols, sparse=True)
+        self.M = matrix(GF(self.params.p),
+                        self.nrows_orig,
+                        self.ncols_orig,
+                        sparse=True)
         if self.params.p == 2:
             for i, j in inline_data:
                 if self.M[i, j] != 0:
@@ -577,9 +562,54 @@ class BwcOneMatrix(object):
                 if self.M[i, j] != 0:
                     print(f"Warning: repeated entry in matrix data {EXCL}")
                 self.M[i, j] += v
+
+        assert self.balancing is None
+
         if self.balancing is not None:
             self.balancing.read()
             self.S = BwcShuffling(self.params, self)
+
+    def pad(self, outer=None, only_extend=True, force_square=False):
+        self.nrows = self.nrows_orig
+
+        # Attention. It may be that the matrix has some zero cols at the
+        # end, so if self.ncols_orig was just guessed based on the max
+        # column index, we definitely need some correct padding.
+        self.ncols = self.ncols_orig
+
+        if outer is not None:
+            nro, nco = outer
+            if only_extend:
+                assert self.nrows_orig <= nro or nro == 0
+                assert self.ncols_orig <= nco or nco == 0
+            self.nrows = max(nro, self.nrows)
+            self.ncols = max(nco, self.ncols)
+
+        if force_square:
+            print("Padding to a square matrix")
+            self.nrows = max(self.nrows, self.ncols)
+            self.ncols = max(self.nrows, self.ncols)
+
+        newrows = self.nrows - self.nrows_orig
+        newcols = self.ncols - self.ncols_orig
+
+        if newrows:
+            who = f"matrix {self.filename}"
+            what = f"{newrows} new rows"
+            reach = f"so that we reach {self.nrows} in total"
+            print(f"Padding {who} with {what} ({reach})")
+
+        if newcols:
+            who = f"matrix {self.filename}"
+            what = f"{newcols} new cols"
+            reach = f"so that we reach {self.ncols} in total"
+            print(f"Padding {who} with {what} ({reach})")
+
+        self.M = block_matrix(2,2,[
+            self.M, matrix(self.nrows_orig, newcols),
+            matrix(newrows, self.ncols_orig), matrix(newrows, newcols)])
+        self.M.subdivide()
+
 
     def __subM(self, i, j):
         return self.submatrices[i][j].M
@@ -615,9 +645,11 @@ class BwcOneMatrix(object):
                 ncp = bal.tc // bal.nv
                 self.submatrices[i][j] = BwcOneMatrix(self.params, fname)
                 if self.submatrices_are_transposed:
-                    self.submatrices[i][j].__read(nrows=ncp, ncols=nrp)
+                    self.submatrices[i][j].read()
+                    self.submatrices[i][j].pad(outer=(ncp, nrp))
                 else:
-                    self.submatrices[i][j].__read(nrows=nrp, ncols=ncp)
+                    self.submatrices[i][j].read()
+                    self.submatrices[i][j].pad(outer=(nrp, ncp))
         # Now we want to check the consistency of the matrix that we just
         # read.
 
@@ -629,10 +661,20 @@ class BwcOneMatrix(object):
                                [t(self.__subM(i, j))
                                 for i in range(nh)
                                 for j in range(nv)])
-        if self.S.sc is not None:
-            self.sigma = self.S.sc.matrix()
+
+        # sigma is applied on rows.
+        # By convention, the action of sigma is transpose(sigma) on the
+        # left. (so that we can have sigma==tau for square matrices)
+        if self.S.sr is not None:
+            self.sigma = self.S.sr.matrix()
         else:
-            self.sigma = identity_matrix(GF(self.params.p), self.balancing.tc)
+            self.sigma = identity_matrix(GF(self.params.p), self.balancing.tr)
+
+        # tau is applied on columns
+        if self.S.sc is not None:
+            self.tau = self.S.sc.matrix()
+        else:
+            self.tau = identity_matrix(GF(self.params.p), self.balancing.tc)
 
         if self.S.shuf is not None:
             self.Q = self.S.shuf.matrix()
@@ -645,7 +687,7 @@ class BwcOneMatrix(object):
 
     def check_balancing_submatrices_are_well_formed(self):
         """
-        This checks that given the balancing permutation sigma, the
+        This checks that given the balancing permutations, the
         concatenation of the different submatrices at least gives a
         matrix that is consistent with the number of rows and columns of
         the matrix we supposedly started with.
@@ -658,7 +700,7 @@ class BwcOneMatrix(object):
 
         print(f"Checking {self.filename} ({bal.nh}x{bal.nv} balancing)")
 
-        A = (self.P*self.sigma).transpose() * self.Mx * self.sigma
+        A = (self.P*self.sigma).transpose() * self.Mx * self.tau
 
         what = "Reconstructed matrix from submatrices"
         if A[bal.nr:bal.tr] != 0:
@@ -686,7 +728,7 @@ class BwcOneMatrix(object):
             what = "inconsistent with number of rows/columns of the matrix"
             raise ValueError(f"{self.balancing.filename} is {what} {NOK}")
 
-        A = (self.P*self.sigma).transpose() * self.Mx * self.sigma
+        A = (self.P*self.sigma).transpose() * self.Mx * self.tau
 
         B = self.M * self.Q
         sub = lambda T: T.submatrix(0, 0, self.nrows, self.ncols)  # noqa: E731

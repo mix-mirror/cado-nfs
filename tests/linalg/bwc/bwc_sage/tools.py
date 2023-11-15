@@ -62,27 +62,29 @@ def mcoeff(M, i):
     KP = M.base_ring()
     m = M.nrows()
     n = M.ncols()
-    return matrix(KP.base_ring(), m, n, [a[i] for a in M.coefficients()])
+    L = [a[i] for a in M.dense_coefficient_list()]
+    return matrix(KP.base_ring(), m, n, L)
 
 
 def mrev(M, n):
-    return M.parent()([a.reverse(degree=n) for a in M.coefficients()])
+    L = [a.reverse(degree=n) for a in M.dense_coefficient_list()]
+    return M.parent()(L)
 
 
 def mdeg(M):
-    return max([a.degree() for a in M.coefficients()])
+    return max([a.degree() for a in M.dense_coefficient_list()])
 
 
 def mmod(M, n):
     KP = M.base_ring()
     t = KP.gen()
-    return M.parent()([a.mod(t**n) for a in M.coefficients()])
+    return M.parent()([a.mod(t**n) for a in M.dense_coefficient_list()])
 
 
 def mdiv(M, n):
     KP = M.base_ring()
     t = KP.gen()
-    return M.parent()([a // t**n for a in M.coefficients()])
+    return M.parent()([a // t**n for a in M.dense_coefficient_list()])
 
 
 def mdivmod(M, n):

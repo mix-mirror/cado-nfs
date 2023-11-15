@@ -2,7 +2,7 @@ import os
 import re
 
 from sage.matrix.constructor import matrix
-from sage.matrix.special import diagonal_matrix
+from sage.matrix.special import diagonal_matrix, block_matrix
 from sage.rings.finite_rings.finite_field_constructor import GF
 
 from collections import defaultdict
@@ -159,11 +159,13 @@ class BwcFFiles(object):
         U and v in V) are such that  rhs * u + MQ * v = 0
 
         Therefore U has size r*n, and V has size N*n
-        """
 
-        # The magma code has complicated considerations about checking
-        # for solutions that happen only after a few extra rounds of
-        # applying M (in the homogenous case).
+        HOWEVER there are cases (for homogenous systems only) where the
+        returned U,V do not exactly provide solutions to this statement,
+        but they do come close. We return them as they are, nevertheless,
+        because it is important to be able to check that what was
+        computed by nksol is correct.
+        """
 
         r = len(self.rhs_columns)
         U = self.R[:r, :]
@@ -174,9 +176,53 @@ class BwcFFiles(object):
             V += v * mcoeff(self.F, k)
             v = MQ.operate(v)
 
-        print("Checking solutions derived from the linear generator")
+        doing = "Checking solutions derived from the linear generator"
+        print(doing)
+        msg = ""
 
         should_be_zero = rhs * U + MQ.operate(V)
+
+        if should_be_zero != 0 and rhs == 0:
+            # As in the old magma code, there are complicated
+            # considerations about checking for solutions that happen
+            # only after a few extra rounds of applying M (in the
+            # homogenous case).
+
+            # The typical case that we want to address is the following:
+            # K.sols0-64.0: rank 54
+            # K.sols0-64.1: rank drops from 54 to 11
+            # K.sols0-64.2: rank drops from 11 to 1
+
+            print("Trying to build composite solution of homogeneous system")
+            w = V
+            ws = V
+            ranks = [ws.rank()]
+            for i in range(1,5):
+                w = MQ.operate(w)
+                nws = block_matrix(1,2,[ws, w])
+                nws.subdivide()
+                r = nws.rank()
+                if ranks[-1] == r:
+                    what = "the sequence of iterates"
+                    when = f"after {i} iterations"
+                    print(f"The rank of {what} is stationary {when}")
+                    break
+                ranks.append(r)
+                ws = nws
+            ss = ws.solve_right(MQ.operate(ws))
+            T = block_matrix(1,2,[ss.transpose(),1]).echelon_form()
+            T = T.transpose()[ss.ncols():,:]
+            kernel = (ws*T)[:,ss.rank():].column_space()
+            print(f"The kernel has dimension {kernel.dimension()}")
+            Vx = kernel.basis_matrix().transpose()
+            Vx = block_matrix(1, 2,
+                              [Vx, matrix(Vx.nrows(), v.ncols()-Vx.ncols())])
+            Vx.subdivide()
+            should_be_zero = MQ.operate(Vx)
+
+            msg = f" (but after further work {EXCL})"
+            assert should_be_zero == 0
+
         if should_be_zero != 0:
             rk = should_be_zero.rank()
             event = f"rhs * U + MQ * V has rank {rk} (should be zero)"
@@ -197,6 +243,6 @@ class BwcFFiles(object):
                 elif QV[:MQ.parent.ncols_orig, j] == 0:
                     print(f"{warn} on the interesting columns {EXCL}")
 
-        print("Checking solutions derived from the linear generator " + OK)
+        print(doing + " " + OK + msg)
 
         return (U, V)
