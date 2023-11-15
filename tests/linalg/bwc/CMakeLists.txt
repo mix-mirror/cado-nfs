@@ -914,6 +914,7 @@ macro(create_double_matrix_test id testcase)
         TARGET_DEPENDENCIES bwc_full
         FIXTURES_REQUIRED ${t}
     )
+    create_sage_diversions(${t})
 endmacro()
 
 create_double_matrix_test(thr11 "159 193 129 STRETCH STRETCH"

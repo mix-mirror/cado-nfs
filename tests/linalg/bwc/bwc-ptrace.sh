@@ -463,11 +463,32 @@ if [ "$sage" ] ; then
         check_script_diagnostic_fd=3
     fi
     sage_args=( m=$m n=$n p=$prime
-                wdir=$wdir matrix=$matrix
+                wdir=$wdir
                 nh=$Nh nv=$Nv
     )
     if [ "$wordsize" != 64 ] ; then sage_args+=(wordsize=$wordsize) ; fi
     if [ "$multi_matrix" ] ; then sage_args+=(multi_matrix=$multi_matrix) ; fi
+    rewritten_matrix=$matrix
+    # if matrices aren't in /tmp, then our weird docker-based sagemath
+    # won't be able to find them.
+    if ! [[ $matrix =~ ^/tmp ]] && [[ $mats =~ /tmp ]] ; then
+        # $mats seems like a well adapter place.
+        ms=($matrix)
+        if [ "$multi_matrix" ] ; then
+            ms=($(tr , ' ' <<<$matrix))
+        fi
+        rms=()
+        rewritten_matrix=
+        for m in "${ms[@]}" ; do
+            cp -vf ${m%%bin}{rw.bin,cw.bin,bin} $mats
+            rms+=($mats/`basename $m`)
+            if [ "$rewritten_matrix" ] ; then
+                rewritten_matrix="${rewritten_matrix},"
+            fi
+            rewritten_matrix="${rewritten_matrix}$mats/`basename $m`"
+        done
+    fi
+    sage_args+=(matrix=$rewritten_matrix)
     if [ "$CADO_DEBUG" ] ; then set -x ; fi
     set -eo pipefail
     "$sage" bwc.sage "${sage_args[@]}" >&${check_script_diagnostic_fd}
