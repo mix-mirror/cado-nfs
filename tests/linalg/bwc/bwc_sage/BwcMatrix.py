@@ -552,7 +552,7 @@ class BwcOneMatrix(object):
 
         rowscols = f"{self.nrows_orig} rows {self.ncols_orig} cols"
         coeffs = f"{self.ncoeffs} coefficients"
-        print(f"{rowscols}, {coeffs} ({rstats}, {cstats})")
+        print(f"  {rowscols}, {coeffs} ({rstats}, {cstats})")
 
         # prior to any padding, we have a matrix with dimensions
         # nrows_orig and ncols_orig
@@ -595,7 +595,7 @@ class BwcOneMatrix(object):
             self.ncols = max(nco, self.ncols)
 
         if force_square:
-            print("Padding to a square matrix")
+            print("  padding to a square matrix")
             self.nrows = max(self.nrows, self.ncols)
             self.ncols = max(self.nrows, self.ncols)
 
@@ -603,16 +603,14 @@ class BwcOneMatrix(object):
         newcols = self.ncols - self.ncols_orig
 
         if newrows:
-            who = f"matrix {self.filename}"
             what = f"{newrows} new rows"
             reach = f"so that we reach {self.nrows} in total"
-            print(f"Padding {who} with {what} ({reach})")
+            print(f"  padding with {what} {reach}")
 
         if newcols:
-            who = f"matrix {self.filename}"
             what = f"{newcols} new cols"
             reach = f"so that we reach {self.ncols} in total"
-            print(f"Padding {who} with {what} ({reach})")
+            print(f"  padding with {what} {reach}")
 
         self.M = block_matrix(2,2,[
             self.M, matrix(self.nrows_orig, newcols),

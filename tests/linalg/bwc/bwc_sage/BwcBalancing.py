@@ -68,10 +68,11 @@ class BwcBalancing(object):
             self.tc = pad(self.tc, s)
 
             rowcols = f"{self.nr} rows {self.nc} cols"
-            split = f"split {self.nh}x{self.nv}"
+            split = f"{self.nh}x{self.nv} split"
             checksum = f"checksum 0x{self.checksum:x}"
             flags = f"{list(self.txflags.keys())}"
-            print(", ".join([rowcols, split, checksum, flags]))
+            print("  " + ", ".join([rowcols, checksum, flags]))
+            print(f"  padded for a {split}: {self.tr} rows {self.tc} cols")
 
             self.rowperm = None
             if 'rowperm' in self.txflags:
