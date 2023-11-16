@@ -350,7 +350,8 @@ class BwcOneMatrix(object):
         elif self.params.is_nullspace_right() and self.params.p != 2:
             self.submatrices_are_transposed = False
         else:
-            raise NotImplementedError("Does the MM layer in this case store matrices in transposed order or not ?")
+            msg = "Does the MM layer store matrices in transposed order ?"
+            raise NotImplementedError(msg)
 
     def dimensions(self):
         """
@@ -659,17 +660,18 @@ class BwcOneMatrix(object):
                 else:
                     self.submatrices[i][j].read()
                     self.submatrices[i][j].pad(outer=(nrp, ncp))
+
         # Now we want to check the consistency of the matrix that we just
         # read.
 
-        t = lambda x: x  # noqa: E731
         if self.submatrices_are_transposed:
-            t = lambda x: x.transpose()  # noqa: E731
-
-        self.Mx = block_matrix(nh, nv,
-                               [t(self.__subM(i, j))
-                                for i in range(nh)
-                                for j in range(nv)])
+            self.Mx = block_matrix(nh, nv,
+                                   [[self.__subM(i, j).transpose()
+                                     for j in range(nv)] for i in range(nh) ])
+        else:
+            self.Mx = block_matrix(nh, nv,
+                                   [[self.__subM(i, j)
+                                     for j in range(nv)] for i in range(nh) ])
 
         # sigma is applied on rows.
         # By convention, the action of sigma is transpose(sigma) on the
@@ -724,6 +726,8 @@ class BwcOneMatrix(object):
         started with. Of course, to do so, we must have called
         self.read() first.
         """
+
+        print(f"Checking {self.filename}")
 
         bal = self.balancing
 

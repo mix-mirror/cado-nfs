@@ -927,13 +927,13 @@ static std::string matrix_get_derived_cache_filename_stem(std::string const & ma
     }
     int pos[2];
     for(int d = 0 ; d < 2 ; d++)  {
-        pi_comm_ptr wr = pi->wr[d];
+        pi_comm_ptr wr = pi->wr[d ^ swap_wirings];
         pos[d] = wr->jrank * wr->ncores + wr->trank;
     }
     std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     int rc = asprintf(&t, "%s/%s.%08" PRIx32 ".h%d.v%d",
             dn.c_str(), dn.c_str(), checksum,
-            pos[1 ^ swap_wirings], pos[0 ^ swap_wirings]);
+            pos[1], pos[0]);
     ASSERT_ALWAYS(rc >=0);
     free(copy);
     std::string s(t);
@@ -957,13 +957,13 @@ static std::string matrix_get_derived_submatrix_filename(std::string const & mat
     }
     int pos[2];
     for(int d = 0 ; d < 2 ; d++)  {
-        pi_comm_ptr wr = pi->wr[d];
+        pi_comm_ptr wr = pi->wr[d ^ swap_wirings];
         pos[d] = wr->jrank * wr->ncores + wr->trank;
     }
     std::string dn = matrix_get_derived_cache_subdir(matrixname, swap_wirings, pi);
     int rc = asprintf(&t, "%s/%s.h%d.v%d.bin",
             dn.c_str(), dn.c_str(),
-            pos[1 ^ swap_wirings], pos[0 ^ swap_wirings]);
+            pos[1], pos[0]);
     ASSERT_ALWAYS(rc >=0);
     free(copy);
     std::string s(t);

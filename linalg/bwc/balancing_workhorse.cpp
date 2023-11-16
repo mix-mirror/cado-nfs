@@ -619,7 +619,27 @@ void dispatcher::reader_thread_data::read()/*{{{*/
             auto & C = nodedata[k];
             if (C.empty()) continue;
 
-            unsigned int group = rr / D.rows_chunk_big * D.nvjobs + k;
+            unsigned int group;
+
+            /* We must find out which rank wants to receive this
+             * coefficient. This is one half of the reasoning, the other
+             * half is in endpoint_handle_incoming
+             */
+            unsigned int rank_on_piwr[2] = { k, rr / D.rows_chunk_big };
+            ASSERT_ALWAYS(rank_on_piwr[0] < D.piwr[0]->njobs);
+            ASSERT_ALWAYS(rank_on_piwr[1] < D.piwr[1]->njobs);
+            if (!D.swap_wirings) {
+                group = rank_on_piwr[1] * D.piwr[0]->njobs + rank_on_piwr[0];
+                // IOW, rr / D.rows_chunk_big * D.nvjobs + k;
+            } else {
+                /* Then it's subtly different, because we've swapped the
+                 * wirings we we haven't renumbered the ranks on pi->m,
+                 * and so with respect to D.piwr (which is D.pi->wr, but
+                 * swapped), the different ranks are column major!
+                 */
+                group = rank_on_piwr[0] * D.piwr[1]->njobs + rank_on_piwr[1];
+            }
+
             auto & Q = queues[group];
             Q.push_back(rr);
             Q.push_back(C.size());
@@ -917,6 +937,9 @@ void dispatcher::endpoint_thread_data::endpoint_handle_incoming(std::vector<uint
         uint32_t rs = *next++;
         if (D.pass_number == 2 && D.withcoeffs) rs/=2;
 
+        /* As far as _this_ dispatching is concerned, D.piwr[0] is the
+         * "horizontal" wiring, and D.piwr[1] is the vertical one.
+         */
         unsigned int n_row_groups = D.piwr[1]->ncores;
         unsigned int n_col_groups = D.piwr[0]->ncores;
         unsigned int row_group = (rr / D.rows_chunk_small) % n_row_groups;
@@ -952,7 +975,21 @@ void dispatcher::endpoint_thread_data::endpoint_handle_incoming(std::vector<uint
                 ASSERT_ALWAYS(cc < D.bal.tcols);
                 unsigned int col_group = (cc / D.cols_chunk_small) % n_col_groups;
                 unsigned int col_index = cc % D.cols_chunk_small;
-                unsigned int group = row_group * n_col_groups + col_group;
+
+                /* We need to finish the reasoning that was begun in
+                 * reader_thread_data::read. In the same manner as what
+                 * we had there, if the wiring are swapped, then the
+                 * thread numbers are column major along D.piwr[0] and
+                 * D.piwr[1]
+                 */
+                unsigned int group;
+                if (!D.swap_wirings) {
+                    group = row_group * D.piwr[0]->ncores + col_group;
+                    // == row_group * n_col_groups + col_group;
+                } else {
+                    group = row_group + col_group * D.piwr[1]->ncores;
+                }
+
                 if (!D.transpose)
                     thread_row_weights[group][row_index]++;
                 else
@@ -965,7 +1002,13 @@ void dispatcher::endpoint_thread_data::endpoint_handle_incoming(std::vector<uint
                 pointers.reserve(n_col_groups);
                 for(unsigned int i = 0 ; i < n_col_groups ; i++) {
                     unsigned int col_group = i;
-                    uint32_t group = row_group * n_col_groups + col_group;
+                    uint32_t group;
+                    /* see above */
+                    if (!D.swap_wirings) {
+                        group = row_group * D.piwr[0]->ncores + col_group;
+                    } else {
+                        group = row_group + col_group * D.piwr[1]->ncores;
+                    }
                     uint32_t * matrix = args_per_thread[group]->p;
                     size_t pos0 = thread_row_positions[group][row_index];
                     uint32_t * p0 = matrix + pos0;
@@ -986,7 +1029,13 @@ void dispatcher::endpoint_thread_data::endpoint_handle_incoming(std::vector<uint
                 }
                 for(unsigned int i = 0 ; i < n_col_groups ; i++) {
                     unsigned int col_group = i;
-                    uint32_t group = row_group * n_col_groups + col_group;
+                    uint32_t group;
+                    /* see above */
+                    if (!D.swap_wirings) {
+                        group = row_group * D.piwr[0]->ncores + col_group;
+                    } else {
+                        group = row_group + col_group * D.piwr[1]->ncores;
+                    }
                     uint32_t * matrix = args_per_thread[group]->p;
                     size_t pos0 = thread_row_positions[group][row_index];
                     uint32_t * p0 = matrix + pos0;
@@ -1004,7 +1053,13 @@ void dispatcher::endpoint_thread_data::endpoint_handle_incoming(std::vector<uint
                     uint32_t cc = *next++;
                     unsigned int col_group = (cc / D.cols_chunk_small) % n_col_groups;
                     unsigned int col_index = cc % D.cols_chunk_small;
-                    unsigned int group = row_group * n_col_groups + col_group;
+                    uint32_t group;
+                    /* see above */
+                    if (!D.swap_wirings) {
+                        group = row_group * D.piwr[0]->ncores + col_group;
+                    } else {
+                        group = row_group + col_group * D.piwr[1]->ncores;
+                    }
                     uint32_t * matrix = args_per_thread[group]->p;
                     size_t & x = thread_row_positions[group][col_index];
                     ASSERT(matrix[x] == 0);
