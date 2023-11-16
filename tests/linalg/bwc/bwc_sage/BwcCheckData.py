@@ -50,11 +50,10 @@ class BwcCheckData(object):
             elif self.__try_dfile(x):
                 pass
 
-        what = "set of check files in " + self.dirname
-        for a in [self.tfiles, self.rfiles, self.dfiles, self.vfiles]:
-            if len(a) == 0:
-                print(f"No complete {what}, cannot verify {EXCL}")
-                return
+        if not self:
+            what = "set of check files in " + self.dirname
+            print(f"No complete {what}, cannot verify {EXCL}")
+            return
 
         if len(self.tfiles) != 1:
             raise ValueError(f"Conflicting Ct files among {what} {NOK}")
@@ -80,6 +79,12 @@ class BwcCheckData(object):
         for v in self.vfiles:
             if v[1] != sw:
                 raise ValueError(f"{v[0]} is not for splitwidth={sw} {NOK}")
+
+    def __bool__(self):
+        for a in [self.tfiles, self.rfiles, self.dfiles, self.vfiles]:
+            if not a:
+                return False
+        return True
 
     def __try_tfile(self, x):
         tpat = r"^Ct0-(\d+)\.0-(\d+)$"

@@ -37,8 +37,9 @@ if __name__ == '__main__':
     x.read()
 
     c = BwcCheckData(par, M.dimensions(), args["wdir"])
-    c.read()
-    c.check(MQ, x)
+    if c:
+        c.read()
+        c.check(MQ, x)
 
     a = BwcAFiles(par, M.dimensions(), args["wdir"])
     a.read()
