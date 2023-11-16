@@ -915,8 +915,10 @@ macro(create_double_matrix_test id testcase)
         FIXTURES_REQUIRED ${t}
     )
     create_sage_diversions(${t})
-    set_tests_properties(test_bwc_${t}_with_sagemath
-        PROPERTIES FIXTURES_REQUIRED ${t})
+    if(SAGE)
+        set_tests_properties(test_bwc_${t}_with_sagemath
+            PROPERTIES FIXTURES_REQUIRED ${t})
+    endif()
 endmacro()
 
 create_double_matrix_test(thr11 "159 193 129 STRETCH STRETCH"
