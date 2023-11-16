@@ -286,7 +286,6 @@ class BwcMatrix(object):
         return f"BwcMatrix({me})"
 
 
-
 class BwcOneMatrix(object):
     """
     This class contains stuff to read a matrix in serialized format, but
@@ -613,11 +612,10 @@ class BwcOneMatrix(object):
             reach = f"so that we reach {self.ncols} in total"
             print(f"  padding with {what} {reach}")
 
-        self.M = block_matrix(2,2,[
+        self.M = block_matrix(2, 2, [
             self.M, matrix(self.nrows_orig, newcols),
             matrix(newrows, self.ncols_orig), matrix(newrows, newcols)])
         self.M.subdivide()
-
 
     def __subM(self, i, j):
         return self.submatrices[i][j].M

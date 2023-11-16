@@ -37,8 +37,7 @@ class BwcParameters(object):
         return self.nullspace == self.NULLSPACE_RIGHT
 
     def __repr__(self):
-        s=[]
-        s = [ f"{k}={self.__dict__.get(k)}" for k in  "p m n wordsize".split()]
+        s = [f"{k}={self.__dict__.get(k)}" for k in "p m n wordsize".split()]
         if self.is_nullspace_left():
             s.append("nullspace='left'")
         else:

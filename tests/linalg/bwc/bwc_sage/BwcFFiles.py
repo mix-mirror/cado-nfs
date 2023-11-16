@@ -197,9 +197,9 @@ class BwcFFiles(object):
             w = V
             ws = V
             ranks = [ws.rank()]
-            for i in range(1,5):
+            for i in range(1, 5):
                 w = MQ.operate(w)
-                nws = block_matrix(1,2,[ws, w])
+                nws = block_matrix(1, 2, [ws, w])
                 nws.subdivide()
                 r = nws.rank()
                 if ranks[-1] == r:
@@ -210,9 +210,9 @@ class BwcFFiles(object):
                 ranks.append(r)
                 ws = nws
             ss = ws.solve_right(MQ.operate(ws))
-            T = block_matrix(1,2,[ss.transpose(),1]).echelon_form()
-            T = T.transpose()[ss.ncols():,:]
-            kernel = (ws*T)[:,ss.rank():].column_space()
+            T = block_matrix(1, 2, [ss.transpose(), 1]).echelon_form()
+            T = T.transpose()[ss.ncols():, :]
+            kernel = (ws*T)[:, ss.rank():].column_space()
             print(f"The kernel has dimension {kernel.dimension()}")
             Vx = kernel.basis_matrix().transpose()
             Vx = block_matrix(1, 2,
