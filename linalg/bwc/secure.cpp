@@ -79,7 +79,11 @@ void * sec_prog(parallelizing_info_ptr pi, param_list pl, void * arg MAYBE_UNUSE
     mmt_vector_pair myy(mmt, !bw->dir);
     mmt_vec & my = myy.input_vector();
 
-    mmt_vec dvec(mmt,0,0, !bw->dir, /* shared ! */ 1, mmt.n[!bw->dir]);
+    /* When we have a single matrix (or an odd number of matrices), both
+     * my and dvec are with respect to direction !bw->dir. With an even
+     * number of matrices, it becomes my.d==dvec.d==mmt.d
+     */
+    mmt_vec dvec(mmt,0,0, my.d, /* shared ! */ 1, mmt.n[!bw->dir]);
 
     unsigned int unpadded = MAX(mmt.n0[0], mmt.n0[1]);
 
