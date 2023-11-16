@@ -915,6 +915,8 @@ macro(create_double_matrix_test id testcase)
         FIXTURES_REQUIRED ${t}
     )
     create_sage_diversions(${t})
+    set_tests_properties(test_bwc_${t}_with_sagemath
+        PROPERTIES FIXTURES_REQUIRED ${t})
 endmacro()
 
 create_double_matrix_test(thr11 "159 193 129 STRETCH STRETCH"
@@ -929,6 +931,9 @@ create_double_matrix_test(thr12 "159 193 129 URANDOM4 URANDOM10"
 create_double_matrix_test(thr22 "159 193 129 STRETCH STRETCH"
     balancing_options=reorder=none,skip_decorrelating_permutation=1
     seed=1 prime=2 nullspace=left thr=2x2 m=64 n=64)
+create_double_matrix_test(thr23 "259 293 239 URANDOM5 URANDOM16"
+    balancing_options=reorder=none,skip_decorrelating_permutation=1
+    seed=1 prime=2 nullspace=left thr=2x3 m=64 n=64)
 
 
 #########################################################################
