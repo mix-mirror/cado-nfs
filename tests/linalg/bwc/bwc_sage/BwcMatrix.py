@@ -109,7 +109,8 @@ class BwcMatrix(object):
             self.chain = [BwcOneMatrix(params,
                                        mm[i],
                                        wdir,
-                                       balancing_filename=bb[i])
+                                       balancing_filename=bb[i],
+                                       chain_position=i)
                           for i in range(len(mm))]
 
         self.nrows = None
@@ -709,7 +710,10 @@ class BwcOneMatrix(object):
 
         print(f"Checking {self.filename} ({bal.nh}x{bal.nv} balancing)")
 
-        A = (self.P*self.sigma).transpose() * self.Mx * self.tau
+        if self.chain_position == 0:
+            A = (self.P*self.sigma).transpose() * self.Mx * self.tau
+        else:
+            A = (self.sigma).transpose() * self.Mx * self.tau
 
         what = "Reconstructed matrix from submatrices"
         if A[bal.nr:bal.tr] != 0:
@@ -739,7 +743,15 @@ class BwcOneMatrix(object):
             what = "inconsistent with number of rows/columns of the matrix"
             raise ValueError(f"{self.balancing.filename} is {what} {NOK}")
 
-        A = (self.P*self.sigma).transpose() * self.Mx * self.tau
+        # with thr23, currently items 0 and in chain both yield
+        # sub(self.P*A)==B
+        # with  A = (self.P*self.sigma).transpose() * self.Mx * self.tau
+
+        # note also that in the other cases like thr11 thr12 thr22,
+        # self.P is 1 anyway, so it's probably badly placed in this
+        # equation, that's it.
+
+        A = self.sigma.transpose() * self.Mx * self.tau
 
         B = self.M * self.Q
         sub = lambda T: T.submatrix(0, 0, self.nrows, self.ncols)  # noqa: E731
