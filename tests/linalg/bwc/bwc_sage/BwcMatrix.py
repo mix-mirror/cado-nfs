@@ -666,11 +666,11 @@ class BwcOneMatrix(object):
         if self.submatrices_are_transposed:
             self.Mx = block_matrix(nh, nv,
                                    [[self.__subM(i, j).transpose()
-                                     for j in range(nv)] for i in range(nh) ])
+                                     for j in range(nv)] for i in range(nh)])
         else:
             self.Mx = block_matrix(nh, nv,
                                    [[self.__subM(i, j)
-                                     for j in range(nv)] for i in range(nh) ])
+                                     for j in range(nv)] for i in range(nh)])
 
         # sigma is applied on rows.
         # By convention, the action of sigma is transpose(sigma) on the
