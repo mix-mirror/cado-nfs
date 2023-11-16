@@ -118,11 +118,12 @@ for my $i (0..$n-1) {
             }
         } elsif ($mode =~ /URANDOM(\d+)/) {
             my $d = $1;
+            my %h;
             for(my $j = 0 ; $j < $d ; $j++) {
                 my $c = int(rand()*$ncols);
-                push @cols, $c;
+                $h{$c}=1;
             }
-            @cols = sort @cols;
+            @cols = sort keys %h;
             if ($withcoeffs) {
                 for my $c (@cols) {
                     my $s = int(rand()*2)*2-1;
