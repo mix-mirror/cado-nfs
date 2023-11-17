@@ -162,15 +162,15 @@ class BwcCheckData(object):
             ret.append((j, filename, v.V))
         self.V = sorted(ret)
 
-    def check(self, M, x):
+    def check(self, MQ, x):
         """
         There's no such thing as checking the t and r files, since
         they're pure random data. However we do want to check the v and d
         files.
 
-        Cv0-<splitwidth>.<j> == trsp(M)^j * X * Ct
+        Cv0-<splitwidth>.<j> == trsp(MQ)^j * X * Ct
 
-        Cd0-<splitwidth>.<j> == \\sum_{0<=i<j} trsp(M)^i * X * Ct * Cr[i]
+        Cd0-<splitwidth>.<j> == \\sum_{0<=i<j} trsp(MQ)^i * X * Ct * Cr[i]
         """
 
         xt = x.X * self.T
@@ -186,7 +186,7 @@ class BwcCheckData(object):
             while i < ni:
                 S += xt * self.R[i]
                 i += 1
-                xt = M.operate_transpose(xt)
+                xt = MQ.operate_transpose(xt)
             if ni == nvi:
                 print(f"Checking {nvf} ... ")
                 if nvZ != xt:

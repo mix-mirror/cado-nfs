@@ -110,7 +110,8 @@ class BwcMatrix(object):
                                        mm[i],
                                        wdir,
                                        balancing_filename=bb[i],
-                                       chain_position=i)
+                                       chain_position=i,
+                                       chain_length=len(mm))
                           for i in range(len(mm))]
 
         self.nrows = None
@@ -311,11 +312,13 @@ class BwcOneMatrix(object):
                  matrix=None,
                  wdir=None,
                  balancing_filename=None,
-                 chain_position=0
+                 chain_position=0,
+                 chain_length=1,
                  ):
         self.params = params
         self.filename = matrix
         self.chain_position = chain_position
+        self.chain_length = chain_length
         if wdir is None:
             self.wdir = os.path.dirname(self.filename)
         else:
@@ -396,7 +399,7 @@ class BwcOneMatrix(object):
         self.Mt = None
 
     def __repr__(self):
-        ma = f"matrix#{self.chain_position}"
+        ma = f"matrix#{self.chain_position}/{self.chain_length}"
         if self.nrows is not None:
             dims = f"{self.nrows}x{self.ncols} {ma} ({self.ncoeffs} coeffs)"
             return f"{dims} from {self.filename}"
@@ -710,8 +713,8 @@ class BwcOneMatrix(object):
 
         print(f"Checking {self.filename} ({bal.nh}x{bal.nv} balancing)")
 
-        if self.chain_position == 0:
-            A = (self.P*self.sigma).transpose() * self.Mx * self.tau
+        if self.chain_length & 1:
+            A = (self.P * self.sigma).transpose() * self.Mx * self.tau
         else:
             A = (self.sigma).transpose() * self.Mx * self.tau
 
@@ -751,7 +754,10 @@ class BwcOneMatrix(object):
         # self.P is 1 anyway, so it's probably badly placed in this
         # equation, that's it.
 
-        A = self.sigma.transpose() * self.Mx * self.tau
+        if self.chain_length & 1:
+            A = (self.P * self.sigma).transpose() * self.Mx * self.tau
+        else:
+            A = (self.sigma).transpose() * self.Mx * self.tau
 
         B = self.M * self.Q
         sub = lambda T: T.submatrix(0, 0, self.nrows, self.ncols)  # noqa: E731
