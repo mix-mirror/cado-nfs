@@ -104,7 +104,7 @@ done
 rc=$?
 
 if [ "$CADO_DEBUG" ] ; then
-    echo "debug mode, data left in ${temps[@]}"
+    echo "debug mode, data left in ${temps[*]}"
     exit $rc
 fi
 

@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 
+old_setx=$(shopt -po xtrace || :)
+
 set -e
 
 exec < /dev/null
 
-if [ "$CADO_DEBUG" ] ; then
-    set -x
-fi
+if [ "$CADO_DEBUG" ] ; then set -x ; fi
 
 # This script is intended *for testing only*. It's used for, e.g.,
-# coverage tests. This even goes with dumping all intermediary data to
-# magma-parseable format. So don't try to use this script for real
-# examples. Real examples require the user to craft his own bwc.pl
-# command line with care (command-lines as created by this tool might be
-# a source of inspiration, though).
+# coverage tests.  We don't try to use this script for real examples.
+# Real examples require the user to craft his own bwc.pl command line
+# with care (command-lines as created by this tool might be a source of
+# inspiration, though).
+
+pass_bwcpl_args=()
 
 while [ $# -gt 0 ] ; do
     a="$1"
@@ -21,11 +22,32 @@ while [ $# -gt 0 ] ; do
     if [ "$a" = "--" ] ; then
         break
     else
+        if [[ $a =~ ^(prime|m|n|wdir|interval|matrix|multi_matrix|balancing_options|seed|nullspace|mpi|thr|simd)= ]] ; then
+            # There are quite a few parameters that we parse here and
+            # pass to bwcpl anyway, so let's not put them in
+            # pass_bwcpl_args.
+            # (in fact, this is the case of most parameters)
+            :
+        # (try to remove both the exception here and the offending
+        # exception later on)
+        # elif [[ $a =~ ^(tolerate_failure|stop_at_step|keep_rolling_checkpoints|checkpoint_precious|skip_online_checks|interleaving) ]] ; then
+        #     # basically the same story here, except that there seem to
+        #     # be two ways these arguments get passed to bwc.pl : we
+        #     # forcibly add them to ${common[@]} later on in this file,
+        #     # but why do we do that? Is it only to provide for the case
+        #     # where these arguments are exported via the shell
+        #     # environment?
+        #     :
+        elif [[ $a =~ ^(bindir|mats|pre_wipe|random_matrix_size|random_matrix_minkernel|script_steps|nrhs|sage|wordsize) ]] ; then
+            # and there are even parameters that only make sense here.
+            :
+        else
+            pass_bwcpl_args+=("$a")
+        fi
         eval "$a"
     fi
 done
 
-pass_bwcpl_args=("$@")
 
 # various configuration variables. environment can be used to override them
 : ${scriptpath=$0}
@@ -37,6 +59,7 @@ pass_bwcpl_args=("$@")
 : ${thr:=2x2}
 # Set the "matrix" variable in order to work on a real matrix.
 : ${matrix=}
+: ${multi_matrix=}
 # Set the "bindir" variable to use pre-built binaries (must point to the
 # directories with the bwc binaries)
 : ${bindir=}
@@ -51,17 +74,17 @@ pass_bwcpl_args=("$@")
 : ${pre_wipe=}
 : ${seed=$RANDOM}
 : ${balancing_options=reorder=columns}
-: ${script_steps=wipecheck,matrix,bwc.pl/:complete,bwccheck,magma}
+: ${script_steps=wipecheck,matrix,bwc.pl/:complete,bwccheck}
 
 pass_bwcpl_args+=("seed=$seed")
 
-wordsize=64
+: ${wordsize=64}
+
 # XXX note that $wdir is wiped out by this script !
 : ${wdir=/tmp/bwcp}
 
-# By default we don't enable magma. Just say magma=magma (or
-# magma=/path/to/magma) to get (very expensive) magma checks.
-: ${magma=}
+# We also have sagemath testing.
+: ${sage=}
 
 # This has to be provided as auxiliary data for the GF(p) case (or we'll
 # do without any rhs whatsoever).
@@ -89,6 +112,13 @@ if ! type -p seq >/dev/null ; then
             let first=first+incr
         done
     }
+fi
+
+# inject the variables that were provided by guess_mpi_configs
+if [ "$mpi" ] ; then
+    eval "$exporter_mpirun"
+    eval "$exporter_mpi_extra_args"
+    pass_bwcpl_args+=(mpi_extra_args="${mpi_extra_args[*]}")
 fi
 
 usage() {
@@ -172,19 +202,6 @@ prepare_wdir() {
 
 
 create_test_matrix_if_needed() {
-    if [ "$matrix" ] ; then
-        if ! [ -e "$matrix" ] ; then
-            echo "matrix=$matrix inaccessible" >&2
-            usage
-        fi
-        # Get absolute path.
-        matrix=$(readlink /proc/self/fd/99 99< $matrix)
-        if [ -e "$rhsfile" ] ; then
-            rhsfile=$(readlink /proc/self/fd/99 99< $rhsfile)
-        fi
-        return
-    fi
-
     # It's better to look for a kernel which is not trivial. Thus
     # specifying --kright for random generation is a good move prior to
     # running this script for nullspace=right
@@ -319,6 +336,7 @@ prepare_common_arguments() {
     )
     if [ "$mm_impl" ] ; then common+=(mm_impl=$mm_impl) ; fi
     if [ "$prime" != 2 ] ; then common+=(lingen_mpi=$lingen_mpi) ; fi
+    if [ "$multi_matrix" ] ; then common+=(multi_matrix=$multi_matrix) ; fi
 }
 
 argument_checking
@@ -329,14 +347,19 @@ if ! [ "$matrix" ] ; then
     # This also sets rwfile cwfile nrows ncols
     create_test_matrix_if_needed
 else
-    # This also sets rwfile cwfile nrows ncols
-    create_auxiliary_weight_files
+    if ! [ "$multi_matrix" ] ; then
+        # This also sets rwfile cwfile nrows ncols
+        create_auxiliary_weight_files
+    else
+        # in the multi matrix case, we don't care.
+        :
+    fi
 fi
-for f in matrix cwfile rwfile ; do
-    if ! [ -f "${!f}" ] ; then echo "Missing file $f=${!f}" >&2 ; exit 1 ; fi
-done
-
-# if [ "$magma" ] ; then interval=1 ; fi
+if ! [ "$multi_matrix" ] ; then
+    for f in matrix ; do
+        if ! [ -f "${!f}" ] ; then echo "Missing file $f=${!f}" >&2 ; exit 1 ; fi
+    done
+fi
 
 prepare_common_arguments
 
@@ -344,28 +367,19 @@ if [ "$rhsfile" ] ; then
     common+=(rhs=$rhsfile)
 fi
 
-for v in tolerate_failure stop_at_step keep_rolling_checkpoints checkpoint_precious skip_online_checks interleaving ; do
-    if [ "${!v}" ] ; then common+=("$v=${!v}") ; fi
-done
+# for v in tolerate_failure stop_at_step keep_rolling_checkpoints checkpoint_precious skip_online_checks interleaving ; do
+#     if [ "${!v}" ] ; then common+=("$v=${!v}") ; fi
+# done
 
-if ! [[ $script_steps =~ magma ]] ; then
-    magma=
-fi
-
-if [ "$magma" ] ; then
-    echo "### Enabling magma checking ###"
+if [ "$sage" ] ; then
     common+=(save_submatrices=1)
-    if [ -d "$magma" ] ; then
-        if [ -x "$magma/magma" ] ; then
-            magma="$magma/magma"
-        else
-            echo "If \$magma is a directory, we want to find \$magma/magma !" >&2
-            exit 1
-        fi
-    fi
 fi
 
-if ! [ "$magma" ] ; then
+if [ "$sage" ] ; then
+    echo "### Enabling SageMath checking ###"
+fi
+
+if ! [ "$sage" ] ; then
     rc=0
     if [[ $script_steps =~ bwc\.pl/([a-z:/]*) ]] ; then
         IFS=/ read -a bwcpl_steps <<< "${BASH_REMATCH[1]}"
@@ -401,7 +415,7 @@ else
         $bindir/bwc.pl :mpirun_single -- $bindir/bwccheck prime=$prime m=$m n=$n -- $wdir/[ACVFS]* > $wdir/bwccheck.log
         grep NOK $wdir/bwccheck.log
     fi
-    set +x
+    eval $old_setx
     if [[ $script_steps =~ bwc\.pl([a-z:/]*) ]] ; then
         if [ "$rc" = 0 ] ; then
             echo " ========== SUCCESS ! bwc.pl returned true ========== "
@@ -415,340 +429,68 @@ else
     fi
 fi
 
-set +x
+eval $old_setx
 
-cmd=`dirname $0`/convert_magma.pl
+sage_check_parameters() { # {{{
+    # Required parameters below this point:
 
-# Required parameters below this point:
+    # wdir
+    # matrix
+    # m
+    # n
+    # prime
 
-# wdir
-# matrix
-# m
-# n
-# prime
-# interval
-# splitwidth
-# cmd (pay attention to dirname $0 above !)
-# rwfile
-# cwfile
-# nullspace
+    for v in wdir matrix m n prime ; do
+        if ! [ "${!v}" ] ; then echo "Missing parameter \$$v" >&2 ; fi
+    done
 
-for v in wdir matrix m n prime interval splitwidth cmd rwfile cwfile nullspace ; do
-    if ! [ "${!v}" ] ; then echo "Missing parameter \$$v" >&2 ; fi
-done
-
-
-# nrows and ncols are also needed, but can be deduced from rwfile and
-# cwfile easily.
-: ${ncols=$((`wc -c < $cwfile` / 4))}
-: ${nrows=$((`wc -c < $rwfile` / 4))}
-
-
-mdir=$wdir
-
-if ! [[ "$mpi,$thr" =~ ^([0-9]*)x([0-9]*),([0-9]*)x([0-9]*)$ ]] ; then
-    echo "bad format for mpi=$mpi and thr=$thr" >&2
-    exit 1
-fi
-
-Nh=$((${BASH_REMATCH[1]}*${BASH_REMATCH[3]}))
-Nv=$((${BASH_REMATCH[2]}*${BASH_REMATCH[4]}))
-
-bfile="`basename $matrix .bin`.${Nh}x${Nv}/`basename $matrix .bin`.${Nh}x${Nv}.bin"
-
-# This is for the **unbalanced** matrix !!
-
-if [ "$prime" = 2 ] ; then
-    magmaprintmode=vector
-else
-    magmaprintmode=spvector64
-fi
-
-: ${nrhs:=0}
-
-print_main_parameters() {
-    echo "m:=$m;n:=$n;interval:=$interval;"
-    echo "nrhs:=$nrhs;"
-}
-print_main_parameters > $mdir/mn.m
-
-echo "Saving matrix to magma format" # {{{
-$cmd weights < $rwfile > $mdir/rw.m
-$cmd weights < $cwfile > $mdir/cw.m
-if [ "$prime" = 2 ] ; then
-    (echo "nc_orig:=$ncols;nr_orig:=$nrows;" ; $cmd bmatrix < $matrix) > $mdir/t.m
-else
-    $cmd bpmatrix_${nrows}_${ncols} < $matrix > $mdir/t.m
-fi
-if ! [ -f "$wdir/$bfile" ] ; then
-    echo "no balancing file found $wdir/$bfile" >&2
-    exit $rc
-fi
-$cmd balancing < "$wdir/$bfile" > $mdir/b.m
-checksum=$(perl -ne '/checksum (\w+)/ && print "$1\n";' < $mdir/b.m)
-echo "ncpad:=nc;nrpad:=nr;nc:=nc_orig;nr:=nr_orig;" >> $mdir/b.m
-if [ "$prime" = 2 ] ; then
-    echo "VS:=KMatrixSpace(GF(2), 64, nr_orig);"
-else
-    echo "VS:=VectorSpace(GF(p), nr_orig);" 
-fi > $mdir/vectorspace.m
-
-placemats() {
-    if [ "$nullspace" = left ] ; then
-        transpose_if_left="Transpose"
-    else
-        transpose_if_left=""
+    if ! [[ "$mpi,$thr" =~ ^([0-9]*)x([0-9]*),([0-9]*)x([0-9]*)$ ]] ; then
+        echo "bad format for mpi=$mpi and thr=$thr" >&2
+        exit 1
     fi
-    cat <<-EOF
-        p:=$prime;
-        nullspace:="$nullspace";
-        xtr:=func<x|$transpose_if_left(x)>;
-        M:=Matrix(GF(p),Matrix (M));
-        nr:=Nrows(M);
-        nc:=Ncols(M);
-        nh:=$Nh;
-        nv:=$Nv;
-        FORCED_ALIGNMENT_ON_MPFQ_VEC_TYPES:=64;
-        MINIMUM_ITEM_SIZE_OF_MPFQ_VEC_TYPES:=4;
-        chunk:=FORCED_ALIGNMENT_ON_MPFQ_VEC_TYPES div MINIMUM_ITEM_SIZE_OF_MPFQ_VEC_TYPES;
-        nr:=nh*nv*(chunk*Ceiling(x/chunk)) where x is Ceiling(Maximum(nr, nc)/(nh*nv));
-        nc:=nr;
-        x:=Matrix(GF(p),nr,nc,[]);InsertBlock(~x,M,1,1);M:=x;
-        nrp:=nv*(chunk*Ceiling(x/chunk)) where x is Ceiling (nr/(nh*nv));
-        ncp:=nh*(chunk*Ceiling(x/chunk)) where x is Ceiling (nc/(nh*nv));
-        Mt:=Matrix(GF(p),nh*nrp,nv*ncp,[]);
-EOF
-    for i in `seq 0 $((Nh-1))` ; do
-        cat <<-EOF
-            nr$i:=nrp; /* nr div nh + ($i lt nr mod nh select 1 else 0); */
-            snr$i:=$i*nrp; /* $i*(nr div nh) + Min($i, nr mod nh); */
-EOF
-        for j in `seq 0 $((Nv-1))` ; do
-            if [ "$prime" = 2 ] ; then
-                $cmd bmatrix < $wdir/${bfile%%.bin}.h$i.v$j.bin > $mdir/t$i$j.m
-            else
-                $cmd bpmatrix < $wdir/${bfile%%.bin}.h$i.v$j.bin > $mdir/t$i$j.m
-            fi
-            cat <<-EOF
-                nc$j:=ncp; /*  div nv + ($j lt nc mod nv select 1 else 0); */
-                snc$j:=$j*ncp; /* (nc div nv) + Min($j, nc mod nv); */
-                load "$mdir/t$i$j.m";
-                M$i$j:=Matrix(GF(p),Matrix(var));
-                x:=RMatrixSpace(GF(p),nr$i,nc$j)!0;
-                InsertBlock(~x,$transpose_if_left(M$i$j),1,1);
-                M$i$j:=x;
-                InsertBlock(~Mt,M$i$j,1+snr$i,1+snc$j);
-EOF
-        done
-    done
-    echo "mlist:=["
-    for i in `seq 0 $((Nh-1))` ; do
-        if [ "$i" != 0 ] ; then echo "," ; fi
-        echo -n "["
-        for j in `seq 0 $((Nv-1))` ; do
-            if [ "$j" != 0 ] ; then echo -n ", " ; fi
-            echo -n "M$i$j";
-        done
-        echo -n "]"
-    done
-    echo "];"
-}
 
-placemats > $mdir/placemats.m
+    Nh=$((${BASH_REMATCH[1]}*${BASH_REMATCH[3]}))
+    Nv=$((${BASH_REMATCH[2]}*${BASH_REMATCH[4]}))
+}
 # }}}
 
-echo "Saving vectors to magma format" # {{{
-$cmd x $wdir/X > $mdir/x.m
-
-# prints to stdout magma code defining all vectors V whose iteration
-# number is equal to the first specified parameter.
-# The second parameter tells which is the name of the magma variable
-# where this is put.
-print_all_v() {
-    echo "$2:=[VS|];"
-    for j in `seq 0 $splitwidth $((n-1))` ; do
-        let j1=j+splitwidth
-        if ! [ -f $wdir/V${j}-${j1}.$1 ] ; then
-            break;
-        fi
-        $cmd $magmaprintmode < $wdir/V${j}-${j1}.$1 > $mdir/V${j}-${j1}.$1.m
-        cat <<-EOF
-        load "$mdir/V${j}-${j1}.${1}.m";
-        Append(~$2, g(var));
-EOF
-    done
-}
-
-# When magma debug has been activated, we normally have the first 10
-# iterates of each sequence.
-echo "VV:=[];" > $mdir/VV.m
-for i in {0..10} ; do
-    ii=$((i*interval))
-    print_all_v $ii V_$ii > $mdir/V.$ii.m
-    if ! [ -f $mdir/V0-$splitwidth.$ii.m ] ; then
-        break;
+if [ "$sage" ] ; then
+    sage_check_parameters
+    cd `dirname "$0"`
+    export PYTHONUNBUFFERED=true
+    check_script_diagnostic_fd=1
+    if [ "$FORCE_BWC_EXTERNAL_CHECKS_OUTPUT_ON_FD3" ] && (exec 1>&3) 2>&- ; then
+        check_script_diagnostic_fd=3
     fi
-    cat >> $mdir/VV.m <<-EOF
-    load "$mdir/V.$ii.m";
-    Append(~VV, V_$ii);
-EOF
-done
-# }}}
-
-echo "Saving check vectors to magma format" # {{{
-if [ -f "$wdir/Cv0-$splitwidth.0" ] ; then
-    $cmd $magmaprintmode < $wdir/Cv0-$splitwidth.0 > $mdir/Cv0.m
-    $cmd $magmaprintmode < $wdir/Cv0-$splitwidth.$interval > $mdir/Cvi.m
-else
-    echo "var:=0;" > $mdir/Cv0.m
-    echo "var:=0;" > $mdir/Cvi.m
-fi
-if [ -f "$wdir/Cd0-$splitwidth.$interval" ] ; then
-    $cmd $magmaprintmode < $wdir/Cd0-$splitwidth.$interval > $mdir/Cdi.m
-else
-    echo "var:=0;" > $mdir/Cdi.m
-fi
-if [ -f "$wdir/Cr0-$splitwidth.0-$splitwidth" ] ; then
-    $cmd $magmaprintmode < $wdir/Cr0-$splitwidth.0-$splitwidth > $mdir/Cr.m
-else
-    echo "var:=0;" > $mdir/Cr.m
-fi
-if [ -f "$wdir/Ct0-$splitwidth.0-$m" ] ; then
-    $cmd $magmaprintmode < $wdir/Ct0-$splitwidth.0-$m > $mdir/Ct.m
-else
-    echo "var:=0;" > $mdir/Ct.m
-fi
-# }}}
-
-echo "Saving krylov sequence to magma format" # {{{
-# in case $(basename $wdir) matches the format string, we want to also
-# check for being a regular file.
-afile=(`find $wdir -name 'A*[0-9]' -a -type f`)
-if [ "${#afile[@]}" != 1 ] ; then
-    echo "########## FAILURE ! Krylov sequence not finished #############"
-    find $wdir -name 'A*[0-9]' -a -type f | xargs -r -n 1 echo "### Found file "
-else
-    afile=$(basename "${afile[0]}")
-    $cmd $magmaprintmode < $wdir/$afile > $mdir/A.m
-fi
-# }}}
-
-echo "Saving linear generator to magma format" # {{{
-#    $cmd spvector64 < $wdir/$afile.gen > $mdir/F.m
-#    if [ -f $wdir/$afile.gen.rhs ] ; then
-#        $cmd spvector64 < $wdir/$afile.gen.rhs > $mdir/rhscoeffs.m
-#    else
-#        # We must create an empty file, because otherwise magma won't accept
-#        # "load" being conditional...
-#        echo > $mdir/rhscoeffs.m
-#    fi
-    # Ffiles=(`ls $wdir | perl -ne '/^F.sols\d+-\d+.\d+-\d+$/ && print;' | sort -n`)
-
-print_all_Ffiles() {
-    echo "Fchunks:=[];";
-    echo "Rchunks:=[];";
-    # Solutions correspond to *columns* of F, so let us be consistent
-    # and use that everywhere, including in the format of the data we
-    # pass to magma for verification.
-    for j in `seq 0 $splitwidth $((n-1))` ; do
-        let j1=j+splitwidth
-        echo "Fj:=[];"
-        echo "Rj:=[];"
-        for s in `seq 0 $splitwidth $((n-1))` ; do
-            let s1=s+splitwidth
-            basename=F.sols${s}-${s1}.${j}-${j1}
-            if [ -f "$wdir/$basename" ] ; then
-            $cmd $magmaprintmode < $wdir/$basename > $mdir/$basename.m
-            cat <<-EOF
-                load "$mdir/$basename.m";
-                Append(~Fj, g(var));
-EOF
-            if [ "$nrhs" ] ; then
-                if [ "$j" -lt "$nrhs" ] ; then
-                    basename=F.sols${s}-${s1}.${j}-${j1}.rhs
-                    $cmd $magmaprintmode < $wdir/$basename > $mdir/$basename.m
-                    cat <<-EOF
-                        load "$mdir/$basename.m";
-                        Append(~Rj, g(var));
-EOF
-                fi
+    sage_args=( m=$m n=$n p=$prime
+                wdir=$wdir
+                nh=$Nh nv=$Nv
+    )
+    if [ "$wordsize" != 64 ] ; then sage_args+=(wordsize=$wordsize) ; fi
+    if [ "$multi_matrix" ] ; then sage_args+=(multi_matrix=$multi_matrix) ; fi
+    rewritten_matrix=$matrix
+    # if matrices aren't in /tmp, then our weird docker-based sagemath
+    # won't be able to find them.
+    if ! [[ $matrix =~ ^/tmp ]] && [[ $mats =~ /tmp ]] ; then
+        # $mats seems like a well adapter place.
+        ms=($matrix)
+        if [ "$multi_matrix" ] ; then
+            ms=($(tr , ' ' <<<$matrix))
+        fi
+        rms=()
+        rewritten_matrix=
+        for m in "${ms[@]}" ; do
+            cp -vf ${m%%bin}{rw.bin,cw.bin,bin} $mats
+            rms+=($mats/`basename $m`)
+            if [ "$rewritten_matrix" ] ; then
+                rewritten_matrix="${rewritten_matrix},"
             fi
-            fi
+            rewritten_matrix="${rewritten_matrix}$mats/`basename $m`"
         done
-        echo "Append(~Fchunks, Fj);"
-        if [ "$j" -lt "$nrhs" ] ; then
-            echo "Append(~Rchunks, Rj);"
-        fi
-    done
-}
-print_all_Ffiles > $mdir/Fchunks.m
-# }}}
-
-echo "Saving mksol data to magma format" # {{{
-
-echo "vars:=[];" > $mdir/S.m
-for i in `seq 0 $splitwidth $((n-1))` ; do
-    k=0;
-    echo "solvars:=[];" >> $mdir/S.m
-    while true ; do
-        k0=$k
-        k1=$((k+interval))
-        let i1=i+splitwidth
-        binfile="S.sols${i}-${i1}.${k0}-${k1}"
-        magmafile="S${i}.${k0}-${k1}.m"
-        if ! [ -f "$wdir/$binfile" ] ; then
-            break
-        fi
-        $cmd $magmaprintmode < "$wdir/$binfile" > "$mdir/$magmafile"
-        echo "load \"$mdir/$magmafile\"; Append(~solvars, var);" >> "$mdir/S.m"
-        let k=k1
-    done
-    if [ $k = 0 ] ; then
-        break
-    else
-        echo "Append(~vars, solvars);" >>  $mdir/S.m
     fi
-done
-
-echo "Saving gather data to magma format"
-echo "vars:=[];" > $mdir/K.m
-(cd $wdir ; find  -name K.sols\*[0-9]) | while read f ; do
-    $cmd $magmaprintmode < $wdir/$f > $mdir/$f.m
-    echo "load \"$mdir/$f.m\"; Append(~vars, var);" >> $mdir/K.m
-done
-# }}}
-
-#if [ "$prime" = 2 ] ; then
-#    convert_and_display() {
-#        text="$1"
-#        pattern="$2"
-#        terse="$3"
-#        n=($(find $wdir -maxdepth 1 -name "$pattern"'*' -a \! -name '*.m' -printf '%f\n'))
-#        echo -n "Saving $text to magma format ; ${#n[@]} files"
-#        if ! [ "$terse" ] && [ "${#n[@]}" -lt 10 ] && [ "${#n[@]}" -gt 0 ] ; then echo -n ": ${n[@]}" ; fi
-#        echo
-#        for f in "${n[@]}" ; do $cmd vector < $wdir/$f > $mdir/`basename $f`.m ; done
-#    }
-#
-#    convert_and_display "check vectors" "H"
-#    # convert_and_display "krylov sequence" "[AY]"
-#    # convert_and_display "linear generator" "F"
-#    # convert_and_display "mksol sequence" "S"
-#    convert_and_display "gather data" "[WK]"
-#
-#else
-#    :
-#fi
-
-echo "Running magma verification script"
-
-s="`dirname $(readlink -f $0)`/bwc-ptrace.m"
-cd $wdir
-# magma does not exit with a useful return code, so we have to grep its
-# output.
-$magma -b $s < /dev/null | tee magma.out | grep -v '^Loading'
-if egrep -q "(Runtime error|Assertion failed)" magma.out ; then
-    exit 1
+    sage_args+=(matrix=$rewritten_matrix)
+    if [ "$CADO_DEBUG" ] ; then set -x ; fi
+    set -eo pipefail
+    "$sage" bwc.sage "${sage_args[@]}" >&${check_script_diagnostic_fd}
+    eval $old_setx
 fi
-
-exit $rc

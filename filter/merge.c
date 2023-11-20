@@ -1406,6 +1406,17 @@ apply_merges (index_t *possible_merges, index_t total_merges,
     }  /* for */
   } /* parallel section */
 
+  if (nmerges == 0 && total_merges > 0)
+  {
+    /* This can happen when we get a circular dependency between the row
+       locks. In that case we simply apply the first merge.
+       See https://gitlab.inria.fr/cado-nfs/cado-nfs/-/issues/30069. */
+    index_t id = possible_merges[0];
+    fill_in += merge_do(L, R, mat, id, Buf);
+    nmerges ++;
+    ASSERT(mat->Rp[id + 1] - mat->Rp[id] <= MERGE_LEVEL_MAX);
+  }
+
   mat->tot_weight += fill_in;
   /* each merge decreases the number of rows and columns by one */
   mat->rem_nrows -= nmerges;

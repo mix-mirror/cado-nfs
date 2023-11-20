@@ -5,6 +5,7 @@ use strict;
 use POSIX qw/getcwd/;
 use File::Basename;
 use File::Temp qw/tempdir tempfile mktemp/;
+use File::Spec;
 use List::Util qw/max/;
 # do not include Data::Dumper except for debugging.
 # use Data::Dumper;
@@ -53,7 +54,10 @@ simd                 SIMD width to be used for krylov (ys=) and mksol,
                      prime=2 or 1 otherwise
 lingen_mpi           like mpi, but for lingen only
 
-matrix               input matrix file. Must be a complete path. Binary, 32-b LE
+matrix               input matrix file. Must be a complete path.
+                     The expected format is binary, 32-b LE
+multi_matrix         Tell if the matrix argument must be interpreted as a
+                     comma-separated list of matrices.
 rhs                  rhs file for inhomogeneous systems (ascii with header)
                      Note that inhomogeneous systems over GF(2) are not
                      supported yet (but we're not that far), and the file
@@ -192,6 +196,7 @@ my $nv;
 
 my $wdir;
 my $matrix;
+my $multi_matrix;
 my $random_matrix;
 my $rhs;
 my $nrhs=0;
@@ -224,7 +229,7 @@ my $stop_at_step;
 
 my $hostfile;
 my @hosts=();
-my $mpi;
+my @mpi_path=();
 my $mpi_ver;
 my $needs_mpd;
 # }}}
@@ -279,6 +284,7 @@ while (my ($k,$v) = each %$param) {
     # the bwc programs, so we'll set a variable based on their value, and
     # also copy them to the @main_args array.
     if ($k eq 'matrix') { $matrix=$v; }
+    if ($k eq 'multi_matrix') { $multi_matrix=$v; }
     if ($k eq 'random_matrix') { $random_matrix=$v; }
     # Some parameters which are simply _not_ relevant to the bwc programs.
     if ($k eq 'hostfile') { $hostfile=$v; next; }
@@ -355,7 +361,7 @@ if ($main =~ /^:(?:mpi|s)run(?:_single)?$/) {
     # magic in this script, which we would like to use. So the :mpirun
     # meta-command is just for that. Of course the argument requirements
     # are mostly waived in this case.
-    $matrix=$param->{'matrix'}=$0;
+    $matrix=$param->{'matrix'}=$0; ## XXX why $0 ????
     $param->{'prime'}=2;
     $param->{'simd'}=$simd=64;
     $m=$n=64;
@@ -379,9 +385,16 @@ if ($main =~ /^:(?:mpi|s)run(?:_single)?$/) {
     }
 }
 
-if (defined($param->{'matrix'})) {
-    $param->{'matrix'} =~ s/~/$ENV{HOME}/g;
-    die "$param->{'matrix'}: $!" unless -f $param->{'matrix'};
+sub list_of_matrices {
+    return unless defined $matrix;
+    my @ms = ($matrix);
+    @ms = split(",", $matrix) if $multi_matrix;
+    return @ms;
+}
+
+for my $x (list_of_matrices) {
+    $x =~ s/~/$ENV{HOME}/g;
+    die "$x: $!" unless -f $x;
 }
 
 if ($prime == 2 && (($m % 64 != 0) || ($n % 64 != 0))) {
@@ -435,7 +448,8 @@ if ($m % $lingen_mpi_split[0] != 0 || $n % $lingen_mpi_split[0] != 0) {
 
 if (!defined($random_matrix)) {
     if (!defined($param->{'wdir'}) && defined($param->{'matrix'})) {
-        # ok, we're doing this a bit ahead of time
+        # ok, we're doing this a bit ahead of time.
+        die "Please specify wdir"; # i'm not even sure we ever use this code path. And do we want it, really?
         $wdir=$param->{'wdir'}="$param->{'matrix'}-${nh}x${nv}";
         push @main_args, "wdir=$wdir";
     }
@@ -586,7 +600,10 @@ my @mpi_precmd_single;
 my @mpi_precmd_lingen;
 
 
+# This now has $mpi a local variable, and the array @mpi_path
+#
 sub detect_mpi {
+    my $mpi;
     if (defined($_=$ENV{'MPI_BINDIR'}) && -x "$_/mpiexec") {
         $mpi=$_;
     } elsif (defined($_=$ENV{'MPI'}) && -x "$_/mpiexec") { 
@@ -612,6 +629,7 @@ sub detect_mpi {
     # From standard mpi-3 on, the name has returned to mpich.
     my $maybe_mpich=1;
     my $maybe_openmpi=1;
+    my $maybe_intelmpi=1;
 
     if (defined($mpi)) {
         SEVERAL_CHECKS: {
@@ -630,29 +648,34 @@ sub detect_mpi {
                     print STDERR "Auto-detecting openmpi based on alternatives\n";
                     $maybe_mvapich2=0;
                     $maybe_mpich=0;
+                    $maybe_intelmpi=0;
                     last;
                 } elsif ($mpiexec =~ /mpich2/) {
                     print STDERR "Auto-detecting mpich2(old) based on alternatives\n";
                     $maybe_mpich='mpich2';
                     $maybe_mvapich2=0;
                     $maybe_openmpi=0;
+                    $maybe_intelmpi=0;
                     last;
                 } elsif ($mpiexec =~ /mpich/) {
                     print STDERR "Auto-detecting mpich based on alternatives\n";
                     $maybe_mvapich2=0;
                     $maybe_openmpi=0;
+                    $maybe_intelmpi=0;
                     last;
                 } elsif ($mpiexec =~ /hydra/) {
                     # Newer mvapich2 uses hydra as well...
                     print STDERR "Auto-detecting mpich or mvapich2 (hydra) or intel mpi (hydra) based on alternatives\n";
                     $maybe_mvapich2='hydra';
                     $maybe_mpich='hydra';
+                    $maybe_intelmpi='hydra';
                     $maybe_openmpi=0;
                     last;
                 } elsif ($mpiexec =~ /mvapich2/) {
                     print STDERR "Auto-detecting mvapich2 based on alternatives\n";
                     $maybe_mpich=0;
                     $maybe_openmpi=0;
+                    $maybe_intelmpi=0;
                     last;
                 }
             }
@@ -747,6 +770,22 @@ sub detect_mpi {
                     }
                 }
             }
+            CHECK_INTELMPI_VERSION: {
+                # there's an impi_info binary, but it seems to be mostly
+                # useless
+                if ($maybe_intelmpi && -x "$mpi/mpicc") {
+                    my @v = `$mpi/mpicc -v`;
+                    my @vv = grep { /Intel.*MPI.*Library/i } @v;
+                    last CHECK_INTELMPI_VERSION unless scalar @vv == 1;
+                    if ($vv[0] =~ /Intel.*MPI.*Library\s*(\S+)/i) {
+                        $mpi_ver="intelmpi-$1";
+                        last SEVERAL_CHECKS;
+                    } else {
+                        $mpi_ver="intelmpi-UNKNOWN";
+                        last SEVERAL_CHECKS;
+                    }
+                }
+            }
         }
 
         if (defined($mpi_ver)) {
@@ -777,6 +816,13 @@ EOMSG
         print "## setting MV2_ENABLE_AFFINITY=0 (for mvapich2)\n";
         $ENV{'MV2_ENABLE_AFFINITY'}=0;
     }
+
+    @mpi_path=($mpi);
+
+    if ($mpi_ver =~ /openmpi/ && $mpi =~ m{^/*bin/*}) {
+        print STDERR "Rewriting MPI prefix to just nothing\n";
+        @mpi_path=();
+    }
 }
 
 # Starting daemons for mpich2 1.[012].x and mvapich2 ; we're assuming
@@ -788,18 +834,20 @@ sub check_mpd_daemons
 
     my $ssh = ssh_program();
 
-    my $rc = system "$mpi/mpdtrace > /dev/null 2>&1";
+    my $mpdtrace = File::Spec->catfile(@mpi_path, "mpdtrace");
+    my $mpdboot = File::Spec->catfile(@mpi_path, "mpdboot");
+    my $rc = system "$mpdtrace > /dev/null 2>&1";
     if ($rc == 0) {
         print "mpi daemons seem to be ok\n";
         return;
     }
 
     if ($rc == -1) {
-        die "Cannot execute $mpi/mpdtrace";
+        die "Cannot execute $mpdtrace";
     } elsif ($rc & 127) {
-        die "$mpi/mpdtrace died with signal ", ($rc&127);
+        die "$mpdtrace died with signal ", ($rc&127);
     } else {
-        print "No mpi daemons found by $mpi/mpdtrace, restarting\n";
+        print "No mpi daemons found by $mpdtrace, restarting\n";
     }
 
     open F, $hostfile;
@@ -810,7 +858,7 @@ sub check_mpd_daemons
     close F;
     my $n = scalar keys %hosts;
     print "Running $n mpi daemons\n";
-    dosystem "$mpi/mpdboot -n $n -r $ssh -f $hostfile -v";
+    dosystem "$mpdboot -n $n -r $ssh -f $hostfile -v";
 }
 
 sub get_mpi_hosts_oar {
@@ -931,7 +979,7 @@ if ($mpi_needed) {
     } else {
         # Otherwise we'll start via mpiexec, and we need to be informed
         # on the list of nodes.
-        push @mpi_precmd, "$mpi/mpiexec";
+        push @mpi_precmd, File::Spec->catfile(@mpi_path, "mpiexec");
 
         my $auto_hostfile_pattern="/tmp/cado-nfs.hosts_XXXXXXXX";
 
@@ -1258,13 +1306,13 @@ sub rename_file_on_leader {
     }
 }
 
-
-# {{{ get_cached_bfile -> check for balancing file.
-sub get_cached_bfile {
+# {{{ get_cached_bfiles -> check for balancing file (or files, in the
+# multi_matrix case)
+sub get_cached_bfiles {
     my $key = 'balancing';
     return undef if defined($random_matrix);
     if ($param->{$key}) {
-        $cache->{$key}=$param->{$key};
+        $cache->{$key}=[$param->{$key}];
     }
     if (defined(my $z = $cache->{$key})) {
         return $z;
@@ -1273,34 +1321,51 @@ sub get_cached_bfile {
     # don't really mind if they don't see the balancing file.
     # sense.
     my $pat;
-    my $x = $matrix;
-    $x =~ s{^(?:.*/)?([^/]+)$}{$1};
-    $x =~ s/\.(?:bin|txt)$//;
-    my $bfile = "$wdir/$x.${nh}x${nv}/$x.${nh}x${nv}.bin";
-    if (!-f $bfile) {
-        print STDERR "$bfile: not found\n";
-        return undef;
+    my @bs = ();
+    my $swap_wirings = 0;
+    for my $x (list_of_matrices) {
+        $x =~ s{^(?:.*/)?([^/]+)$}{$1};
+        $x =~ s/\.(?:bin|txt)$//;
+        my $nhnv = "${nh}x${nv}";
+        $nhnv = "${nv}x${nh}" if $swap_wirings;
+        my $bfile = "$wdir/$x.${nhnv}/$x.${nhnv}.bin";
+        if (!-f $bfile) {
+            print STDERR "$bfile: not found\n";
+            return undef;
+        }
+        push @bs, $bfile;
+        $swap_wirings = 1 - $swap_wirings;
     }
-    $cache->{$key} = $bfile;
-    return $bfile;
+    $cache->{$key} = \@bs;
+    return \@bs;
 }
 # }}}
 
-sub get_cached_balancing_header {
+sub get_cached_balancing_headers {
     return undef if defined $random_matrix;
-    my $key = 'balancing_header';
+    my $key = 'balancing_headers';
     if (defined(my $z = $cache->{$key})) { return @$z; }
-    defined(my $balancing = get_cached_bfile) or confess "\$balancing undefined";
-    sysopen(my $fh, $balancing, O_RDONLY) or die "$balancing: $!";
-    sysread($fh, my $bhdr, 24);
-    my @x = unpack("LLLLLL", $bhdr);
-    my $zero = shift @x;
-    die "$balancing: no leading 32-bit zero" unless $zero == 0;
-    my $magic = shift @x;
-    die "$balancing: bad file magic" unless $magic == 0xba1a0000;
-    $cache->{$key} = \@x;
-    close($fh);
-    return @x;
+    defined(my $balancings = get_cached_bfiles) or confess "\$balancings undefined";
+    my @bhs;
+    for my $balancing (@$balancings) {
+        sysopen(my $fh, $balancing, O_RDONLY) or die "$balancing: $!";
+        # We're only reading a small part of the header.
+        sysread($fh, my $bhdr, 24);
+        my @x = unpack("L2L4", $bhdr);
+        my $zero = shift @x;
+        die "$balancing: no leading 32-bit zero" unless $zero == 0;
+        my $magic = shift @x;
+        die "$balancing: bad file magic" unless ($magic == 0xba1a0001 || $magic == 0xba1a0000);
+        push @bhs, {
+            nh=>$x[0],
+            nv=>$x[1],
+            bnrows=>$x[2],
+            bncols=>$x[3]
+        };
+        close($fh);
+    }
+    $cache->{$key} = \@bhs;
+    return \@bhs;
 }
 sub get_nrows_ncols {
     my $key = 'nrows_ncols';
@@ -1324,29 +1389,30 @@ sub get_nrows_ncols {
     }
 
 
-    if (defined(my $z = $cache->{'balancing_header'})) {
-        my @x = @$z;
-        shift @x;
-        shift @x;
-        $cache->{$key} = \@x;
-        return @x;
-    }
-    if (defined(my $balancing = get_cached_bfile)) {
-        my ($bnh, $bnv, $bnrows, $bncols) = get_cached_balancing_header;
+    if (defined(my $bhs = get_cached_balancing_headers)) {
+        my $bnrows = $bhs->[0]->{'bnrows'};
+        my $bncols = $bhs->[$#$bhs]->{'bncols'};
         my @x = ($bnrows, $bncols);
         $cache->{$key} = \@x;
         return @x;
     }
-    (my $mrw = $matrix) =~ s/(\.(?:bin|txt))$/.rw$1/;
-    (my $mcw = $matrix) =~ s/(\.(?:bin|txt))$/.cw$1/;
-    if ($mrw ne $matrix && $mcw ne $matrix && -f $mrw && -f $mcw) {
-        my $nrows = ((stat $mrw)[7] / 4);
-        my $ncols = ((stat $mcw)[7] / 4);
-        my @x = ($nrows, $ncols);
-        $cache->{$key} = \@x;
-        return @x;
+    my @nrncs=();
+    for my $x (list_of_matrices) {
+        (my $mrw = $x) =~ s/(\.(?:bin|txt))$/.rw$1/;
+        (my $mcw = $x) =~ s/(\.(?:bin|txt))$/.cw$1/;
+        if ($mrw ne $x && $mcw ne $x && -f $mrw && -f $mcw) {
+            my $nrows = ((stat $mrw)[7] / 4);
+            my $ncols = ((stat $mcw)[7] / 4);
+            push @nrncs, [$nrows, $ncols];
+        } else {
+            confess "Cannot find any way to get nrows and ncols for $x ???";
+        }
     }
-    confess "Cannot find nrows and ncols ???";
+    my $nrows = $nrncs[0]->[0];
+    my $ncols = $nrncs[$#nrncs]->[1];
+    my @x = ($nrows, $ncols);
+    $cache->{$key} = \@x;
+    return @x;
 }
 # }}}
 
@@ -1518,7 +1584,7 @@ sub task_common_run {
     # We start with lingen, because it's slightly specific
     # take out the ones we don't need (and acollect shares some
     # peculiarities).
-    @_ = grep !/^(skip_bw_early_rank_check|rebuild_cache|cpubinding|balancing.*|interleaving|matrix|mm_impl|mpi|thr)?=/, @_ if $program =~ /(lingen|acollect$)/;
+    @_ = grep !/^(skip_bw_early_rank_check|rebuild_cache|cpubinding|balancing.*|interleaving|matrix|mm_impl|mpi|thr|multi_matrix)?=/, @_ if $program =~ /(lingen|acollect$)/;
     if ($program =~ /lingen/) {
         @_ = map { s/^lingen_mpi\b/mpi/; $_; } @_;
     } else {
@@ -1829,7 +1895,7 @@ sub subtask_secure {
 sub task_dispatch {
     task_begin_message;
     return if defined $random_matrix;
-    if (defined(get_cached_bfile)) {
+    if (defined(get_cached_bfiles)) {
         task_check_message 'ok', "All balancing files are present, good.\n";
         return;
     }
@@ -2068,7 +2134,7 @@ sub task_lingen {
     if (! -f "$wdir/$concatenated_A.gen") {
         if ($prime == 2) {
             push @args, "tuning_thresholds=recursive:128,ternary:6400,cantor:6400,notiming:0";
-            task_common_run("lingen_u64k1", @args);
+            task_common_run("lingen_b64", @args);
         } else {
             push @args, "tuning_thresholds=recursive:10,flint:10,notiming:0";
             task_common_run("lingen_pz", @args);

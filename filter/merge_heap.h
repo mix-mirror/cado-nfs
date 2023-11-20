@@ -69,9 +69,6 @@ void heap_garbage_collection(heapctx_t ctx, typerow_t **rows);
 /* Deallocate all rows. Does not release memory (it remains available for row allocation) */
 void heap_reset (heapctx_t ctx);
 
-/* Deallocate all rows. Does not release memory (it remains available for row allocation) */
-void heap_reset ();
-
 /* release all memory. This is technically not necessary, because the "malloc"
 	allocations are internal to the process, and all space allocated to the
 	process is reclaimed by the OS on termination. However, doing this enables
