@@ -142,8 +142,8 @@ i is written in decimal, h in hexadecimal
 File XXX.index
 ==============
 
-Is is created by replay, and contains the link between the rows of the
-small matrix (coming out from merge/replay) and the relation sets to
+Is is created by replay/replay-dl, and contains the link between the rows of
+the small matrix (coming out from merge/replay) and the relation sets to
 which they correspond.
 
 The first line gives the number of rows (relation-sets) after the merge/replay
@@ -158,6 +158,8 @@ purged.gz file.
 For DL, each entry is of the form id:e, where id is the index in the
 purged.gz file, and e is the exponent of the corresponding relation in
 the relation-set.
+
+The index file is used as input for: sm, characters, sqrt.
 
 Files XXX.sparse.{txt|bin} and XXX.sparse.{rw|cw}.{txt|bin}
 ===========================================================

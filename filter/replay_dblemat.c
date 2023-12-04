@@ -30,6 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include <string.h>
 #include <inttypes.h>		// for PRIu64, PRIu32, PRIx64
 #include <stdint.h>		// for uint64_t, uint32_t, UINT32_MAX
+#include <libgen.h>
 #include "purgedfile.h"		// for purgedfile_read_firstline
 #include "typedefs.h"		// for index_t, ideal_merge_t, index_signed_t
 #include "filter_config.h"
@@ -762,8 +763,7 @@ static void declare_usage(param_list pl)
 {
 	param_list_decl_usage(pl, "purged", "input purged file");
 	param_list_decl_usage(pl, "his", "input history file");
-	param_list_decl_usage(pl, "outL", "basename for left output matrices");
-	param_list_decl_usage(pl, "outR", "basename for right output matrices");
+	param_list_decl_usage(pl, "out", "basename for output matrices");
 #ifndef FOR_DL
 	param_list_decl_usage(pl, "skip", "number of heaviest columns that go to the " "dense matrix (default " CADO_STRINGIZE(DEFAULT_MERGE_SKIP) ")");
 #endif
@@ -782,6 +782,21 @@ static void usage(param_list pl, char *argv0)
 	exit(EXIT_FAILURE);
 }
 
+/* convert dirname/basename into dirname/Xbasename */
+static void
+make_out (char *s, const char *out, const char X)
+{
+  char *d, *b;
+  char copy[1024];
+  strcpy (copy, out); // dirname might modify its argument
+  d = dirname (copy);
+  strcpy (copy, out); // dirname might modify its argument
+  b = basename (copy);
+  strcpy (s, d);
+  int n = strlen (d);
+  s[n] = X;
+  strcpy (s + n + 1, b);
+}
 
 // We start from M_purged which is nrows x ncols;
 int main(int argc, char *argv[])
@@ -827,9 +842,9 @@ int main(int argc, char *argv[])
 
 	const char *purgedname = param_list_lookup_string(pl, "purged");
 	const char *hisname = param_list_lookup_string(pl, "his");
-	const char *sparseLname = param_list_lookup_string(pl, "outL");
-	const char *sparseRname = param_list_lookup_string(pl, "outR");
-	// const char *indexname = param_list_lookup_string(pl, "index");
+	const char *sparsename = param_list_lookup_string(pl, "out");
+        char sparseLname[1024], sparseRname[1024];
+	const char MAYBE_UNUSED *indexname = param_list_lookup_string(pl, "index");
 	const char *idealsfilename = param_list_lookup_string(pl, "ideals");
 	param_list_parse_int(pl, "skip", &skip);
 	const char *path_antebuffer = param_list_lookup_string(pl, "path_antebuffer");
@@ -848,8 +863,8 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "Error, missing -his command line argument\n");
 		usage(pl, argv0);
 	}
-	if (sparseLname == NULL || sparseRname == NULL) {
-		fprintf(stderr, "Error, both -outL and --outR are required\n");
+	if (sparsename == NULL) {
+		fprintf(stderr, "Error, -out is required\n");
 		usage(pl, argv0);
 	}
 #ifdef FOR_DL
@@ -869,6 +884,9 @@ int main(int argc, char *argv[])
           bin = 0;
           printf ("# Output matrices will be written in text format\n");
         }
+
+	make_out (sparseLname, sparsename, 'L');
+	make_out (sparseRname, sparsename, 'R');
 
 	set_antebuffer_path(argv0, path_antebuffer);
 
