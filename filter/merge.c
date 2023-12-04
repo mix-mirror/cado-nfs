@@ -1845,7 +1845,7 @@ main (int argc, char *argv[])
 			mat->cwmax++;
                 }
 	} else {
-#define INCREASE_RATIO 0.0035
+#define INCREASE_RATIO 0.005
           /* we only increase cwmax when nmerges is below a given proportion
              of the matrix size */
           if (mat->cwmax < MERGE_LEVEL_MAX &&
