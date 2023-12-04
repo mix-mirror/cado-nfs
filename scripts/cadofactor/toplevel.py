@@ -709,6 +709,14 @@ class Cado_NFS_toplevel(object):
 
         db_state.state["workdir"]=wdir
 
+    def set_double_matrix(self):
+        pa=self.parameters
+        t=pa.get_or_set_default("tasks.filter.merge.double_matrix", 0)
+        if t==0:
+           self.logger.info("Using single matrix")
+        else:
+           self.logger.info("Using double matrix")
+
     def set_threads_and_client_threads(self):
         ''' This function processes the --client-threads argument and
         sets the parameters tasks.polyselect.threads and
@@ -1179,6 +1187,7 @@ class Cado_NFS_toplevel(object):
         self.parameters.readparams(self.args.options)
         self.access_or_create_workdir_and_db()
         self.set_threads_and_client_threads()
+        self.set_double_matrix()
         self.set_slaves_parameters()
         # convert some more command-line args to parameters:
         if self.args.dlp:
