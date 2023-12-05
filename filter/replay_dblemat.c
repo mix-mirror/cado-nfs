@@ -447,15 +447,17 @@ writeIndex(const char *indexname, typerow_t **rows, index_t small_nrows)
     fprintf(indexfile, "%" PRIu64 "\n", (uint64_t) small_nrows);
 
     for (index_t i = 0; i < small_nrows; ++i) {
-    	typerow_t *row = rows[i];
-    	index_t row_length = row[0];
+    	typerow_t MAYBE_UNUSED *row = rows[i];
+    	index_t row_length = rowLength(rows, i);
         ASSERT (row_length > 0);
         fprintf(indexfile, "%d", row_length);
         for (unsigned int j = 1; j <= row_length; j++) {
 #ifdef FOR_DL
+#if 0 /* does not compile, index_data is undefined */          
             fprintf(indexfile, " %" PRIx64 ":%d",
                     (uint64_t) index_data[i].rels[j].ind_row,
                     index_data[i].rels[j].e);
+#endif
 #else
             fprintf(indexfile, " %" PRIx64 "", (uint64_t) row[j]);
 #endif
