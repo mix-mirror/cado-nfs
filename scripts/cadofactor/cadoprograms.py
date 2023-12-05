@@ -988,23 +988,44 @@ class MergeDLP(Program):
 
 # Todo: define is_input_file/is_output_file for remaining programs
 class Replay(Program):
-    binary = "replay"
+    pa=Parameter
+    t=Parameter("tasks.filter.merge.double_matrix")
+    if t==0:
+        binary = "replay"
+        def __init__(self,
+                     purged: Parameter()=None,
+                     history: Parameter("his")=None,
+                     index: Parameter()=None,
+                     out: Parameter()=None,
+                     for_msieve: Toggle()=None,
+                     skip: Parameter(checktype=int)=None,
+                     force_posix_threads: Toggle("force-posix-threads")=None,
+                     bwcostmin: Parameter(checktype=int)=None,
+                     **kwargs):
+            super().__init__(locals(), **kwargs)
+    else:
+        binary = "replay-dblemat"
+        def __init__(self,
+                     purged: Parameter()=None,
+                     history: Parameter("his")=None,
+                     index: Parameter()=None,
+                     out: Parameter()=None,
+                     for_msieve: Toggle()=None,
+                     skip: Parameter(checktype=int)=None,
+                     force_posix_threads: Toggle("force-posix-threads")=None,
+                     bwcostmin: Parameter(checktype=int)=None,
+                     **kwargs):
+            super().__init__(locals(), **kwargs)
     name = binary
     subdir = "filter"
-    def __init__(self,
-                 purged: Parameter()=None,
-                 history: Parameter("his")=None,
-                 index: Parameter()=None,
-                 out: Parameter()=None,
-                 for_msieve: Toggle()=None,
-                 skip: Parameter(checktype=int)=None,
-                 force_posix_threads: Toggle("force-posix-threads")=None,
-                 bwcostmin: Parameter(checktype=int)=None,
-                 **kwargs):
-        super().__init__(locals(), **kwargs)
 
 class ReplayDLP(Program):
-    binary = "replay-dl"
+    pa=Parameter
+    t=Parameter("tasks.filter.merge.double_matrix")
+    if t==0:
+        binary = "replay-dl"
+    else:
+        binary = "replay-dblemat-dl"
     name = binary
     subdir = "filter"
     def __init__(self,
