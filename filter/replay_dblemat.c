@@ -30,7 +30,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include <string.h>
 #include <inttypes.h>		// for PRIu64, PRIu32, PRIx64
 #include <stdint.h>		// for uint64_t, uint32_t, UINT32_MAX
-#include <libgen.h>
+// #include <libgen.h>
 #include "purgedfile.h"		// for purgedfile_read_firstline
 #include "typedefs.h"		// for index_t, ideal_merge_t, index_signed_t
 #include "filter_config.h"
@@ -145,7 +145,8 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 	scwname = derived_filename(base, suf->scw, zip);
 	smatfile = fopen(smatname, wmode);
 	srwfile = fopen(srwname, wmode);
-        if (!bin) fprintf(smatfile, "%" PRIu64 " %" PRIu64 "\n",
+        if (!bin) 
+        	fprintf(smatfile, "%" PRIu64 " %" PRIu64 "\n",
                           (uint64_t) nrows,
                           (uint64_t) ncols - skip);
 
@@ -866,16 +867,19 @@ static void usage(param_list pl, char *argv0)
 static void
 make_out (char *s, const char *out, const char X)
 {
-  char *d, *b;
-  char copy[1024];
-  strcpy (copy, out); // dirname might modify its argument
-  d = dirname (copy);
-  strcpy (copy, out); // dirname might modify its argument
-  b = basename (copy);
-  strcpy (s, d);
-  int n = strlen (d);
-  s[n] = X;
-  strcpy (s + n + 1, b);
+	char *tmp;
+	switch (X) {
+	case 'L':
+  		tmp = derived_filename(out, "L", ".sparse.bin");
+		break;
+	case 'R':
+  		tmp = derived_filename(out, "R", ".sparse.bin");
+  		break;
+  	default:
+  		ASSERT(0);
+  	}
+  	strcpy(s, tmp);
+  	free(tmp);
 }
 
 // We start from M_purged which is nrows x ncols;
@@ -958,17 +962,13 @@ int main(int argc, char *argv[])
 	}
 	ASSERT_ALWAYS(skip == 0);
 #endif
-        if (has_suffix(sparseLname, ".bin") || has_suffix(sparseLname, ".bin.gz"))
-        {
+        if (has_suffix(sparsename, ".bin") || has_suffix(sparsename, ".bin.gz")) {
           bin = 1;
           printf("# Output matrices will be written in binary format\n");
-        }
-        else
-        {
+        } else {
           bin = 0;
           printf ("# Output matrices will be written in text format\n");
         }
-
 	make_out(sparseLname, sparsename, 'L');
 	make_out(sparseRname, sparsename, 'R');
 
