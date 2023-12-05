@@ -257,6 +257,18 @@ def translate_mingw_path(path):
         dirs[1:1] = [driveletter]
     return '/'.join(dirs)
 
+# FIXME: adapt for mingw
+def double_matrix_path(path):
+    if path is None:
+        return None
+    # given c60.sparse.bin we want c60.L.sparse.bin,c60.R.sparse.bin
+    dirname = os.path.dirname(path)
+    basename = os.path.basename(path)
+    i = basename.find("sparse.bin")
+    dirname = dirname+"/"+basename[:i]
+    basename = basename[i:]
+    return dirname+"L."+basename+","+dirname+"R."+basename
+
 class Program(object, metaclass=InspectType):
     ''' Base class that represents programs of the CADO suite
 
@@ -1087,10 +1099,19 @@ class BWC(Program):
                  # put None below for a random seed,
                  # or any value (for example 1) for a fixed seed
                  seed: ParameterEq()=None,
+                 multi_matrix: ParameterEq()=None,
                  **kwargs):
         if os.name == "nt":
             kwargs.setdefault("runprefix", "perl.exe")
             kwargs.setdefault("execsuffix", "")
+        pa=Parameter
+        if Parameter("tasks.filter.merge.double_matrix")==0:
+            double_matrix=False
+        else:
+            double_matrix=True
+        if double_matrix:
+            matrix = double_matrix_path(matrix)
+            multi_matrix = 1
         if IS_MINGW:
             matrix = translate_mingw_path(matrix)
             wdir = translate_mingw_path(wdir)
