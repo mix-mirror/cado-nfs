@@ -415,7 +415,7 @@ doAllAdds(typerow_t **newrows, char *str, index_data_t index_data)
 #endif
 
   for (int k = 1; k < ni; k++)
-    addRowsUpdateIndex(newrows, index_data, ind[k], i0, j);
+    addRowsUpdateIndex(newrows, index_data, ind[k], i0, j);    /* in sparse.c */
 
   if(destroy)
     {
