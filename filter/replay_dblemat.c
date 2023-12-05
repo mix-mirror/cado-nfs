@@ -51,7 +51,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #define DEBUG 0
 
 /* purged matrix */
-heapctx_t heap;
+heapctx_t heap, heap_idx;
 typerow_t **rows;
 index_t nrows;          // #rows for the purged matrix
 index_t ncols;          // #cols for the purged matrix
@@ -453,11 +453,8 @@ writeIndex(const char *indexname, typerow_t **rows, index_t small_nrows)
         fprintf(indexfile, "%d", row_length);
         for (unsigned int j = 1; j <= row_length; j++) {
 #ifdef FOR_DL
-#if 0 /* does not compile, index_data is undefined */          
             fprintf(indexfile, " %" PRIx64 ":%d",
-                    (uint64_t) index_data[i].rels[j].ind_row,
-                    index_data[i].rels[j].e);
-#endif
+                    (uint64_t) row[j].id, row[j].e);
 #else
             fprintf(indexfile, " %" PRIx64 "", (uint64_t) row[j]);
 #endif
@@ -473,7 +470,7 @@ writeIndex(const char *indexname, typerow_t **rows, index_t small_nrows)
  *  Output the "index" file --- a more verbose version of the left matrix
  */
 static void
-preread_history(const char *hisname, const char *indexname)
+preread_history(const char *hisname)
 {
 	printf("Reading history file %s (1st pass) and producing index\n", hisname);
 	fflush(stdout);
@@ -487,15 +484,6 @@ preread_history(const char *hisname, const char *indexname)
 	ASSERT_ALWAYS(column_info != NULL);
 	for (index_t i = 0; i < ncols; i++)
 		column_info[i] = 0;
-
-	/* index: allocate identity matrix */
-	typerow_t **rows_index = malloc(nrows * sizeof(*rows));
-	ASSERT_ALWAYS(rows_index != NULL);
-	for (index_t i = 0; i < nrows; i++) {
-		rows_index[i] = heap_alloc_row(heap, i, 1);
-		setCell(rows_index[i], 1, i, 1);
-	}
-	index_t nrows_index = nrows;
 
 	/** BEGIN NOT DRY (w.r.t. build left matrix) ***/
 
@@ -522,30 +510,12 @@ preread_history(const char *hisname, const char *indexname)
 
 		index_t j;
 		index_signed_t ind[MERGE_LEVEL_MAX];
-		int ni = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
+		int MAYBE_UNUSED _ = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
 		
 		/* mark column has being eliminated */
 		if (column_info[j] != 1)
 			n_elim += 1;
 		column_info[j] = 1;
-
-		/* replay history on index */
-		int destroy;
-		index_signed_t i0;
-		if (ind[0] < 0) {
-			destroy = 0;
-			i0 = -ind[0] - 1;
-		} else {
-			destroy = 1;
-			i0 = ind[0];
-		}
-		for (int k = 1; k < ni; k++)
-			add_row(rows_index, ind[k], i0, j);
-		if (destroy) {
-			heap_destroy_row(heap, rows_index[i0]);        // reclaim the memory
-			rows_index[i0] = NULL;
-			nrows_index -= 1;
-		}
 	}
 	stats_print_progress(stats, addread, 0, 0, 1);
 	fclose_maybe_compressed(hisfile, hisname);
@@ -553,17 +523,6 @@ preread_history(const char *hisname, const char *indexname)
 	/** END NOT DRY (w.r.t. build left matrix) ***/
 
 	printf("%" PRId64 " eliminated columns\n", (uint64_t) n_elim);
-
-	/* stack non-empty rows in index */
-	index_t j = 0;
-	for (index_t i = 0; i < nrows; i++)
-		if (rows_index[i] != NULL) {
-			rows_index[j] = rows_index[i];
-			j += 1;
-		}
-	ASSERT_ALWAYS(j == nrows_index);
-	writeIndex(indexname, rows_index, nrows_index);
-	free(rows_index);
 }
 
 
@@ -658,18 +617,16 @@ read_purgedfile (const char* purgedname)
    This is similar to the doAllAdds() function in replay.c
 */
 static void
-build_left_matrix(const char *outputname, const char *hisname, int bin)
+build_left_matrix(const char *outputname, const char *hisname, 
+	          const char *indexname, int bin)
 {
-	printf("Reading history file %s (2nd pass) and building left matrix\n", hisname);
+	printf("Reading history file %s (2nd pass), building left matrix and index\n", hisname);
 	fflush(stdout);
 
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
 	ASSERT_ALWAYS(hisfile != NULL);
 
-	uint64_t addread = 0;
-	char str[STRLENMAX];
-
-	/* allocate identity matrix */
+	/* allocate identity matrix for L */
 	typerow_t ** rowsL = malloc(nrows * sizeof(*rows));
 	ASSERT_ALWAYS(rowsL != NULL);
 	for (index_t i = 0; i < nrows; i++) {
@@ -677,9 +634,18 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 		setCell(rowsL[i], 1, i, 1);
 	}
 
+	/* allocate identity matrix for index */
+	typerow_t **rows_index = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rows_index != NULL);
+	for (index_t i = 0; i < nrows; i++) {
+		rows_index[i] = heap_alloc_row(heap, i, 1);
+		setCell(rows_index[i], 1, i, 1);
+	}
+
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
 	 * 2^23 primes after that */
-	stats_data_t stats;	/* struct for printing progress */
+	uint64_t addread = 0;
+	char str[STRLENMAX];	stats_data_t stats;	/* struct for printing progress */
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
 
 	nrows_small = nrows;
@@ -724,7 +690,8 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			/* initial run of (1,2)-merges: do them on R directly */
 			if (ni == 2)
 				add_row(rows, ind[1], i0, j);
-			heap_destroy_row(heap, rows[i0]);        // reclaim the memory
+			// heap_destroy_row(heap, rows[i0]);
+			// CB: there's no point, since we are not garbage-collecting
 			rows[i0] = NULL;
 			ntwomerge += 1;
 			nrows_small -= 1;
@@ -733,8 +700,15 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			for (int k = 1; k < ni; k++)
 				add_row(rowsL, ind[k], i0, j);
 		}
+		
+		/* history replayed on the index in all cases */
+		for (int k = 1; k < ni; k++)
+			add_row(rows_index, ind[k], i0, j);
+
 		if (destroy) {
-			heap_destroy_row(heap, rowsL[i0]);        // reclaim the memory
+			// heap_destroy_row(heap, rowsL[i0]);
+			// CB: there's no point, since we are not garbage-collecting
+			rows_index[i0] = NULL;
 			rowsL[i0] = NULL;
 			left_nrows -= 1;
 		}
@@ -742,6 +716,17 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	stats_print_progress(stats, addread, 0, 0, 1);
 	fclose_maybe_compressed(hisfile, hisname);
 	printf("%" PRId64 " 2-merges done directly on R\n", ntwomerge);
+
+	/* emit index */
+	index_t j = 0;
+	for (index_t i = 0; i < nrows; i++)  /* stack non-empty rows in index */
+		if (rows_index[i] != NULL) {
+			rows_index[j] = rows_index[i];
+			j += 1;
+		}
+	ASSERT_ALWAYS(j == left_nrows);
+	writeIndex(indexname, rows_index, left_nrows);
+	free(rows_index);
 
 	/* renumber columns of L to account for two-merges */
 	index_t *renumber = malloc(nrows * sizeof(*renumber));
@@ -900,7 +885,7 @@ int main(int argc, char *argv[])
 	setbuf(stdout, NULL);   // CB: where is setbuf? what's the purpose?
 	setbuf(stderr, NULL);
 
-#ifdef FOR_DL
+#if 0
 	fprintf (stderr, "this is not ready. In particular, add_row must find the correct coefficients for linear combinations\n");
         exit (1);
 #endif
@@ -996,19 +981,17 @@ int main(int argc, char *argv[])
 	}
 #endif
 
-	heap_setup(heap);
-
 	/* read history ; mark eliminated columns ; output index */
-	preread_history(hisname, indexname);
-
-	heap_reset(heap);
+	preread_history(hisname);
 
 	/* load the relations in memory */
+	heap_setup(heap);
 	read_purgedfile(purgedname);
 
 	printf("Building left matrix\n");
-	build_left_matrix(sparseLname, hisname, bin);
-
+	heap_setup(heap_idx);
+	build_left_matrix(sparseLname, hisname, indexname, bin);
+	heap_clear(heap_idx);
 	heap_reset(heap);
 
 	printf("Building right matrix\n");
