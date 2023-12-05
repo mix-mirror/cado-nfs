@@ -4320,11 +4320,15 @@ class MergeDLPTask(Task):
             stdout = message.read_stdout(0).decode("utf-8")
             matsize = 0
             matweight = 0
+            double_matrix = False
             for line in stdout.splitlines():
                 match = re.match(r'Final matrix has N=(\d+) nc=\d+ \(\d+\) W=(\d+)', line)
                 if match:
                     matsize=int(match.group(1))
                     matweight=int(match.group(2))
+                match = re.match(r'L has N=(\d+) W=(\d+)', line)
+                if match:
+                    double_matrix = True
             if (matsize == 0) or (matweight == 0):
                 raise Exception("Could not read matrix size and weight")
             self.logger.info("Merged matrix has %d rows and total weight %d (%.1f entries per row on average)"
@@ -4332,6 +4336,9 @@ class MergeDLPTask(Task):
 
             indexfile = self.workdir.make_filename("index" + use_gz)
             mergedfile = self.workdir.make_filename("sparse.bin")
+            if double_matrix:
+                mergedLfile = self.workdir.make_filename("L.sparse.bin")
+                mergedRfile = self.workdir.make_filename("R.sparse.bin")
             (stdoutpath, stderrpath) = self.make_std_paths(cadoprograms.Replay.name)
             idealfile = self.workdir.make_filename("ideal")
             p = cadoprograms.ReplayDLP(ideals=idealfile,
@@ -4347,8 +4354,14 @@ class MergeDLPTask(Task):
                 raise Exception("Output file %s does not exist" % idealfile)
             if not indexfile.isfile():
                 raise Exception("Output file %s does not exist" % indexfile)
-            if not mergedfile.isfile():
-                raise Exception("Output file %s does not exist" % mergedfile)
+            if not double_matrix:
+                if not mergedfile.isfile():
+                    raise Exception("Output file %s does not exist" % mergedfile)
+            else:
+                if not mergedLfile.isfile():
+                    raise Exception("Output file %s does not exist" % mergedLfile)
+                if not mergedRfile.isfile():
+                    raise Exception("Output file %s does not exist" % mergedRfile)
             output_version = self.state.get("output_version", 0) + 1
             self.remember_input_versions(commit=False)
             update = {"indexfile": indexfile.get_wdir_relative(),
@@ -4394,6 +4407,12 @@ class MergeTask(Task):
         return self.join_params(super().paramnames,  \
             {"skip": None, "gzip": True})
     
+    @property
+    def has_double_matrix(self):
+        pa=self.parameters
+        t=pa.get_or_set_default("tasks.filter.merge.double_matrix", 0)
+        return t==0
+
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
@@ -4428,11 +4447,15 @@ class MergeTask(Task):
             stdout = message.read_stdout(0).decode("utf-8")
             matsize = 0
             matweight = 0
+            double_matrix = False
             for line in stdout.splitlines():
                 match = re.match(r'Final matrix has N=(\d+) nc=\d+ \(\d+\) W=(\d+)', line)
                 if match:
                     matsize=int(match.group(1))
                     matweight=int(match.group(2))
+                match = re.match(r'L has N=(\d+) W=(\d+)', line)
+                if match:
+                    double_matrix = True
             if (matsize == 0) or (matweight == 0):
                 raise Exception("Could not read matrix size and weight")
             self.logger.info("Merged matrix has %d rows and total weight %d (%.1f entries per row on average)"
@@ -4440,6 +4463,9 @@ class MergeTask(Task):
 
             indexfile = self.workdir.make_filename("index" + use_gz)
             mergedfile = self.workdir.make_filename("sparse.bin")
+            if double_matrix:
+                mergedLfile = self.workdir.make_filename("L.sparse.bin")
+                mergedRfile = self.workdir.make_filename("R.sparse.bin")
             (stdoutpath, stderrpath) = self.make_std_paths(cadoprograms.Replay.name)
             p = cadoprograms.Replay(history=historyfile, index=indexfile,
                                     out=mergedfile, stdout=str(stdoutpath),
@@ -4451,8 +4477,14 @@ class MergeTask(Task):
             
             if not indexfile.isfile():
                 raise Exception("Output file %s does not exist" % indexfile)
-            if not mergedfile.isfile():
-                raise Exception("Output file %s does not exist" % mergedfile)
+            if not double_matrix:
+                if not mergedfile.isfile():
+                    raise Exception("Output file %s does not exist" % mergedfile)
+            else:
+                if not mergedLfile.isfile():
+                    raise Exception("Output file %s does not exist" % mergedLfile)
+                if not mergedRfile.isfile():
+                    raise Exception("Output file %s does not exist" % mergedRfile)
             self.remember_input_versions(commit=False)
             output_version = self.state.get("output_version", 0) + 1
             update = {"indexfile": indexfile.get_wdir_relative(),
