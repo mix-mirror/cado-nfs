@@ -39,6 +39,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
        Timothy A. Davis, Iain S. Duff, and Stojce Nakov
        SIAM Journal on Matrix Analysis and Applications
        Volume 41, Issue 2, 2020, https://doi.org/10.1137/19M1245815.
+
+   The output format ("history") is described in README.fileformat
 */
 
 #include "cado.h" // IWYU pragma: keep
@@ -101,7 +103,11 @@ fprint_row (FILE *fp, filter_matrix_t *mat, index_t i)
 #endif
 
 
-/*************************** output buffer ***********************************/
+/*************************** output buffer ***********************************
+ * There is one buffer per thread, so they can be accessed without synchronization
+ * They are flushed in-order, so it is important that operations logged during a
+ * single pass commute. In fact they do because the eliminated columns do not share a row
+ */ 
 
 typedef struct {
   char* buf;
@@ -114,8 +120,7 @@ buffer_init (int nthreads)
 {
   buffer_struct_t *Buf;
   Buf = malloc (nthreads * sizeof (buffer_struct_t));
-  for (int i = 0; i < nthreads; i++)
-    {
+  for (int i = 0; i < nthreads; i++) {
       Buf[i].buf = NULL;
       Buf[i].size = 0;
       Buf[i].alloc = 0;
@@ -127,8 +132,7 @@ static void
 buffer_add (buffer_struct_t *buf, char *s)
 {
   size_t n = strlen (s) + 1; /* count final '\0' */
-  if (buf->size + n > buf->alloc)
-    {
+  if (buf->size + n > buf->alloc) {
       buf->alloc = buf->size + n;
       buf->alloc += buf->alloc / MARGIN;
       buf->buf = realloc (buf->buf, buf->alloc * sizeof (char));
@@ -701,25 +705,6 @@ compute_R (filter_matrix_t *mat, index_t j0)
   MAYBE_UNUSED double before_compression = wct_seconds();
   MAYBE_UNUSED double end_time = before_compression;
 
-#ifdef BIG_BROTHER
-  printf("$$$     compute_R:\n");
-  #ifdef BIG_BROTHER_EXPENSIVE
-        index_t n_empty = 0;
-        for (index_t j = 0; j < ncols; j++)
-                if (mat->wt[j] == 0)
-                        n_empty++;
-        printf("$$$       empty-columns: %" PRid "\n", n_empty);
-  #endif
-  printf("$$$       Rn:  %" PRIu64 "\n", (uint64_t) Rn);
-  printf("$$$       Rnz: %" PRIu64 "\n", (uint64_t) Rnz);
-  printf("$$$       timings:\n");
-  printf("$$$         row-count: %f\n", before_extraction - wct);
-  printf("$$$         extraction: %f\n", before_compression - before_extraction);
-  printf("$$$         conversion: %f\n", end_time - before_compression);
-  printf("$$$         total: %f\n", end_time - wct);
-#endif
-
-
   cpu = seconds () - cpu;
   wct = wct_seconds () - wct;
   print_timings ("   compute_R took", cpu, wct);
@@ -763,7 +748,7 @@ increase_weight (filter_matrix_t *mat, index_t j)
 
 /* special code for factorization */
 static int32_t
-add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2)
+add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MAYBE_UNUSED int32_t e2, buffer_struct_t *buf)
 {
 	typerow_t *r1 = L->rows[i1];
 	typerow_t *r2 = L->rows[i2];
@@ -771,6 +756,13 @@ add_row (filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t e1, MA
 	index_t k2 = matLengthRow(L, i2);
 	index_t t1 = 1, t2 = 1;
 	index_t t = 0;
+        
+        if (buf != NULL) {
+                char s[MERGE_CHAR_MAX];
+                int n = snprintf(s, MERGE_CHAR_MAX, "+%" PRId64 " %" PRId64 "\n", (uint64_t) i1, (uint64_t) i2);
+                ASSERT(n < MERGE_CHAR_MAX);
+                buffer_add(buf, s);
+        }
 
 #ifdef CANCEL
 	#pragma omp atomic update
@@ -857,7 +849,7 @@ weightSum(const filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t
 
 /* we will multiply row i1 by e2, and row i2 by e1 */
 static int32_t
-add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED int32_t e2)
+add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED int32_t e2, buffer_struct_t *buf)
 {
 	/* we always check e1 and e2 are not zero, in order to prevent from zero
      	 * exponents that would come from exponent overflows in previous merges 
@@ -867,6 +859,13 @@ add_row (filter_matrix_t *L, index_t i1, index_t i2,  int32_t e1, MAYBE_UNUSED i
 	#pragma omp atomic update
 	cancel_rows ++;
 #endif
+
+        if (buf != NULL) {
+                char s[MERGE_CHAR_MAX];
+                int n = snprintf(s, MERGE_CHAR_MAX, "*%" PRId64 " %" PRId32 " %" PRId64 " %" PRId32 "\n", (uint64_t) i1, e2, (uint64_t) i2, e1);
+                ASSERT(n < MERGE_CHAR_MAX);
+                buffer_add(buf, s);
+        }
 
 	/* now perform the real merge on L */
 	index_t t1 = 1, t2 = 1, t = 0;
@@ -976,17 +975,23 @@ weightSum(const filter_matrix_t *L, index_t i1, index_t i2, MAYBE_UNUSED int32_t
    ideals). Return the (negative) fill-in.
 */
 static int32_t
-remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i)
+remove_row (filter_matrix_t *L, filter_matrix_t *mat, index_t i, buffer_struct_t *buf)
 {
-  int32_t w = matLengthRow (mat, i);
-  for (int k = 1; k <= w; k++)
-    decrease_weight (mat, rowCell(mat->rows[i], k));
-  heap_destroy_row(mat->heap, mat->rows[i]);
-  mat->rows[i] = NULL;
-  // replicate on L
-  heap_destroy_row(L->heap, L->rows[i]);
-  L->rows[i] = NULL;
-  return -w;
+        if (buf != NULL) {
+                char s[MERGE_CHAR_MAX];
+                int n = snprintf(s, MERGE_CHAR_MAX, "-%" PRId64 "\n", (uint64_t) i);
+                ASSERT(n < MERGE_CHAR_MAX);
+                buffer_add(buf, s);
+        }
+        int32_t w = matLengthRow(mat, i);
+        for (int k = 1; k <= w; k++)
+                decrease_weight(mat, rowCell(mat->rows[i], k));
+        heap_destroy_row(mat->heap, mat->rows[i]);
+        mat->rows[i] = NULL;
+        // replicate on L
+        heap_destroy_row(L->heap, L->rows[i]);
+        L->rows[i] = NULL;
+        return -w;
 }
 
 #ifdef DEBUG
@@ -1059,30 +1064,6 @@ merge_cost (filter_matrix_t *L, MAYBE_UNUSED filter_matrix_t *R,
 #endif
 }
 
-/* Output a list of merges to a string.
-   size is the length of str.
-   Return the number of characters written, except the final \0
-   (or that would have been written if that number >= size) */
-static int
-sreportn (char *str, size_t size, index_signed_t *ind, int n, index_t j)
-{
-  size_t m = 0; /* number of characters written */
-
-  for (int i = 0; i < n; i++)
-    {
-      m += snprintf (str + m, size - m, "%ld", (long int) ind[i]);
-      ASSERT(m < size);
-      if (i < n-1)
-	{
-	  m += snprintf (str + m, size - m, " ");
-	  ASSERT(m < size);
-	}
-    }
-  m += snprintf (str + m, size - m, " #%lu", (unsigned long) j);
-  m += snprintf (str + m, size - m, "\n");
-  ASSERT(m < size);
-  return m;
-}
 
 /* Rows i1, i2 in mat have an entry on column j; Set e1, e2 to the exponent */
 static void locate_columns(MAYBE_UNUSED const filter_matrix_t *mat, 
@@ -1119,7 +1100,7 @@ static void locate_columns(MAYBE_UNUSED const filter_matrix_t *mat,
 static int
 addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 		 filter_matrix_t *L, filter_matrix_t *mat, int m, index_t *ind,
-                 MAYBE_UNUSED index_t j, int *father, int *sons, int32_t *c)
+                 MAYBE_UNUSED index_t j, int *father, int *sons, int32_t *c, buffer_struct_t *buf)
 {
 	for (int i = m - 2; i >= 0; i--) {
 		int s = father[i];
@@ -1140,9 +1121,9 @@ addFatherToSons (index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1],
 		int32_t e1, e2;
 		locate_columns(mat, i1, i2, j, &e1, &e2);
 
-		*c += add_row (mat, i1, i2, e1, e2);
+		*c += add_row (mat, i1, i2, e1, e2, buf);
 		if (!twomerge_mode)
-      			add_row (L, i1, i2, e1, e2);
+      			add_row (L, i1, i2, e1, e2, NULL);
 		history[i][2] = i1;
 		history[i][0] = 2;
 	}
@@ -1184,19 +1165,18 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 
 	ASSERT (1 <= w && w <= mat->cwmax);
 
+        /* history: this eliminates column j */
+	char s[MERGE_CHAR_MAX];
+        int n = snprintf(s, MERGE_CHAR_MAX, "|%" PRId64 "\n", (uint64_t) mat->p[j]);
+        ASSERT(n < MERGE_CHAR_MAX);
+        buffer_add(buf, s);
+
 	if (w == 1) {             // eliminate a singleton column
-		char s[MERGE_CHAR_MAX];
-		int n MAYBE_UNUSED;
-		index_signed_t i = mat->Ri[t]; /* only row containing j */
-		n = sreportn (s, MERGE_CHAR_MAX, &i, 1, mat->p[j]);
-		ASSERT(n < MERGE_CHAR_MAX);
-		buffer_add (buf, s);
-		c = remove_row (L, mat, i);
+		index_signed_t i = mat->Ri[t]; /* only row containing j */        
+		c = remove_row(L, mat, i, buf);
 	} else {
 		/* perform the real merge and output to history file */
 		index_t *ind = mat->Ri + t;
-		char s[MERGE_CHAR_MAX];
-		int n = 0; /* number of characters written to s (except final \0) */
 		int A[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX];
 #if MERGE_STRATEGY == 1
 		fillRowAddMatrix (A, mat, mat, w, ind, j);           // target mat
@@ -1204,16 +1184,10 @@ merge_do (filter_matrix_t *L, filter_matrix_t *R, filter_matrix_t *mat,
 		fillRowAddMatrix (A, mat, L, w, ind, j);             // target L
 #endif
 		int start[MERGE_LEVEL_MAX], end[MERGE_LEVEL_MAX];
-		minimalSpanningTree (start, end, w, A);
+		minimalSpanningTree(start, end, w, A);
 		index_t history[MERGE_LEVEL_MAX][MERGE_LEVEL_MAX+1];
-		int hmax = addFatherToSons (history, L, mat, w, ind, j, start, end, &c);
-		for (int i = hmax; i >= 0; i--) {
-      			n += sreportn (s + n, MERGE_CHAR_MAX - n, (index_signed_t*) (history[i]+1), 
-      					history[i][0], mat->p[j]);
-      			ASSERT(n < MERGE_CHAR_MAX);
-    		}
-		buffer_add (buf, s);
-		c += remove_row (L, mat, ind[0]);
+		int _ MAYBE_UNUSED = addFatherToSons(history, L, mat, w, ind, j, start, end, &c, buf);
+		c += remove_row(L, mat, ind[0], buf);
 	}
 
 	/* Update the total weight of R. We check the merged column has not a
@@ -1316,12 +1290,6 @@ compute_merges (index_t *possible_merges, MAYBE_UNUSED filter_matrix_t *L,
   free(cost);
 
   double end = wct_seconds();
-  #ifdef BIG_BROTHER
-  	printf("$$$     compute_merges:\n");
-  	printf("$$$       candidate-merges: %d\n", s);
-  	printf("$$$       timings:\n");
-  	printf("$$$         total: %f\n", end - wct);
-  #endif
   double cpu2 = seconds() - cpu;
   double wct2 = end - wct;
   print_timings ("   compute_merges took", cpu2, wct2);
@@ -1342,16 +1310,8 @@ apply_merges (index_t *possible_merges, index_t total_merges,
 
   unsigned long nmerges = 0;
   int64_t fill_in = 0;
-#ifdef BIG_BROTHER
-  unsigned long discarded_early = 0;
-  unsigned long discarded_late = 0;
-#endif
 
-#ifdef BIG_BROTHER
-  #pragma omp parallel reduction(+: fill_in, nmerges, discarded_early, discarded_late)
-#else
   #pragma omp parallel reduction(+: fill_in, nmerges)
-#endif
   {
     #pragma omp for schedule(guided)
     for (index_t it = 0; it < total_merges; it++) {
@@ -1366,9 +1326,6 @@ apply_merges (index_t *possible_merges, index_t total_merges,
 	index_t i = mat->Ri[k];
 	if (busy_rows[i]) {
 	  ok = 0;
-#ifdef BIG_BROTHER
-          discarded_early++;
-#endif
 	  break;
 	}
       }
@@ -1390,9 +1347,6 @@ apply_merges (index_t *possible_merges, index_t total_merges,
 	    { not_ok = busy_rows[i]; busy_rows[i] = 1; }
 	    if (not_ok)
 	      {
-#ifdef BIG_BROTHER
-                discarded_late++;
-#endif
 		ok = 0;
 		break;
 	      }
@@ -1423,30 +1377,7 @@ apply_merges (index_t *possible_merges, index_t total_merges,
   mat->rem_ncols -= nmerges;
 
   double end = wct_seconds();
-
-#ifdef BIG_BROTHER
-  printf("$$$     apply-merges:\n");
-  printf("$$$       discarded-early: %ld\n", discarded_early);
-  printf("$$$       discarded-late: %ld\n", discarded_late);
-  printf("$$$       merged: %ld\n", nmerges);
-  #ifdef BIG_BROTHER_EXPENSIVE
-  	index_t n_rows = 0;
-  	for (index_t i = 0; i < mat->nrows; i++)
-  	  n_rows += busy_rows[i];
-  	printf("$$$       affected-rows: %" PRid "\n", n_rows);
-
-  	index_t n_cols = 0;
-  	for (index_t j = 0; j < mat->ncols; j++) {
-  		n_cols += touched_columns[j];
-  		touched_columns[j] = 0;
-  	}
-	printf("$$$       affected-columns: %" PRid "\n", n_cols);
-  #endif
-  printf("$$$       timings:\n");
-  printf("$$$         total: %f\n", end - wct3);
-#endif
   free(busy_rows);
-
   cpu3 = seconds () - cpu3;
   wct3 = end - wct3;
   print_timings ("   apply_merges took", cpu3, wct3);
@@ -1654,13 +1585,7 @@ main (int argc, char *argv[])
     ASSERT_ALWAYS(history != NULL);
 
     /* some explanation about the history file */
-    fprintf (history, "# Every line starting with # is ignored.\n");
-    fprintf (history, "# A line i1 i2 ... ik means that row i1 ");
-    fprintf (history, "is added to i2, ..., ik, and row i1\n");
-    fprintf (history, "# is removed afterwards ");
-    fprintf (history, "(where row 0 is the first line in *.purged.gz).\n");
-    fprintf (history, "# A line ending with #j ");
-    fprintf (history, "means that ideal of index j should be merged.\n");
+    fprintf (history, "# Please refer to filter/README.fileformats for the syntax of this file.\n");
 
     /* Read number of rows and cols on first line of purged file */
     purgedfile_read_firstline (purgedname, &(mat->nrows), &(mat->ncols));
@@ -1720,11 +1645,6 @@ main (int argc, char *argv[])
     mat->Rq = malloc (mat->ncols * sizeof (index_t));
     mat->Rqinv = malloc (mat->ncols * sizeof (index_t));
 
-#ifdef BIG_BROTHER
-    touched_columns = malloc(mat->ncols * sizeof(*touched_columns));
-    memset(touched_columns, 0, mat->ncols * sizeof(*touched_columns));
-#endif
-
     printf ("Using MERGE_LEVEL_MAX=%d, cbound_incr=%d",
 	    MERGE_LEVEL_MAX, cbound_incr);
     printf (", PAGE_DATA_SIZE=%d", heap_config_get_PAGE_DATA_SIZE());
@@ -1739,10 +1659,6 @@ main (int argc, char *argv[])
 	    mat->rem_nrows, mat->tot_weight, average_density (mat),
 	    seconds () - cpu0, wct_seconds () - wct0,
 	    PeakMemusage () >> 10);
-#ifdef BIG_BROTHER
-    printf("$$$ N: %" PRId64 "\n", mat->nrows);
-    printf("$$$ start:\n");
-#endif
 
     fflush (stdout);
 
@@ -1809,12 +1725,6 @@ main (int argc, char *argv[])
 	}
 	#endif
 
-	#ifdef BIG_BROTHER
-		printf("$$$   - pass: %d\n", merge_pass);
-		printf("$$$     cwmax: %d\n", mat->cwmax);
-		printf("$$$     cbound: %d\n", cbound);
-	#endif
-
 	compute_R (mat, jmin[mat->cwmax]);
 
 	index_t *possible_merges = malloc(mat->Rn * sizeof(index_t));
@@ -1841,6 +1751,8 @@ main (int argc, char *argv[])
   	if (mat->cwmax == 2) { /* we first process all 2-merges */
 		if (nmerges == 0) {
                         twomerge_mode = 0;    // stop special treatment of the initial run of 2-merges
+                        fprintf(history, "! End of two-merges\n");
+                        fflush(history);
                         compute_weights_R (R, mat);
 			mat->cwmax++;
                 }
@@ -1864,11 +1776,6 @@ main (int argc, char *argv[])
 	print_timings ("   pass took", cpu1, wct1);
 	cpu_t[PASS] += cpu1;
 	wct_t[PASS] += wct1;
-
-	#ifdef BIG_BROTHER
-	    printf("$$$     timings:\n");
-	    printf("$$$       total: %f\n", wct1);
-	#endif
 
 	/* estimate current average fill-in */
 	double av_fill_in = ((double) mat->tot_weight - (double) lastW)

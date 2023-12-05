@@ -276,16 +276,13 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 /* COPIED-PASTED from merge.c. REFACTORING PLAN: take rows[] and weights[] as
    arugments, update weights only if not NULL */
 
-// i1 += i2
-// j is the index of the column that is used for
-// pivoting in the case of DL. Then, the operation is
-//   i1 = e2*i1 + e1*i2
-// where e1 and e2 are adjusted so that the j-th column is zero in i1.
 
 #ifndef FOR_DL
 /* special code for factorization */
+
+// row[i1] <--- row[i1] + row[i2]
 static void
-add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
+add_row(typerow_t **rows, index_t i1, index_t i2)
 {
 	typerow_t *r1 = rows[i1];
   	typerow_t *r2 = rows[i2];
@@ -330,14 +327,15 @@ add_row (typerow_t **rows, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
 	rows[i1] = sum;
 	return;
 }
-#else /* FOR_DL: j is the ideal to be merged */
+#else /* FOR_DL */
+
 #define INT32_MIN_64 (int64_t) INT32_MIN
 #define INT32_MAX_64 (int64_t) INT32_MAX
 
+// row[i1] <--- row[i1] * e2 + row[i2] * e1
 static void
-add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
+add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
 {
-  /* first look for the exponents of j in i1 and i2 */
  	typerow_t *r1 = rows[i1];
   	typerow_t *r2 = rows[i2];
  	index_t k1 = rowLength(rows, i1);
@@ -346,29 +344,9 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 	index_t t2 = 1;            // index in rows[i2]
 	index_t t = 0;             // index in the sum
 
-  	int32_t e1 = 0;
-  	int32_t e2 = 0;
-
-  /* search by decreasing ideals as the ideal to be merged is likely large */
-  for (int l = k1; l >= 1; l--)
-    if (r1[l].id == j) {
-	e1 = r1[l].e;
-	break;
-      }
-  for (int l = k2; l >= 1; l--)
-    if (r2[l].id == j) {
-	e2 = r2[l].e;
-	break;
-      }
-
   /* we always check that e1 and e2 are not zero, in order to prevent from zero
      exponents that would come from exponent overflows in previous merges */
-  ASSERT_ALWAYS (e1 != 0 && e2 != 0);
-
-  int d = (int) gcd_int64 ((int64_t) e1, (int64_t) e2);
-  e1 /= -d;
-  e2 /= d;
-  /* we will multiply row i1 by e2, and row i2 by e1 */
+	ASSERT_ALWAYS (e1 != 0 && e2 != 0);
 
   t1 = 1;
   t2 = 1;
@@ -421,7 +399,6 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
       ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
       t++;
       setCell(sum, t, r2[t2].id, e);
-      // increase_weight (mat, r2[t2].id);
       t2 ++;
     }
   ASSERT(t <= k1 + k2 - 1);
@@ -470,7 +447,7 @@ writeIndex(const char *indexname, typerow_t **rows, index_t small_nrows)
  *  Output the "index" file --- a more verbose version of the left matrix
  */
 static void
-preread_history(const char *hisname)
+preread_history(const char *hisname, const char *indexname)
 {
 	printf("Reading history file %s (1st pass) and producing index\n", hisname);
 	fflush(stdout);
@@ -485,44 +462,96 @@ preread_history(const char *hisname)
 	for (index_t i = 0; i < ncols; i++)
 		column_info[i] = 0;
 
+	/* allocate identity matrix for index */
+	typerow_t **rows_index = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rows_index != NULL);
+	for (index_t i = 0; i < nrows; i++) {
+		rows_index[i] = heap_alloc_row(heap, i, 1);
+		setCell(rows_index[i], 1, i, 1);
+	}
 	/** BEGIN NOT DRY (w.r.t. build left matrix) ***/
 
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
 	 * 2^23 primes after that */
+	index_t left_nrows = nrows;
 	uint64_t addread = 0;
 	char str[STRLENMAX];
 	stats_data_t stats;	/* struct for printing progress */
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
 	while (fgets(str, STRLENMAX, hisfile)) {
-		if (str[0] == '#')
-			continue;
-
 		addread++;
-
 		if (stats_test_progress(stats))
 			stats_print_progress(stats, addread, 0, 0, 0);
-
 		if (str[strlen(str) - 1] != '\n') {
 			fprintf(stderr, "Gasp: not a complete line!");
 			fprintf(stderr, " I stop reading and go to the next phase\n");
 			break;
 		}
 
-		index_t j;
-		index_signed_t ind[MERGE_LEVEL_MAX];
-		int MAYBE_UNUSED _ = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
-		
-		/* mark column has being eliminated */
-		if (column_info[j] != 1)
+        	uint64_t i1, i2, j;
+#ifdef FOR_DL
+        	int32_t e1, e2;
+#endif
+        	int k;
+        	switch(str[0]) {
+        	case '#':
+        	case '!':
+        		break;
+        	case '|':
+			k = sscanf(str + 1, "%" SCNd64, &j);
+        		ASSERT(k == 1);
+        		/* mark column j as being eliminated */
+			ASSERT(column_info[j] != 1);
+			column_info[j] = 1;
 			n_elim += 1;
-		column_info[j] = 1;
+        	        break;
+        	case '-':        // destroy row
+        	        k = sscanf(str + 1, "%" SCNd64, &i1);
+        	        ASSERT(k == 1);
+        	        heap_destroy_row(heap, rows_index[i1]);
+			left_nrows -= 1;
+        	        rows_index[i1] = NULL;
+        	        break;
+#ifndef FOR_DL
+        	case '+':        // row addition
+                	k = sscanf(str + 1, "%" SCNd64 " %" SCNd64, &i1, &i2);
+                	ASSERT(k == 2);
+                	add_row(rows_index, i1, i2);
+                	break;
+        	case '*':
+        	        fprintf (stderr, "coefficients not allowed in factorization mode\n");
+            		exit (EXIT_FAILURE);	
+#else   // FOR_DL
+            	case '+':
+            		fprintf (stderr, "absence of coefficients not allowed in DLP mode\n");
+            		exit (EXIT_FAILURE);	
+            	case '*':       // row addition with multiplicative coefficients
+        	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
+                	ASSERT(k == 4);
+                	add_row(rows_index, i1, e1, i2, e1);
+        	        break;
+#endif
+        	default:
+			fprintf (stderr, "parse error in history file\n");
+            		exit (EXIT_FAILURE);
+        	}
 	}
 	stats_print_progress(stats, addread, 0, 0, 1);
 	fclose_maybe_compressed(hisfile, hisname);
 
 	/** END NOT DRY (w.r.t. build left matrix) ***/
-
 	printf("%" PRId64 " eliminated columns\n", (uint64_t) n_elim);
+
+	/* emit index */
+	index_t j = 0;
+	for (index_t i = 0; i < nrows; i++)  /* stack non-empty rows in index */
+		if (rows_index[i] != NULL) {
+			rows_index[j] = rows_index[i];
+			j += 1;
+		}
+	ASSERT_ALWAYS(j == left_nrows);
+	writeIndex(indexname, rows_index, left_nrows);
+	free(rows_index);
 }
 
 
@@ -530,28 +559,33 @@ preread_history(const char *hisname)
  * The following code is very similar to replay.c
  * It loads the whole matrix in memory.
  */
-
 void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_ptr rel)
 {
+	/* 
+	 * 1st pass, set scratch (parity of #occurence of each column)
+	 * This is only useful in factoring
+	 */
+	#ifndef FOR_DL
+		for (unsigned int j = 0; j < rel->nb; j++) {
+			index_t h = rel->primes[j].h;
+			if (column_info[h] == 1)          // column was eliminated
+				continue;
+			scratch[h] ^= 1;
+		}
+	#endif
+
+	/* 2nd pass, copy row and reset scratch */
 	typerow_t buf[UMAX(weight_t)];
-
-	// 1st pass, set scratch (parity of #occurence of each column)
-	for (unsigned int j = 0; j < rel->nb; j++) {
-		index_t h = rel->primes[j].h;
-		if (column_info[h] == 1)          // column was eliminated
-			continue;
-		scratch[h] ^= 1;
-	}
-
-	// 2nd pass, read and reset scratch
 	unsigned int nb = 0;
 	for (unsigned int j = 0; j < rel->nb; j++) {
 		index_t h = rel->primes[j].h;
 		if (column_info[h] == 1)          // column was eliminated
 			continue;
-		/* FIXME: #ifdef FOR_DL ... */
-		if (scratch[h] == 0)
-			continue; // ideal appeared an even number of times
+		#ifndef FOR_DL 
+			/* factoring: test parity of #occurence of this ideal */
+			if (scratch[h] == 0)
+				continue; // ideal appeared an even number of times
+		#endif
 		scratch[h] = 0;             // reset scratch
 		column_info[h] = 2;         // column is not empty
 		nb += 1;
@@ -573,7 +607,7 @@ void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_pt
 	qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
 
 	rows[rel->num] = heap_alloc_row(heap, rel->num, nb);  // in merge_heap.c
-	compressRow (rows[rel->num], buf, nb);              // in sparse.c
+	compressRow (rows[rel->num], buf, nb);                // in sparse.c
   	return NULL;
 }
 
@@ -617,10 +651,9 @@ read_purgedfile (const char* purgedname)
    This is similar to the doAllAdds() function in replay.c
 */
 static void
-build_left_matrix(const char *outputname, const char *hisname, 
-	          const char *indexname, int bin)
+build_left_matrix(const char *outputname, const char *hisname, int bin)
 {
-	printf("Reading history file %s (2nd pass), building left matrix and index\n", hisname);
+	printf("Reading history file %s (2nd pass), building left matrix\n", hisname);
 	fflush(stdout);
 
 	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
@@ -634,99 +667,88 @@ build_left_matrix(const char *outputname, const char *hisname,
 		setCell(rowsL[i], 1, i, 1);
 	}
 
-	/* allocate identity matrix for index */
-	typerow_t **rows_index = malloc(nrows * sizeof(*rows));
-	ASSERT_ALWAYS(rows_index != NULL);
-	for (index_t i = 0; i < nrows; i++) {
-		rows_index[i] = heap_alloc_row(heap, i, 1);
-		setCell(rows_index[i], 1, i, 1);
-	}
+	uint64_t ntwomerge = 0;
+	nrows_small = nrows;
+	int twomerge_mode = 1;
+	index_t left_nrows = nrows;
 
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
 	 * 2^23 primes after that */
 	uint64_t addread = 0;
 	char str[STRLENMAX];	stats_data_t stats;	/* struct for printing progress */
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
-
-	nrows_small = nrows;
-	int twomerge_mode = 1;
-	uint64_t ntwomerge = 0;
-	index_t left_nrows = nrows;
+	
 	while (fgets(str, STRLENMAX, hisfile)) {
-		if (str[0] == '#')
-			continue;
-
 		addread++;
-
 		if (stats_test_progress(stats))
 			stats_print_progress(stats, addread, 0, 0, 0);
-
+		/* sanity check */
 		if (str[strlen(str) - 1] != '\n') {
 			fprintf(stderr, "Gasp: not a complete line!");
 			fprintf(stderr, " I stop reading and go to the next phase\n");
 			break;
 		}
 
-		index_t j;
-		index_signed_t ind[MERGE_LEVEL_MAX], i0;
-		int destroy;
-		int ni = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
-	
-		ASSERT(column_info[j] == 1);           // column has been eliminated
-
-		if (ind[0] < 0) {
-			destroy = 0;
-			i0 = -ind[0] - 1;
-		} else {
-			destroy = 1;
-			i0 = ind[0];
-		}
-
-		int twomerge = (ni <= 2) && destroy;
-		if (!twomerge)
-			twomerge_mode = 0;
-
-		if (twomerge_mode) {
-			/* initial run of (1,2)-merges: do them on R directly */
-			if (ni == 2)
-				add_row(rows, ind[1], i0, j);
-			// heap_destroy_row(heap, rows[i0]);
-			// CB: there's no point, since we are not garbage-collecting
-			rows[i0] = NULL;
-			ntwomerge += 1;
-			nrows_small -= 1;
-		} else {
-			/* normal case: history replayed on L */
-			for (int k = 1; k < ni; k++)
-				add_row(rowsL, ind[k], i0, j);
-		}
-		
-		/* history replayed on the index in all cases */
-		for (int k = 1; k < ni; k++)
-			add_row(rows_index, ind[k], i0, j);
-
-		if (destroy) {
-			// heap_destroy_row(heap, rowsL[i0]);
-			// CB: there's no point, since we are not garbage-collecting
-			rows_index[i0] = NULL;
-			rowsL[i0] = NULL;
+        	uint64_t i1, i2;
+#ifdef FOR_DL
+        	int32_t e1, e2;
+#endif
+        	int k;
+        	switch(str[0]) {
+        	case '#':
+        		break;
+        	case '|':
+        		ntwomerge += 1;
+        	        break;
+        	case '!':
+        		twomerge_mode = 0;
+        		break;
+        	case '-':        // destroy row
+			k = sscanf(str + 1, "%" SCNd64, &i1);
+			ASSERT(k == 1);
+			if (twomerge_mode) {
+	       	        	heap_destroy_row(heap, rows[i1]);
+             			rows[i1] = NULL;
+				nrows_small -= 1;
+			}
+			heap_destroy_row(heap, rowsL[i1]);
+			rowsL[i1] = NULL;
 			left_nrows -= 1;
-		}
+			break;
+#ifndef FOR_DL
+        	case '+':        // row addition
+                	k = sscanf(str + 1, "%" SCNd64 " %" SCNd64, &i1, &i2);
+                	ASSERT(k == 2);
+                	if (twomerge_mode)
+                		add_row(rows, i1, i2);
+                	else
+                		add_row(rowsL, i1, i2);
+                	break;
+        	case '*':
+        	        fprintf (stderr, "coefficients not allowed in factorization mode\n");
+            		exit (EXIT_FAILURE);	
+#else   // FOR_DL
+            	case '+':
+            		fprintf (stderr, "absence of coefficients not allowed in DLP mode\n");
+            		exit (EXIT_FAILURE);	
+            	case '*':       // row addition with multiplicative coefficients
+        	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
+                	ASSERT(k == 4);
+                	if (twomerge_mode)
+                		add_row(rows, i1, e1, i2, e1);
+			else
+                		add_row(rowsL, i1, e1, i2, e1);
+                	add_row(rows_index, i1, e1, i2, e1);
+        	        break;
+#endif
+        	default:
+			fprintf (stderr, "parse error in history file\n");
+            		exit (EXIT_FAILURE);
+        	}
 	}
 	stats_print_progress(stats, addread, 0, 0, 1);
 	fclose_maybe_compressed(hisfile, hisname);
 	printf("%" PRId64 " 2-merges done directly on R\n", ntwomerge);
-
-	/* emit index */
-	index_t j = 0;
-	for (index_t i = 0; i < nrows; i++)  /* stack non-empty rows in index */
-		if (rows_index[i] != NULL) {
-			rows_index[j] = rows_index[i];
-			j += 1;
-		}
-	ASSERT_ALWAYS(j == left_nrows);
-	writeIndex(indexname, rows_index, left_nrows);
-	free(rows_index);
 
 	/* renumber columns of L to account for two-merges */
 	index_t *renumber = malloc(nrows * sizeof(*renumber));
@@ -767,7 +789,7 @@ build_left_matrix(const char *outputname, const char *hisname,
 /******************************************************************************/
  
 static void
-build_right_matrix (const char *outputname, const char *idealsfilename, index_t skip, int bin)
+export_right_matrix (const char *outputname, const char *idealsfilename, index_t skip, int bin)
 {
 	/* here: column_info[j] == 1   <====>   column has been eliminated
 	 *       column_info[j] == 0   <====>   column is empty (not eliminated) 
@@ -982,20 +1004,18 @@ int main(int argc, char *argv[])
 #endif
 
 	/* read history ; mark eliminated columns ; output index */
-	preread_history(hisname);
+	heap_setup(heap);
+	preread_history(hisname, indexname);
 
 	/* load the relations in memory */
-	heap_setup(heap);
+	heap_reset(heap);
 	read_purgedfile(purgedname);
 
 	printf("Building left matrix\n");
-	heap_setup(heap_idx);
-	build_left_matrix(sparseLname, hisname, indexname, bin);
-	heap_clear(heap_idx);
-	heap_reset(heap);
+	build_left_matrix(sparseLname, hisname, bin);
 
 	printf("Building right matrix\n");
-	build_right_matrix(sparseRname, idealsfilename, skip, bin);
+	export_right_matrix(sparseRname, idealsfilename, skip, bin);
 
 	printf("Cleaning up\n");
  	heap_clear(heap);

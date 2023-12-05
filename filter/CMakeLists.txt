@@ -33,12 +33,16 @@ target_link_libraries(merge-dl utils_with_io)
 set_target_properties(merge-dl PROPERTIES
   COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
-add_executable(replay replay.c sparse.c)
+add_executable(replay replay.c sparse.c merge_heap.c)
 target_link_libraries(replay utils_with_io)
+set_target_properties(replay PROPERTIES
+  COMPILE_FLAGS "${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
-add_executable(replay-dl replay.c sparse.c)
+add_executable(replay-dl replay.c sparse.c merge_heap.c)
 target_link_libraries(replay-dl utils_with_io)
 set_target_properties(replay-dl PROPERTIES COMPILE_FLAGS "-DFOR_DL")
+set_target_properties(replay-dl PROPERTIES
+  COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
 add_executable(replay-dblemat replay_dblemat.c sparse.c merge_heap.c)
 target_link_libraries(replay-dblemat utils_with_io)

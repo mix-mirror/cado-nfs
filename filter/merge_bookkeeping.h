@@ -2,17 +2,6 @@
 #define MERGE_BOOKKEEPING_H_
 
 
-
-/* a lot of verbosity */
-// #define BIG_BROTHER
-
-/* some more verbosity which requires additional operations */
-// #define BIG_BROTHER_EXPENSIVE
-
-#ifdef BIG_BROTHER
-extern unsigned char *touched_columns;
-#endif
-
 /* define CANCEL to count column cancellations */
 // #define CANCEL
 #ifdef CANCEL
