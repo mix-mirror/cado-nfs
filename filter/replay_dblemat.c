@@ -269,157 +269,17 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 	return W;
 }
 
-#define STRLENMAX 2048
+/*************************************************************************/
+
+
+/* COPIED-PASTED from merge.c. REFACTORING PLAN: take rows[] and weights[] as
+   arugments, update weights only if not NULL */
 
 // i1 += i2
 // j is the index of the column that is used for
 // pivoting in the case of DL. Then, the operation is
 //   i1 = e2*i1 + e1*i2
 // where e1 and e2 are adjusted so that the j-th column is zero in i1.
-
-/******************************************************************************/
-
-
-/*  Set column_info[j] == { 1 if column j is eliminated 
- *                        { 0  otherwise
- */
-static void
-preread_history(const char *hisname)
-{
-	printf("Reading history file %s (1st pass)\n", hisname);
-	fflush(stdout);
-
-	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
-	ASSERT_ALWAYS(hisfile != NULL);
-
-	/* allocate auxiliary data (per column) */
-	column_info = malloc(sizeof(*column_info) * ncols);
-	ASSERT_ALWAYS(column_info != NULL);
-	for (index_t i = 0; i < ncols; i++)
-		column_info[i] = 0;
-
-	uint64_t addread = 0;
-	char str[STRLENMAX];
-	stats_data_t stats;	/* struct for printing progress */
-	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
-	uint64_t n_elim = 0;
-	while (fgets(str, STRLENMAX, hisfile)) {
-		if (str[0] == '#')
-			continue;
-		addread++;
-		if (stats_test_progress(stats))
-			stats_print_progress(stats, addread, 0, 0, 0);
-		if (str[strlen(str) - 1] != '\n') {
-			fprintf(stderr, "Gasp: not a complete line!");
-			fprintf(stderr, " I stop reading and go to the next phase\n");
-			break;
-		}
-		index_t j;
-		index_signed_t ind[MERGE_LEVEL_MAX];
-		int MAYBE_UNUSED _ = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
-                if (j == (index_t) -1)
-                {
-                  fprintf (stderr, "Error, no #j found in history line\n");
-                  exit (1);
-                }
-		if (column_info[j] != 1)
-			n_elim += 1;
-		column_info[j] = 1;         // column has been eliminated
-	}
-	stats_print_progress(stats, addread, 0, 0, 1);
-	fclose_maybe_compressed(hisfile, hisname);
-	printf("%" PRId64 " eliminated columns\n", n_elim);
-}
-
-
-/*
- * The following code is very similar to replay.c
- * It loads the whole matrix in memory.
- */
-
-void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_ptr rel)
-{
-	typerow_t buf[UMAX(weight_t)];
-
-	// 1st pass, set scratch
-	for (unsigned int j = 0; j < rel->nb; j++) {
-		index_t h = rel->primes[j].h;
-		if (column_info[h] == 1)          // column was eliminated
-			continue;
-		scratch[h] ^= 1;
-	}
-
-	// 2nd pass, read and reset scratch
-	unsigned int nb = 0;
-	for (unsigned int j = 0; j < rel->nb; j++) {
-		index_t h = rel->primes[j].h;
-		if (column_info[h] == 1)          // column was eliminated
-			continue;
-		if (scratch[h] == 0)
-			continue; // ideal appeared an even number of times
-		scratch[h] = 0;             // reset scratch
-		column_info[h] = 2;         // column is not empty
-		nb += 1;
-		#ifdef FOR_DL
-			exponent_t e = rel->primes[j].e;
-			buf[nb] = (ideal_merge_t) {.id = h, .e = e};
-		#else
-			ASSERT_ALWAYS (rel->primes[j].e == 1);
-			buf[nb] = h;
-		#endif
-	}
-	#ifdef FOR_DL
-		buf[0].id = nb;
-	#else
-		buf[0] = nb;
-	#endif
-	
-	/* required because of add_rows (2-merges) on the relations */
-	qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
-
-	rows[rel->num] = heap_alloc_row(heap, rel->num, nb);  // in merge_heap.c
-	compressRow (rows[rel->num], buf, nb);              // in sparse.c
-  	return NULL;
-}
-
-/* update rows, column_info. 
- * set column_info[j] == 1   <====>   column has been eliminated
- *     column_info[j] == 2   <====>   column is non-empty (not eliminated)
- *     column_info[j] == 0   <====>   column is empty (not eliminated) 
- */
-static void
-read_purgedfile (const char* purgedname)
-{
-	printf("Reading purged matrix from %s\n", purgedname);
-	fflush(stdout);
-
-	/* allocate purged matrix */
-	rows = malloc(nrows * sizeof(*rows));
-	ASSERT_ALWAYS(rows != NULL);
-	for (index_t i = 0; i < nrows; i++)
-		rows[i] = NULL;
-
-	char *fic[2] = {(char *) purgedname, NULL};
-	scratch = malloc(ncols * sizeof(*scratch));
-	ASSERT_ALWAYS(scratch != NULL);
-	for (index_t i = 0; i < ncols; i++)
-		scratch[i] = 0;
-
-	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
-				NULL, EARLYPARSE_NEED_INDEX, NULL, NULL);
-	ASSERT_ALWAYS (nread == nrows);
-	free(scratch);
-
-	uint64_t empty_cols = 0;
-	for (index_t j = 0; j < ncols; j++)
-		if (column_info[j] == 0)
-			empty_cols += 1;
-	printf("Found %" PRId64 " empty columns in the purged matrix\n", empty_cols);
-}
-
-
-/* COPIED-PASTED from merge.c. REFACTORING PLAN: take rows[] and weights[] as
-   arugments, update weights only if not NULL */
 
 #ifndef FOR_DL
 /* special code for factorization */
@@ -570,8 +430,227 @@ add_row (typerow_t **rows, index_t i1, index_t i2, index_t j)
 }
 #endif
 
-/* construct the D matrix (n' rows, n columns), where n is the number of rows
+#define STRLENMAX 2048
+
+/******************************************************************************/
+
+/* similar (but not identical) to the same function in replay.c */
+static void
+writeIndex(const char *indexname, typerow_t **rows, index_t small_nrows)
+{
+    FILE *indexfile = NULL;
+    indexfile = fopen_maybe_compressed(indexname, "w");
+    ASSERT_ALWAYS (indexfile != NULL);
+    fprintf(indexfile, "%" PRIu64 "\n", (uint64_t) small_nrows);
+
+    for (index_t i = 0; i < small_nrows; ++i) {
+    	typerow_t *row = rows[i];
+    	index_t row_length = row[0];
+        ASSERT (row_length > 0);
+        fprintf(indexfile, "%d", row_length);
+        for (unsigned int j = 1; j <= row_length; j++) {
+#ifdef FOR_DL
+            fprintf(indexfile, " %" PRIx64 ":%d",
+                    (uint64_t) index_data[i].rels[j].ind_row,
+                    index_data[i].rels[j].e);
+#else
+            fprintf(indexfile, " %" PRIx64 "", (uint64_t) row[j]);
+#endif
+        }
+        fprintf(indexfile, "\n");
+    }
+    fclose_maybe_compressed(indexfile, indexname);
+}
+
+
+/*  Set column_info[j] == { 1 if column j is eliminated 
+ *                        { 0  otherwise
+ *  Output the "index" file --- a more verbose version of the left matrix
+ */
+static void
+preread_history(const char *hisname, const char *indexname)
+{
+	printf("Reading history file %s (1st pass) and producing index\n", hisname);
+	fflush(stdout);
+
+	FILE * hisfile = fopen_maybe_compressed(hisname, "r");
+	ASSERT_ALWAYS(hisfile != NULL);
+
+	/* allocate auxiliary data (per column) */
+	index_t n_elim = 0;
+	column_info = malloc(sizeof(*column_info) * ncols);
+	ASSERT_ALWAYS(column_info != NULL);
+	for (index_t i = 0; i < ncols; i++)
+		column_info[i] = 0;
+
+	/* index: allocate identity matrix */
+	typerow_t **rows_index = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rows_index != NULL);
+	for (index_t i = 0; i < nrows; i++) {
+		rows_index[i] = heap_alloc_row(heap, i, 1);
+		setCell(rows_index[i], 1, i, 1);
+	}
+	index_t nrows_index = nrows;
+
+	/** BEGIN NOT DRY (w.r.t. build left matrix) ***/
+
+	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
+	 * 2^23 primes after that */
+	uint64_t addread = 0;
+	char str[STRLENMAX];
+	stats_data_t stats;	/* struct for printing progress */
+	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
+	while (fgets(str, STRLENMAX, hisfile)) {
+		if (str[0] == '#')
+			continue;
+
+		addread++;
+
+		if (stats_test_progress(stats))
+			stats_print_progress(stats, addread, 0, 0, 0);
+
+		if (str[strlen(str) - 1] != '\n') {
+			fprintf(stderr, "Gasp: not a complete line!");
+			fprintf(stderr, " I stop reading and go to the next phase\n");
+			break;
+		}
+
+		index_t j;
+		index_signed_t ind[MERGE_LEVEL_MAX];
+		int ni = parse_hisfile_line(ind, str, &j);   // in sparse.c, mutualized with "normal" replay
+		
+		/* mark column has being eliminated */
+		if (column_info[j] != 1)
+			n_elim += 1;
+		column_info[j] = 1;
+
+		/* replay history on index */
+		int destroy;
+		index_signed_t i0;
+		if (ind[0] < 0) {
+			destroy = 0;
+			i0 = -ind[0] - 1;
+		} else {
+			destroy = 1;
+			i0 = ind[0];
+		}
+		for (int k = 1; k < ni; k++)
+			add_row(rows_index, ind[k], i0, j);
+		if (destroy) {
+			heap_destroy_row(heap, rows_index[i0]);        // reclaim the memory
+			rows_index[i0] = NULL;
+			nrows_index -= 1;
+		}
+	}
+	stats_print_progress(stats, addread, 0, 0, 1);
+	fclose_maybe_compressed(hisfile, hisname);
+
+	/** END NOT DRY (w.r.t. build left matrix) ***/
+
+	printf("%" PRId64 " eliminated columns\n", (uint64_t) n_elim);
+
+	/* stack non-empty rows in index */
+	index_t j = 0;
+	for (index_t i = 0; i < nrows; i++)
+		if (rows_index[i] != NULL) {
+			rows_index[j] = rows_index[i];
+			j += 1;
+		}
+	ASSERT_ALWAYS(j == nrows_index);
+	writeIndex(indexname, rows_index, nrows_index);
+	free(rows_index);
+}
+
+
+/*
+ * The following code is very similar to replay.c
+ * It loads the whole matrix in memory.
+ */
+
+void * read_purged_row (void MAYBE_UNUSED *context_data, earlyparsed_relation_ptr rel)
+{
+	typerow_t buf[UMAX(weight_t)];
+
+	// 1st pass, set scratch (parity of #occurence of each column)
+	for (unsigned int j = 0; j < rel->nb; j++) {
+		index_t h = rel->primes[j].h;
+		if (column_info[h] == 1)          // column was eliminated
+			continue;
+		scratch[h] ^= 1;
+	}
+
+	// 2nd pass, read and reset scratch
+	unsigned int nb = 0;
+	for (unsigned int j = 0; j < rel->nb; j++) {
+		index_t h = rel->primes[j].h;
+		if (column_info[h] == 1)          // column was eliminated
+			continue;
+		/* FIXME: #ifdef FOR_DL ... */
+		if (scratch[h] == 0)
+			continue; // ideal appeared an even number of times
+		scratch[h] = 0;             // reset scratch
+		column_info[h] = 2;         // column is not empty
+		nb += 1;
+		#ifdef FOR_DL
+			exponent_t e = rel->primes[j].e;
+			buf[nb] = (ideal_merge_t) {.id = h, .e = e};
+		#else
+			ASSERT_ALWAYS (rel->primes[j].e == 1);
+			buf[nb] = h;
+		#endif
+	}
+	#ifdef FOR_DL
+		buf[0].id = nb;
+	#else
+		buf[0] = nb;
+	#endif
+	
+	/* required because of add_rows (2-merges) on the relations */
+	qsort (&(buf[1]), nb, sizeof(typerow_t), cmp_typerow_t);
+
+	rows[rel->num] = heap_alloc_row(heap, rel->num, nb);  // in merge_heap.c
+	compressRow (rows[rel->num], buf, nb);              // in sparse.c
+  	return NULL;
+}
+
+/* update rows, column_info. 
+ * set column_info[j] == 1   <====>   column has been eliminated
+ *     column_info[j] == 2   <====>   column is non-empty (not eliminated)
+ *     column_info[j] == 0   <====>   column is empty (not eliminated) 
+ */
+static void
+read_purgedfile (const char* purgedname)
+{
+	printf("Reading purged matrix from %s\n", purgedname);
+	fflush(stdout);
+
+	/* allocate purged matrix */
+	rows = malloc(nrows * sizeof(*rows));
+	ASSERT_ALWAYS(rows != NULL);
+	for (index_t i = 0; i < nrows; i++)
+		rows[i] = NULL;
+
+	char *fic[2] = {(char *) purgedname, NULL};
+	scratch = malloc(ncols * sizeof(*scratch));
+	ASSERT_ALWAYS(scratch != NULL);
+	for (index_t i = 0; i < ncols; i++)
+		scratch[i] = 0;
+
+	index_t nread = filter_rels(fic, (filter_rels_callback_t) &read_purged_row, 
+				NULL, EARLYPARSE_NEED_INDEX, NULL, NULL);
+	ASSERT_ALWAYS (nread == nrows);
+	free(scratch);
+
+	uint64_t empty_cols = 0;
+	for (index_t j = 0; j < ncols; j++)
+		if (column_info[j] == 0)
+			empty_cols += 1;
+	printf("Found %" PRId64 " empty columns in the purged matrix\n", empty_cols);
+}
+
+/* construct the left matrix (n' rows, n columns), where n is the number of rows
    of the original matrix M (output from purge), i.e., nrows. 
+   This is similar to the doAllAdds() function in replay.c
 */
 static void
 build_left_matrix(const char *outputname, const char *hisname, int bin)
@@ -829,7 +908,7 @@ int main(int argc, char *argv[])
 	const char *hisname = param_list_lookup_string(pl, "his");
 	const char *sparseLname = param_list_lookup_string(pl, "outL");
 	const char *sparseRname = param_list_lookup_string(pl, "outR");
-	// const char *indexname = param_list_lookup_string(pl, "index");
+	const char *indexname = param_list_lookup_string(pl, "index");
 	const char *idealsfilename = param_list_lookup_string(pl, "ideals");
 	param_list_parse_int(pl, "skip", &skip);
 	const char *path_antebuffer = param_list_lookup_string(pl, "path_antebuffer");
@@ -850,6 +929,10 @@ int main(int argc, char *argv[])
 	}
 	if (sparseLname == NULL || sparseRname == NULL) {
 		fprintf(stderr, "Error, both -outL and --outR are required\n");
+		usage(pl, argv0);
+	}
+	if (indexname == NULL) {
+		fprintf(stderr, "Error, --index is required\n");
 		usage(pl, argv0);
 	}
 #ifdef FOR_DL
@@ -893,12 +976,15 @@ int main(int argc, char *argv[])
 #endif
 
 	heap_setup(heap);
-	preread_history(hisname);
+
+	/* read history ; mark eliminated columns ; output index */
+	preread_history(hisname, indexname);
+
+	heap_reset(heap);
 
 	/* load the relations in memory */
 	read_purgedfile(purgedname);
 
-	/* Read the history */
 	printf("Building left matrix\n");
 	build_left_matrix(sparseLname, hisname, bin);
 
