@@ -1100,6 +1100,7 @@ class BWC(Program):
                  # or any value (for example 1) for a fixed seed
                  seed: ParameterEq()=None,
                  multi_matrix: ParameterEq()=None,
+                 balancing_options: ParameterEq()=None,
                  **kwargs):
         if os.name == "nt":
             kwargs.setdefault("runprefix", "perl.exe")
@@ -1112,6 +1113,8 @@ class BWC(Program):
         if double_matrix:
             matrix = double_matrix_path(matrix)
             multi_matrix = 1
+            # remove when https://gitlab.inria.fr/cado-nfs/cado-nfs/-/issues/30078 is fixed
+            balancing_options = "reorder=none,skip_decorrelating_permutation=1"
         if IS_MINGW:
             matrix = translate_mingw_path(matrix)
             wdir = translate_mingw_path(wdir)
