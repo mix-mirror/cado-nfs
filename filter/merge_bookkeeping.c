@@ -5,10 +5,6 @@
 
 int merge_pass = 0;
 
-#ifdef BIG_BROTHER
-unsigned char *touched_columns = NULL;
-#endif
-
 /* define CANCEL to count column cancellations */
 // #define CANCEL
 #ifdef CANCEL

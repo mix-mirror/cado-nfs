@@ -12,6 +12,24 @@
 #define TRACE_COL -1 // 253224 // 231 // put to -1 if not...!
 #define TRACE_ROW -1 // 59496 // put to -1 if not...!
 
+#ifdef FOR_DL
+
+#define rowCell(row, k) (row)[k].id
+#define rowFullCell(row, k) (row)[k]
+#define setRawCell(row, k, v, c) (row)[k] = (ideal_merge_t) {.id = (v), .e = (c)}
+#define setCell(row, k, v, c) (row)[k] = (ideal_merge_t) {.id = (v), .e = (c)}
+#define compressRow(row, buf, n) memcpy(row,buf,(n+1)*sizeof (typerow_t))
+
+#else
+
+#define setRawCell(row, k, v, c) (row)[k] = (v)
+#define rowFullCell(row, k) rowCell((row), (k))
+#define rowCell(row, k) (row)[k]
+#define setCell(row, k, v, c) (row)[k] = (v)
+#define compressRow(row, buf, n) memcpy((row),buf,((n)+1)*sizeof (typerow_t))
+#endif
+
+
 /* rows correspond to relations, and columns to primes (or prime ideals) */
 typedef struct {
   heapctx_t heap;

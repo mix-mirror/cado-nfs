@@ -21,35 +21,35 @@ target_link_libraries(purge utils_with_io)
 
 add_executable(merge merge.c merge_heap.c merge_bookkeeping.c
     merge_compute_weights.c
-    read_purgedfile_in_parallel.c mst.c merge_replay_matrix.c sparse.c)
+    read_purgedfile_in_parallel.c mst.c merge_replay_matrix.c)
 target_link_libraries(merge utils_with_io)
 set_target_properties(merge PROPERTIES
   COMPILE_FLAGS "${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
 add_executable(merge-dl merge.c merge_heap.c merge_bookkeeping.c
     merge_compute_weights.c
-    read_purgedfile_in_parallel.c mst.c merge_replay_matrix.c sparse.c)
+    read_purgedfile_in_parallel.c mst.c merge_replay_matrix.c)
 target_link_libraries(merge-dl utils_with_io)
 set_target_properties(merge-dl PROPERTIES
   COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
-add_executable(replay replay.c sparse.c merge_heap.c)
+add_executable(replay replay.c merge_heap.c)
 target_link_libraries(replay utils_with_io)
 set_target_properties(replay PROPERTIES
   COMPILE_FLAGS "${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
-add_executable(replay-dl replay.c sparse.c merge_heap.c)
+add_executable(replay-dl replay.c merge_heap.c)
 target_link_libraries(replay-dl utils_with_io)
 set_target_properties(replay-dl PROPERTIES COMPILE_FLAGS "-DFOR_DL")
 set_target_properties(replay-dl PROPERTIES
   COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
-add_executable(replay-dblemat replay_dblemat.c sparse.c merge_heap.c)
+add_executable(replay-dblemat replay_dblemat.c merge_heap.c)
 target_link_libraries(replay-dblemat utils_with_io)
 set_target_properties(replay-dblemat PROPERTIES
                       COMPILE_FLAGS "${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 
-add_executable(replay-dblemat-dl replay_dblemat.c sparse.c merge_heap.c)
+add_executable(replay-dblemat-dl replay_dblemat.c merge_heap.c)
 target_link_libraries(replay-dblemat-dl utils_with_io)
 set_target_properties(replay-dblemat-dl PROPERTIES
                       COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")

@@ -2,7 +2,6 @@
 #include <limits.h>
 
 #include "filter_config.h"
-#include "sparse.h"
 #include "mst.h"
 #include "macros.h"
 

@@ -2,7 +2,6 @@
 #define MST_H_
 
 #include "filter_config.h"
-#include "sparse.h"
 #include "typedefs.h"
 
 #ifdef __cplusplus

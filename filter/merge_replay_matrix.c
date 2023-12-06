@@ -13,7 +13,6 @@
 #include "filter_config.h"
 #include "merge_replay_matrix.h"
 #include "merge_heap.h"
-#include "sparse.h"
 #include "macros.h"
 
 /*****************************************************************************/
@@ -57,8 +56,10 @@ int cmp_u64(const uint64_t * a, const uint64_t * b)
     return (*a > *b) - (*b > *a);
 }
 
+#if 0
 void
 print_row(filter_matrix_t *mat, index_t i)
 {
     fprintRow (stdout, mat->rows[i]);
 }
+#endif

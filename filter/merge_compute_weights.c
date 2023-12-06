@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include "macros.h"
 #include "omp_proxy.h"
-#include "sparse.h"
 #include "misc.h"
 #include "merge_compute_weights.h"
 
