@@ -738,7 +738,9 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
                 		add_row(rows, i1, e1, i2, e1);
 			else
                 		add_row(rowsL, i1, e1, i2, e1);
-                	add_row(rows_index, i1, e1, i2, e1);
+                        // FIXME: the following line does not compile
+                        // (rows_index undeclared)
+                	// add_row(rows_index, i1, e1, i2, e1);
         	        break;
 #endif
         	default:

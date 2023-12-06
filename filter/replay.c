@@ -426,7 +426,7 @@ writeIndex(const char *indexname, typerow_t **rows, index_t small_nrows)
     	typerow_t MAYBE_UNUSED *row = rows[i];
     	index_t row_length = rowLength(rows, i);
         ASSERT (row_length > 0);
-        fprintf(indexfile, "%d", row_length);
+        fprintf(indexfile, "%" PRIu64, (uint64_t) row_length);
         for (unsigned int j = 1; j <= row_length; j++) {
 #ifdef FOR_DL
             fprintf(indexfile, " %" PRIx64 ":%d",
