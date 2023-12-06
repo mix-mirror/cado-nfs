@@ -4,7 +4,6 @@
 #include "typedefs.h"
 #include "merge_heap.h"
 #include "merge_replay_matrix.h"  // typerow_t, index_t, 
-#include "sparse.h" // rowCell
 #include "omp_proxy.h"
 #include "timing.h"  // seconds
 

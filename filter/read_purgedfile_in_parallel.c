@@ -5,7 +5,6 @@
 #include "timing.h"
 #include "merge_types.h"
 #include "merge_heap.h"
-#include "sparse.h"
 #include "read_purgedfile_in_parallel.h"
 
 uint64_t * rows_per_thread;

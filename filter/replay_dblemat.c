@@ -39,7 +39,6 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "gzip.h"		// fopen_maybe_compressed
 #include "misc.h"		// derived_filename, has_suffix
 #include "params.h"		// param_list_parse_*
-#include "sparse.h"
 #include "stats.h"		// stats_data_t
 #include "timing.h"		// seconds
 #include "verbose.h"		// verbose_decl_usage
@@ -47,6 +46,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "macros.h"
 #include "merge_heap.h"
 #include "gcd.h"
+#include "merge_replay_matrix.h" // rowCell
 
 #define DEBUG 0
 
