@@ -401,7 +401,7 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
       setCell(sum, t, r2[t2].id, e);
       t2 ++;
     }
-  // ASSERT(t <= k1 + k2 - 1);
+  ASSERT(t <= k1 + k2);
   heap_resize_last_row(heap, sum, t);
   heap_destroy_row(heap, rows[i1]);
   rows[i1] = sum;
