@@ -355,7 +355,7 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
 
   /* now perform the real merge */
   typerow_t *sum;
-  sum = heap_alloc_row(heap, i1, k1 + k2 - 1);
+  sum = heap_alloc_row(heap, i1, k1 + k2);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -402,7 +402,7 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
       setCell(sum, t, r2[t2].id, e);
       t2 ++;
     }
-  ASSERT(t <= k1 + k2 - 1);
+  ASSERT(t <= k1 + k2);
   heap_resize_last_row(heap, sum, t);
   heap_destroy_row(heap, rows[i1]);
   rows[i1] = sum;
@@ -529,7 +529,7 @@ preread_history(const char *hisname, const char *indexname)
             	case '*':       // row addition with multiplicative coefficients
         	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
                 	ASSERT(k == 4);
-                	add_row(rows_index, i1, e1, i2, e1);
+                	add_row(rows_index, i1, e1, i2, e2);
         	        break;
 #endif
         	default:
@@ -757,10 +757,10 @@ build_left_matrix(const char *outputLname, const char *outputPname, const char *
         	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
                 	ASSERT(k == 4);
                 	if (twomerge_mode)
-                		add_row(rows, i1, e1, i2, e1);
+                		add_row(rows, i1, e1, i2, e2);
 			else
-                		add_row(rowsL, i1, e1, i2, e1);
-                	add_row(rowsP, i1, e1, i2, e1);
+                		add_row(rowsL, i1, e1, i2, e2);
+                	add_row(rowsP, i1, e1, i2, e2);
         	        break;
 #endif
         	default:
