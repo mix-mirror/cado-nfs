@@ -815,7 +815,7 @@ build_left_matrix(const char *outputLname, const char *outputPname, const char *
 /******************************************************************************/
  
 static void
-export_right_matrix (const char *outputname, const char *idealsfilename, index_t skip, int bin)
+export_right_matrix (const char *outputname, const char *idealsname, index_t skip, int bin)
 {
 	/* here: column_info[j] == 1   <====>   column has been eliminated
 	 *       column_info[j] == 0   <====>   column is empty (not eliminated) 
@@ -854,12 +854,13 @@ export_right_matrix (const char *outputname, const char *idealsfilename, index_t
 		}
 	}
 
-	if (idealsfilename != NULL) {
-		FILE *renumberfile = fopen_maybe_compressed (idealsfilename, "w");
+	if (idealsname != NULL) {
+		FILE *renumberfile = fopen_maybe_compressed (idealsname, "w");
 		if (renumberfile == NULL) {
 			fprintf (stderr, "Error while opening file to save permutation of ideals\n");
 			exit(EXIT_FAILURE);
 		}
+		printf("Saving ideal renumbering in %s\n", idealsname);
 		fprintf (renumberfile, "# %" PRIu64 "\n", (uint64_t) sum);
 		for (index_t j = 0; j < ncols; j++)
 			if (column_info[j] != UMAX(index_t))
