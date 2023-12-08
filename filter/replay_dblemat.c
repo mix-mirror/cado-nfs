@@ -860,13 +860,14 @@ export_right_matrix (const char *outputname, const char *idealsfilename, index_t
 			fprintf (stderr, "Error while opening file to save permutation of ideals\n");
 			exit(EXIT_FAILURE);
 		}
+		fprintf (renumberfile, "# %" PRIu64 "\n", (uint64_t) sum);
 		for (index_t j = 0; j < ncols; j++)
-			if (column_info[j] == UMAX(index_t))
-				fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
-			else
+			if (column_info[j] != UMAX(index_t))
+			// 	fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
+			// else
 				fprintf (renumberfile, "%" PRIu64 " %" PRIx64 "\n",
 					(uint64_t) column_info[j], (uint64_t) j);
-		fclose(renumberfile);
+		fclose_maybe_compressed(renumberfile, idealsname);
 	}
 
 	/* output right matrix */
