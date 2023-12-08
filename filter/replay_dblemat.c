@@ -868,7 +868,7 @@ export_right_matrix (const char *outputname, const char *idealsname, index_t ski
 			// else
 				fprintf (renumberfile, "%" PRIu64 " %" PRIx64 "\n",
 					(uint64_t) column_info[j], (uint64_t) j);
-		fclose_maybe_compressed(renumberfile, idealsname);
+		fclose_maybe_compressed(renumberfile, idealsfilename);
 	}
 
 	/* output right matrix */
