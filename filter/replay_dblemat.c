@@ -51,11 +51,12 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #define DEBUG 0
 
 /* purged matrix */
-heapctx_t heap, heap_idx;
-typerow_t **rows;
+heapctx_t heap;
+typerow_t **rows;       // purged matrix
 index_t nrows;          // #rows for the purged matrix
 index_t ncols;          // #cols for the purged matrix
 index_t nrows_small;    // #rows for the purged matrix once 2-merges are performed        
+index_t left_nrows;     // #rows for the left (& product) matrix
 
 /* global state */
 index_t *column_info;
@@ -173,8 +174,10 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 		} else {
 			uint32_t dw = 0;
 			uint32_t sw = 0;
-			for (index_t j = 1; j <= rowLength(rows, i); j++) {
-				if (rowCell(rows[i], j) < skip) {
+			for (index_t k = 1; k <= rowLength(rows, i); k++) {
+				index_t j = rowCell(rows[i], k);
+				assert(j < ncols);
+				if (j < skip) {
 					dw++;
 					DW++;
 				} else {
@@ -182,52 +185,50 @@ static unsigned long flushSparse(const char *sparsename, typerow_t ** rows,
 					W++;
 				}
 			}
-                        if (bin)
-                        {
-                          fwrite32_little(&sw, 1, smatfile);
-                          if (srwfile) fwrite32_little(&sw, 1, srwfile);
-                          if (skip) fwrite32_little(&dw, 1, dmatfile);
-                          if (skip) fwrite32_little(&dw, 1, drwfile);
-                        } else {
-                          fprintf(smatfile, "%" PRIu32 "", sw);
-                          if (srwfile) fprintf(srwfile, "%" PRIu32 "\n", sw);
-                          if (skip) fprintf(dmatfile, "%" PRIu32 "", dw);
-                          if (skip) fprintf(drwfile, "%" PRIu32 "\n", dw);
+			if (bin) {
+				fwrite32_little(&sw, 1, smatfile);
+				if (srwfile) fwrite32_little(&sw, 1, srwfile);
+				if (skip) fwrite32_little(&dw, 1, dmatfile);
+				if (skip) fwrite32_little(&dw, 1, drwfile);
+			} else {
+				fprintf(smatfile, "%" PRIu32 "", sw);
+				if (srwfile) fprintf(srwfile, "%" PRIu32 "\n", sw);
+				if (skip) fprintf(dmatfile, "%" PRIu32 "", dw);
+				if (skip) fprintf(drwfile, "%" PRIu32 "\n", dw);
                         }
-
 			for (index_t j = 1; j <= rowLength(rows, i); j++) {
 				ASSERT_ALWAYS(rowCell(rows[i], j) <= (index_t) UINT32_MAX);
 				uint32_t x = rowCell(rows[i], j);
 				if (srwfile)
 					weights[x]++;
 				if (x < skip) {
-                                  ASSERT_ALWAYS(skip);
-                                  if (bin)
-                                    fwrite32_little(&x, 1, dmatfile);
-                                  else
-                                    fprintf(dmatfile, " %" PRIu32 "", x);
+					ASSERT_ALWAYS(skip);
+					if (bin)
+                                  		fwrite32_little(&x, 1, dmatfile);
+					else
+                                  		fprintf(dmatfile, " %" PRIu32 "", x);
 				} else {
 					x -= skip;
-                                        if (bin) {
-                                          fwrite32_little(&x, 1, smatfile);
+					if (bin) {
+						fwrite32_little(&x, 1, smatfile);
 #ifdef FOR_DL
-					/* exponents are always int32_t */
-					uint32_t e = (uint32_t) rows[i][j].e;
-					fwrite32_little(&e, 1, smatfile);
+						/* exponents are always int32_t */
+						uint32_t e = (uint32_t) rows[i][j].e;
+						fwrite32_little(&e, 1, smatfile);
 #endif
                                         } else {
-                                          fprintf(smatfile, " %" PRIu32 "", x);
+						fprintf(smatfile, " %" PRIu32 "", x);
 #ifdef FOR_DL
-                                          fprintf(smatfile, ":%d", rows[i][j].e);
+                                          	fprintf(smatfile, ":%d", rows[i][j].e);
 #endif
                                         }
 				}
 			}
 		}
-                if (!bin) {
-                  fprintf(smatfile, "\n");
-                  if (skip) fprintf(dmatfile, "\n");
-                }
+		if (!bin) {
+                	fprintf(smatfile, "\n");
+                	if (skip) fprintf(dmatfile, "\n");
+		}
 	}
 
 	fclose(smatfile);
@@ -354,7 +355,7 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
 
   /* now perform the real merge */
   typerow_t *sum;
-  sum = heap_alloc_row(heap, i1, k1 + k2 - 1);
+  sum = heap_alloc_row(heap, i1, k1 + k2);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -401,7 +402,7 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
       setCell(sum, t, r2[t2].id, e);
       t2 ++;
     }
-  ASSERT(t <= k1 + k2 - 1);
+  ASSERT(t <= k1 + k2);
   heap_resize_last_row(heap, sum, t);
   heap_destroy_row(heap, rows[i1]);
   rows[i1] = sum;
@@ -528,7 +529,7 @@ preread_history(const char *hisname, const char *indexname)
             	case '*':       // row addition with multiplicative coefficients
         	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
                 	ASSERT(k == 4);
-                	add_row(rows_index, i1, e1, i2, e1);
+                	add_row(rows_index, i1, e1, i2, e2);
         	        break;
 #endif
         	default:
@@ -651,7 +652,7 @@ read_purgedfile (const char* purgedname)
    This is similar to the doAllAdds() function in replay.c
 */
 static void
-build_left_matrix(const char *outputname, const char *hisname, int bin)
+build_left_matrix(const char *outputLname, const char *outputPname, const char *hisname, index_t skip, int bin)
 {
 	printf("Reading history file %s (2nd pass), building left matrix\n", hisname);
 	fflush(stdout);
@@ -660,20 +661,37 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	ASSERT_ALWAYS(hisfile != NULL);
 
 	/* allocate identity matrix for L */
-	typerow_t ** rowsL = malloc(nrows * sizeof(*rows));
+	typerow_t ** rowsL = malloc(nrows * sizeof(*rowsL));
 	ASSERT_ALWAYS(rowsL != NULL);
 	for (index_t i = 0; i < nrows; i++) {
 		rowsL[i] = heap_alloc_row(heap, i, 1);
 		setCell(rowsL[i], 1, i, 1);
 	}
 
+	/* allocate and fill "product matrix" for the skipped (=dense) columns */
+	typerow_t ** rowsP = malloc(nrows * sizeof(*rowsP));
+	ASSERT_ALWAYS(rowsP != NULL);
+	for (index_t i = 0; i < nrows; i++) {
+		int l = 0;  /* #skipped entries */
+		for (index_t k = 1; k <= rowLength(rows, i); k++)
+			if (rowCell(rows[i], k) < skip)
+				l += 1;
+		rowsP[i] = heap_alloc_row(heap, i, l);
+		l = 1;
+		for (index_t k = 1; k <= rowLength(rows, i); k++)
+			if (rowCell(rows[i], k) < skip) {
+				rowsP[i][l] = rows[i][k];
+				l += 1;
+			}
+	}
+
+	/* read and process history */
+	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
+	 * 2^23 primes after that */
 	uint64_t ntwomerge = 0;
 	nrows_small = nrows;
 	int twomerge_mode = 1;
-	index_t left_nrows = nrows;
-
-	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
-	 * 2^23 primes after that */
+	left_nrows = nrows;
 	uint64_t addread = 0;
 	char str[STRLENMAX];	stats_data_t stats;	/* struct for printing progress */
 	stats_init(stats, stdout, &addread, 23, "Read", "row additions", "", "lines");
@@ -688,6 +706,8 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 			fprintf(stderr, " I stop reading and go to the next phase\n");
 			break;
 		}
+
+		// TODO: garbage-collect. Distinguish the different heaps
 
         	uint64_t i1, i2;
 #ifdef FOR_DL
@@ -712,6 +732,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 				nrows_small -= 1;
 			}
 			heap_destroy_row(heap, rowsL[i1]);
+			heap_destroy_row(heap, rowsP[i1]);
 			rowsL[i1] = NULL;
 			left_nrows -= 1;
 			break;
@@ -723,6 +744,7 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
                 		add_row(rows, i1, i2);
                 	else
                 		add_row(rowsL, i1, i2);
+                	add_row(rowsP, i1, i2);
                 	break;
         	case '*':
         	        fprintf (stderr, "coefficients not allowed in factorization mode\n");
@@ -735,9 +757,10 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
         	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
                 	ASSERT(k == 4);
                 	if (twomerge_mode)
-                		add_row(rows, i1, e1, i2, e1);
+                		add_row(rows, i1, e1, i2, e2);
 			else
-                		add_row(rowsL, i1, e1, i2, e1);
+                		add_row(rowsL, i1, e1, i2, e2);
+                	add_row(rowsP, i1, e1, i2, e2);
         	        break;
 #endif
         	default:
@@ -781,8 +804,12 @@ build_left_matrix(const char *outputname, const char *hisname, int bin)
 	free(renumber);
 
 	/* output left matrix */
-	flushSparse(outputname, rowsL, nrows, left_nrows, nrows_small, 0, bin);    // skip=0
+	flushSparse(outputLname, rowsL, nrows, left_nrows, nrows_small, 0, bin);    // skip=0
 	free(rowsL);
+
+	/* output product matrix */
+	flushSparse(outputPname, rowsP, nrows, left_nrows, skip, skip, bin);
+	free(rowsP);
 }
 
 /******************************************************************************/
@@ -833,13 +860,14 @@ export_right_matrix (const char *outputname, const char *idealsfilename, index_t
 			fprintf (stderr, "Error while opening file to save permutation of ideals\n");
 			exit(EXIT_FAILURE);
 		}
+		fprintf (renumberfile, "# %" PRIu64 "\n", (uint64_t) sum);
 		for (index_t j = 0; j < ncols; j++)
-			if (column_info[j] == UMAX(index_t))
-				fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
-			else
+			if (column_info[j] != UMAX(index_t))
+			// 	fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
+			// else
 				fprintf (renumberfile, "%" PRIu64 " %" PRIx64 "\n",
 					(uint64_t) column_info[j], (uint64_t) j);
-		fclose(renumberfile);
+		fclose_maybe_compressed(renumberfile, idealsname);
 	}
 
 	/* output right matrix */
@@ -1010,8 +1038,8 @@ int main(int argc, char *argv[])
 	heap_reset(heap);
 	read_purgedfile(purgedname);
 
-	printf("Building left matrix\n");
-	build_left_matrix(sparseLname, hisname, bin);
+	printf("Building left & (dense) product matrix\n");
+	build_left_matrix(sparseLname, sparsename, hisname, skip, bin);
 
 	printf("Building right matrix\n");
 	export_right_matrix(sparseRname, idealsfilename, skip, bin);

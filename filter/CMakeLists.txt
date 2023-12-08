@@ -40,7 +40,6 @@ set_target_properties(replay PROPERTIES
 
 add_executable(replay-dl replay.c merge_heap.c)
 target_link_libraries(replay-dl utils_with_io)
-set_target_properties(replay-dl PROPERTIES COMPILE_FLAGS "-DFOR_DL")
 set_target_properties(replay-dl PROPERTIES
   COMPILE_FLAGS "-DFOR_DL ${OpenMP_C_FLAGS}" LINK_FLAGS "${OpenMP_C_FLAGS}")
 

@@ -336,8 +336,8 @@ add_row(typerow_t **rows, index_t i1, index_t i2)
 static void
 add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
 {
- 	typerow_t *r1 = rows[i1];
-  	typerow_t *r2 = rows[i2];
+ 	const typerow_t *r1 = rows[i1];
+  	const typerow_t *r2 = rows[i2];
  	index_t k1 = rowLength(rows, i1);
 	index_t k2 = rowLength(rows, i2);
 	index_t t1 = 1;            // index in rows[i1]
@@ -348,13 +348,8 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
      exponents that would come from exponent overflows in previous merges */
 	ASSERT_ALWAYS (e1 != 0 && e2 != 0);
 
-  t1 = 1;
-  t2 = 1;
-  t = 0;
-
   /* now perform the real merge */
-  typerow_t *sum;
-  sum = heap_alloc_row(heap, i1, k1 + k2 - 1);
+  typerow_t *sum = heap_alloc_row(heap, i1, k1 + k2);
 
   int64_t e;
   while (t1 <= k1 && t2 <= k2) {
@@ -365,10 +360,9 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
 	      ASSERT_ALWAYS(INT32_MIN_64 <= e && e <= INT32_MAX_64);
 	      t++;
 	      setCell(sum, t, r1[t1].id, e);
-	    } else { // cancelation
-	  	t1 ++;
-	  	t2 ++;
 	    }
+	    t1 ++;
+	    t2 ++;
 	}
       else if (r1[t1].id < r2[t2].id)
 	{
@@ -401,7 +395,6 @@ add_row(typerow_t **rows, index_t i1, int32_t e2, index_t i2, int32_t e1)
       setCell(sum, t, r2[t2].id, e);
       t2 ++;
     }
-  ASSERT(t <= k1 + k2 - 1);
   heap_resize_last_row(heap, sum, t);
   heap_destroy_row(heap, rows[i1]);
   rows[i1] = sum;
@@ -468,7 +461,7 @@ preread_history(const char *hisname, const char *indexname)
 		rows_index[i] = heap_alloc_row(heap, i, 1);
 		setCell(rows_index[i], 1, i, 1);
 	}
-	/** BEGIN NOT DRY (w.r.t. build left matrix) ***/
+	/** BEGIN NOT DRY (w.r.t. build_matrix) ***/
 
 	/* will print report at 2^10, 2^11, ... 2^23 computed primes and every
 	 * 2^23 primes after that */
@@ -508,8 +501,8 @@ preread_history(const char *hisname, const char *indexname)
         	        k = sscanf(str + 1, "%" SCNd64, &i1);
         	        ASSERT(k == 1);
         	        heap_destroy_row(heap, rows_index[i1]);
-			left_nrows -= 1;
         	        rows_index[i1] = NULL;
+			left_nrows -= 1;
         	        break;
 #ifndef FOR_DL
         	case '+':        // row addition
@@ -527,7 +520,7 @@ preread_history(const char *hisname, const char *indexname)
             	case '*':       // row addition with multiplicative coefficients
         	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
                 	ASSERT(k == 4);
-                	add_row(rows_index, i1, e1, i2, e1);
+                	add_row(rows_index, i1, e1, i2, e2);
         	        break;
 #endif
         	default:
@@ -711,7 +704,7 @@ build_matrix(const char *outputname, const char *hisname, const char *idealsname
             	case '*':       // row addition with multiplicative coefficients
         	        k = sscanf(str + 1, "%" SCNd64 " %" PRId32 " %" SCNd64 " %" PRId32, &i1, &e1, &i2, &e2);
                 	ASSERT(k == 4);
-               		add_row(rows, i1, e1, i2, e1);
+               		add_row(rows, i1, e1, i2, e2);
         	        break;
 #endif
         	default:
@@ -780,18 +773,20 @@ build_matrix(const char *outputname, const char *hisname, const char *idealsname
 	}
 
 	if (idealsname != NULL) {
+		printf("Writing ideal renumbering into %s\n", idealsname);
 		FILE *renumberfile = fopen_maybe_compressed (idealsname, "w");
 		if (renumberfile == NULL) {
 			fprintf (stderr, "Error while opening file to save permutation of ideals\n");
 			exit(EXIT_FAILURE);
 		}
+		fprintf (renumberfile, "# %" PRIu64 "\n", (uint64_t) sum);
 		for (index_t j = 0; j < ncols; j++)
-			if (column_info[j] == UMAX(index_t))
-				fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
-			else
+			if (column_info[j] != UMAX(index_t))
+				// fprintf(renumberfile, "# column %" PRIu64 " has been eliminated / is empty\n", (uint64_t) j);
+			//else
 				fprintf (renumberfile, "%" PRIu64 " %" PRIx64 "\n",
 					(uint64_t) column_info[j], (uint64_t) j);
-		fclose(renumberfile);
+		fclose_maybe_compressed(renumberfile, idealsname);
 	}
 
 	/* output matrix */

@@ -259,6 +259,7 @@ heap_resize_last_row (heapctx_t ctx, typerow_t *row, index_t new_size)
   int t = omp_get_thread_num();
   struct page_t *page = ctx->active_page[t];
   index_t old_size = rowCell(row, 0);
+  ASSERT(new_size <= old_size);
   ASSERT(row + old_size + 1 == page->data + page->ptr);
   int delta = old_size - new_size;
   rowCell(row, 0) = new_size;
