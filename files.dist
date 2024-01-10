@@ -160,8 +160,6 @@ filter/singleton_simple.cpp
 filter/sm.c
 filter/sm_append.cpp
 filter/sm_simple.cpp
-filter/sparse.c
-filter/sparse.h
 gf2x/.gitlab-ci.yml
 gf2x/.gitmodules
 gf2x/AUTHORS
