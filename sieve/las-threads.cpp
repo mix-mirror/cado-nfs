@@ -342,6 +342,46 @@ reservation_group::cget<3, logphint_t>() const
     ASSERT_ALWAYS(0);
 }
 
+template<int LEVEL, typename HINT>
+size_t reservation_group::print_number_of_updates() const {
+    return 0;
+    auto const & RA = cget<LEVEL, HINT>();
+    auto count = RA.number_of_updates();
+    size_t s = 0;
+    /* it's one per thread */
+    for(size_t i = 0 ; i < count.size() ; i++) {
+        s += count[i];
+    }
+    if (s)
+        printf("%d %s %zu %d %zu\n",
+                LEVEL, HINT::rtti, count.size(),
+                RA.number_of_buckets(),
+                s);
+    return s;
+}
+
+void reservation_group::print_number_of_updates(int level) const
+{
+    size_t s MAYBE_UNUSED = 0;
+    if (level == 1) {
+        s += print_number_of_updates<1, shorthint_t>();
+        s += print_number_of_updates<1, longhint_t>();
+        s += print_number_of_updates<1, emptyhint_t>();
+        s += print_number_of_updates<1, logphint_t>();
+    } else if (level == 2) {
+        s += print_number_of_updates<2, shorthint_t>();
+        s += print_number_of_updates<2, longhint_t>();
+        s += print_number_of_updates<2, emptyhint_t>();
+        s += print_number_of_updates<2, logphint_t>();
+    } else if (level == 3) {
+        s += print_number_of_updates<3, shorthint_t>();
+        s += print_number_of_updates<3, emptyhint_t>();
+    } else {
+        ASSERT_ALWAYS(0);
+    }
+}
+
+
 template class reservation_array<bucket_array_t<1, shorthint_t> >;
 template class reservation_array<bucket_array_t<2, shorthint_t> >;
 template class reservation_array<bucket_array_t<3, shorthint_t> >;

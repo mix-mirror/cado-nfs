@@ -134,8 +134,8 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  * apply to them as well.
  */
 #ifdef  __GNUC__
-#pragma GCC diagnostic error "-Wextra"
-#pragma GCC diagnostic error "-Wall"
+// #pragma GCC diagnostic error "-Wextra"
+// #pragma GCC diagnostic error "-Wall"
 #endif
 
 #if defined(__clang__)

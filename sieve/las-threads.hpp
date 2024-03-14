@@ -49,6 +49,20 @@ public:
 
   T &reserve(int);
   void release(T &BA);
+
+  int number_of_buckets() const {
+      /* the common number of buckets in all bucket arrays in this
+       * reservation array
+       */
+      return BAs[0].n_bucket;
+  }
+
+  std::vector<size_t> number_of_updates() const {
+      std::vector<size_t> res;
+      for(auto const & BA : BAs)
+          res.push_back(BA.updates);
+      return res;
+  }
 };
 
 /* A group of reservation arrays, one for each possible update type.
@@ -67,6 +81,8 @@ class reservation_group {
   reservation_array<bucket_array_t<3, emptyhint_t> > RA3_empty;
   reservation_array<bucket_array_t<1, logphint_t> > RA1_logp;
   reservation_array<bucket_array_t<2, logphint_t> > RA2_logp;
+  template<int LEVEL, typename HINT>
+      size_t print_number_of_updates() const;
 protected:
   template<int LEVEL, typename HINT>
   reservation_array<bucket_array_t<LEVEL, HINT> > &
@@ -84,6 +100,7 @@ public:
           std::array<double, FB_MAX_PARTS> const &
           fill_ratio, int logI, nfs_aux&, thread_pool&,
           bool);
+  void print_number_of_updates(int level) const;
 };
 
 extern template class reservation_array<bucket_array_t<1, shorthint_t> >;

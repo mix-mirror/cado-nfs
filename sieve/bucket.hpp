@@ -313,6 +313,10 @@ class bucket_array_t : private NonCopyable {
   update_t *big_data = 0;
   size_t big_size = 0;                  // size of bucket update memory
 
+    public:
+  size_t updates = 0;
+
+    private:
   update_t ** bucket_write = 0;         // Contains pointers to first empty
                                         // location in each bucket
   update_t ** bucket_start = 0;         // Contains pointers to beginning of
@@ -521,6 +525,7 @@ class bucket_single {
   size_t _size;
   las_memory_accessor * used_accessor = nullptr;
 public:
+  size_t updates = 0;
   bucket_single () {
     start = nullptr;
     read = start;
