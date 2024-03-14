@@ -718,6 +718,9 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
     /* TODO: is there a way to share this in sublat mode ? */
 
+    /* This multityped array has data for LEVEL=1 to LEVEL=toplevel.
+     * Well, to be honest, it will be used only for LEVEL < toplevel
+     */
     multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS> precomp_plattice(nsides);
 
     {
@@ -734,6 +737,9 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
             fill_in_buckets_toplevel(ws, aux, pool, side, w);
 
+            /* for level < TOPLEVEL, we don't do fill_in_buckets just
+             * yet, but we need to prepare the plattices.
+             */
             fill_in_buckets_prepare_plattices(ws, pool, side, precomp_plattice);
 
         }
