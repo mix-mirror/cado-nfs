@@ -271,6 +271,7 @@ template<bool with_hints> void process_bucket_region_run::apply_buckets_inner(in
 
     typedef typename hints_proxy<with_hints>::l my_longhint_t;
     typedef typename hints_proxy<with_hints>::s my_shorthint_t;
+
     {
         CHILD_TIMER(timer, "apply buckets");
         TIMER_CATEGORY(timer, sieving(side));
@@ -794,22 +795,27 @@ void process_bucket_region_run::operator()() {/*{{{*/
         MARK_TIMER_FOR_SIDE(timer, side);
         TIMER_CATEGORY(timer, sieving(side));
 
+#if 0
         /* Compute norms in S[side] */
         init_norms(side);
+#endif
 
         /* Accumulate sieve contributions in SS */
         apply_buckets(side);
+#if 0
         small_sieve(side);
 
         /* compute S[side][x] = max(S[side][x] - SS[x], 0),
          * and clear SS.  */
         SminusS(side);
+#endif
 
         ws.sides[side].dumpfile.write(S[side], BUCKET_REGION);
 
         BOOKKEEPING_TIMER(timer);
     }
 
+#if 0
     if (main_output.verbose >= 2)
         update_checksums(tws, taux);
 
@@ -848,11 +854,17 @@ void process_bucket_region_run::operator()() {/*{{{*/
 #endif
 
     cofactoring_sync(survivors);
+#endif
 }/*}}}*/
 
 
 void process_many_bucket_regions(nfs_work & ws, std::shared_ptr<nfs_work_cofac> wc_p, std::shared_ptr<nfs_aux> aux_p, thread_pool & pool, int first_region0_index, where_am_I & w)/*{{{*/
 {
+    /* when we reach here, only the level-1 updates must be printed */
+    ws.sides[0].group.print_number_of_updates(1);
+    ws.sides[1].group.print_number_of_updates(1);
+    return;
+
     /* first_region0_index is always 0 when toplevel == 1, but the
      * present function is also called from within downsort_tree when
      * toplevel > 1, and then first_region0_index may be larger.
@@ -894,6 +906,7 @@ void process_many_bucket_regions(nfs_work & ws, std::shared_ptr<nfs_work_cofac> 
             /* We need to compute more init positions */
             int more = std::min(SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE, ws.nb_buckets[1] - done);
 
+#if 0
             for(int side = 0 ; side < 2 ; side++) {
                 nfs_work::side_data & wss(ws.sides[side]);
                 if (wss.no_fb()) continue;
@@ -916,10 +929,12 @@ void process_many_bucket_regions(nfs_work & ws, std::shared_ptr<nfs_work_cofac> 
                                 ws.conf.logI, ws.Q.sublat);
                         },0);
             }
+#endif
 
             pool.drain_queue(0);
 
             ready = more;
+#if 0
 
             /* Now these new start positions are ready to be used */
             for(int side = 0 ; side < 2 ; side++) {
@@ -927,6 +942,7 @@ void process_many_bucket_regions(nfs_work & ws, std::shared_ptr<nfs_work_cofac> 
                 if (wss.no_fb()) continue;
                 small_sieve_activate_many_start_positions(wss.ssd);
             }
+#endif
         }
     }
 }/*}}}*/

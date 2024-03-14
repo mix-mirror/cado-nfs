@@ -744,6 +744,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
         }
 
+#if 0
         /*
          * Mixing-and-matching threads here with the fill-in-buckets threads
          * might lead to unbalance.
@@ -787,6 +788,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
                     }
             },0);
         }
+#endif
 
         /* Note: we haven't done any downsorting yet ! */
 
@@ -802,6 +804,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
     {
         CHILD_TIMER(timer_special_q, "process_bucket_region outer container");
         TIMER_CATEGORY(timer_special_q, sieving_mixed());
+
         if (ws.toplevel == 1) {
             /* Process bucket regions in parallel */
             process_many_bucket_regions(ws, wc_p, aux_p, pool, 0, w);
@@ -811,6 +814,10 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             // Visit the downsorting tree depth-first.
             // If toplevel = 1, then this is just processing all bucket
             // regions.
+            ws.sides[0].group.print_number_of_updates(ws.toplevel);
+            ws.sides[1].group.print_number_of_updates(ws.toplevel);
+            printf(" --> now processing %d buckets at level %d\n",
+                    ws.nb_buckets[ws.toplevel], ws.toplevel);
             size_t (&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
             for (int i = 0; i < ws.nb_buckets[ws.toplevel]; i++) {
                 switch (ws.toplevel) {
