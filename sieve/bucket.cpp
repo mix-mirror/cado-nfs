@@ -57,6 +57,7 @@ bucket_array_t<LEVEL, HINT>::reset_pointers()
   aligned_medium_memcpy (bucket_write, bucket_start, size_b_align);
   aligned_medium_memcpy (bucket_read,  bucket_start, size_b_align);
   nr_slices = 0;
+  updates = 0;
 }
 
 template <int LEVEL, typename HINT>
@@ -77,6 +78,7 @@ bucket_array_t<LEVEL, HINT>::move(bucket_array_t<LEVEL, HINT> &other)
 #define MOVE_ENTRY(x, zero) do {x = other.x; other.x = zero;} while(0)
   MOVE_ENTRY(big_data, NULL);
   MOVE_ENTRY(big_size, 0);
+  MOVE_ENTRY(updates, 0);
   MOVE_ENTRY(bucket_write, NULL);
   MOVE_ENTRY(bucket_start, NULL);
   MOVE_ENTRY(bucket_read, NULL);

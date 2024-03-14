@@ -1205,10 +1205,10 @@ template <int LEVEL, bool WITH_HINTS>
 static void
 downsort_tree_inner(
     nfs_work &ws,
-    std::shared_ptr<nfs_work_cofac> wc_p,
+    std::shared_ptr<nfs_work_cofac> wc_p MAYBE_UNUSED,
     std::shared_ptr<nfs_aux> aux_p,
     thread_pool &pool,
-    uint32_t bucket_index,      /* for the current level ! */
+    uint32_t bucket_index MAYBE_UNUSED,      /* for the current level ! */
     uint32_t first_region0_index,
     multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS> & precomp_plattice,
     where_am_I & w)
@@ -1231,6 +1231,8 @@ downsort_tree_inner(
 
     WHERE_AM_I_UPDATE(w, side, side);
     TIMER_CATEGORY(timer, sieving(side));
+
+#if 0
     /* FIRST: Downsort what is coming from the level above, for this
      * bucket index */
     // All these BA are global stuff; see reservation_group.
@@ -1280,7 +1282,7 @@ downsort_tree_inner(
         if (LEVEL < ws.toplevel - 1)
             downsort_aux<LEVEL>(fbs, ws, aux, pool, side, bucket_index, w);
     }
-
+#endif
 
     /* SECOND: fill in buckets at this level, for this region. */
     wss.reset_all_pointers<LEVEL,my_shorthint_t>();
@@ -1302,12 +1304,18 @@ downsort_tree_inner(
 
   /* RECURSE */
   if (LEVEL > 1) {
+      ws.sides[0].group.print_number_of_updates(LEVEL);
+      ws.sides[1].group.print_number_of_updates(LEVEL);
+      printf(" --> now processing %d buckets at level %d\n",
+              ws.nb_buckets[LEVEL], LEVEL);
       for (int i = 0; i < ws.nb_buckets[LEVEL]; ++i) {
           size_t (&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
           uint32_t N = first_region0_index + i*(BRS[LEVEL]/BRS[1]);
           downsort_tree<LEVEL-1>(ws, wc_p, aux_p, pool, i, N, precomp_plattice, w);
       }
-  } else {
+  } else
+  {
+#if 0
       /* Prepare for PBR: we need to precompute the small sieve positions
        * for all the small sieved primes.
        *
@@ -1339,6 +1347,7 @@ downsort_tree_inner(
                   small_sieve_activate_many_start_positions(wss.ssd);
                   },0);
       }
+#endif
 
 
       pool.drain_queue(0);
