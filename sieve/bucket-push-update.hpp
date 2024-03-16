@@ -17,8 +17,7 @@ bucket_array_t<LEVEL, HINT>::push_update(const int i, const update_t& update)
         return;
     }
 #endif
-    updates++;
-    // *bucket_write[i]++ = update;
+    *bucket_write[i]++ = update;
 }
 
 template<int LEVEL, typename HINT>
@@ -32,8 +31,7 @@ bucket_single<LEVEL, HINT>::push_update(const update_t& update)
         write--;
     }
 #endif
-    updates++;
-    // *(write++) = update;
+    *(write++) = update;
 }
 
 template<int LEVEL, typename HINT>
