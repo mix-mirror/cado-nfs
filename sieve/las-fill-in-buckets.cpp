@@ -375,7 +375,9 @@ make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
       const fbroot_t r = transformed.get_r(i_root);
       const bool proj = transformed.get_proj(i_root);
         plattice_info pli = plattice_info(transformed.get_q(), r, proj, logI);
+        plattice_info pli2 = plattice_info(transformed.get_q(), r, proj, logI);
         plattice_enumerator<LEVEL> ple(pli, i_entry, logI, sublat);
+        plattice_enumerator<LEVEL> ple2(pli2, i_entry, logI, sublat);
         // Skip (0,0) unless we have sublattices.
         if (!sublat.m)
           ple.next(F);
@@ -542,9 +544,11 @@ fill_in_buckets_toplevel_sublat(bucket_array_t<LEVEL, TARGET_HINT> &orig_BA,
   } else { // Use precomputed FK-basis
     for (unsigned int i = 0; i < precomp_slice.size(); ++i) {
       plattice_info pli(precomp_slice[i].unpack(logI));
+      plattice_info pli2(precomp_slice[i].unpack(logI));
       slice_offset_t i_entry = precomp_slice[i].get_hint();
 
       plattice_enumerator<LEVEL> ple(pli, i_entry, logI, Q.sublat);
+      plattice_enumerator<LEVEL> ple2(pli2, i_entry, logI, Q.sublat);
 
       if (ple.done(F))
         continue;
@@ -616,8 +620,10 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> &orig_BA,
       const fbroot_t r = transformed.get_r(i_root);
       const bool proj = transformed.get_proj(i_root);
         plattice_info pli(transformed.get_q(), r, proj, logI);
+        plattice_info pli2(transformed.get_q(), r, proj, logI);
   
         plattice_enumerator<LEVEL> ple(pli, i_entry, logI);
+        plattice_enumerator<LEVEL> ple2(pli2, i_entry, logI);
 
         // Skip (i,j)=(0,0)
         ple.next(F);
