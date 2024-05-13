@@ -735,6 +735,8 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             nfs_work::side_data & wss(ws.sides[side]);
             if (wss.no_fb()) continue;
 
+            wss.group.print_number_of_updates(ws.toplevel);
+
             fill_in_buckets_toplevel(ws, aux, pool, side, w);
 
             /* for level < TOPLEVEL, we don't do fill_in_buckets just
