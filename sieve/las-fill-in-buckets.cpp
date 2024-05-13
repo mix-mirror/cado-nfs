@@ -371,6 +371,7 @@ make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
     if (discard_power_for_bucket_sieving(e))
         continue;
     e.transform_roots(transformed, Q);
+    e.transform_roots(transformed, Q);
     for (unsigned char i_root = 0; i_root != transformed.nr_roots; i_root++) {
       const fbroot_t r = transformed.get_r(i_root);
       const bool proj = transformed.get_proj(i_root);
@@ -502,6 +503,7 @@ fill_in_buckets_toplevel_sublat(bucket_array_t<LEVEL, TARGET_HINT> &orig_BA,
       if (discard_power_for_bucket_sieving(e))
           continue;
       e.transform_roots(transformed, Q);
+      e.transform_roots(transformed, Q);
       for (unsigned char i_root = 0; i_root != transformed.nr_roots; i_root++) {
         const fbroot_t r = transformed.get_r(i_root);
         const bool proj = transformed.get_proj(i_root);
@@ -611,6 +613,7 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> &orig_BA,
       continue;
     if (discard_power_for_bucket_sieving(e))
         continue;
+    e.transform_roots(transformed, Q);
     e.transform_roots(transformed, Q);
     for (unsigned char i_root = 0; i_root != transformed.nr_roots; i_root++) {
       const fbroot_t r = transformed.get_r(i_root);
