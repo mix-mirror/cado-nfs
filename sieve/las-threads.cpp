@@ -1,6 +1,7 @@
 #include "cado.h" // IWYU pragma: keep
 
 #include <memory>                  // for allocator_traits<>::value_type
+#include <time.h>
 
 #include "las-threads.hpp"
 
@@ -344,7 +345,6 @@ reservation_group::cget<3, logphint_t>() const
 
 template<int LEVEL, typename HINT>
 size_t reservation_group::print_number_of_updates() const {
-    return 0;
     auto const & RA = cget<LEVEL, HINT>();
     auto count = RA.number_of_updates();
     size_t s = 0;
@@ -352,11 +352,15 @@ size_t reservation_group::print_number_of_updates() const {
     for(size_t i = 0 ; i < count.size() ; i++) {
         s += count[i];
     }
-    if (s)
-        printf("%d %s %zu %d %zu\n",
-                LEVEL, HINT::rtti, count.size(),
-                RA.number_of_buckets(),
-                s);
+    struct timespec ts[1];
+    clock_gettime(CLOCK_MONOTONIC_RAW, ts);
+    printf("@%lu.%09ld %p %d %s %zu %d %zu\n",
+            (unsigned long) ts->tv_sec,
+            ts->tv_nsec,
+            this,
+            LEVEL, HINT::rtti, count.size(),
+            RA.number_of_buckets(),
+            s);
     return s;
 }
 
