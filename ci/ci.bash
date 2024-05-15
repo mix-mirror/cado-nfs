@@ -47,6 +47,7 @@ step_build1() {
 
 build_step_name_build2="Building test dependencies"
 step_build2() {
+    return
     target=all_test_dependencies
     if [ "$specific_checks" = "bwc.sagemath" ] ; then
         # already covered in build1 anyway

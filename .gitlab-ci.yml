@@ -70,11 +70,6 @@ workflow:
 .checks-script: &checks-script
   - ci/ci/40-testsuite.sh
 
-.checks-junit-report: &checks-junit-report
-  artifacts:
-    reports:
-      junit: junit.xml
-
 checks with gcc:
   <<: *common-template
   stage: early
@@ -83,7 +78,6 @@ checks with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on alpine system with gcc:
   <<: *common-template
@@ -93,7 +87,6 @@ checks on alpine system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on debian system with 32-bit gcc:
   <<: *common-template
@@ -103,7 +96,6 @@ checks on debian system with 32-bit gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on ubuntu system with gcc:
   <<: *common-template
@@ -113,7 +105,6 @@ checks on ubuntu system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on ubuntu rolling system with gcc:
   <<: *common-template
@@ -123,7 +114,6 @@ checks on ubuntu rolling system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on debian-testing system with 32-bit gcc:
   <<: *common-template
@@ -133,7 +123,6 @@ checks on debian-testing system with 32-bit gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks using cmake directly with gcc:
   <<: *common-template
@@ -143,7 +132,6 @@ checks using cmake directly with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on debian system with gcc:
   <<: *common-template
@@ -153,7 +141,6 @@ checks on debian system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on debian-testing system with gcc:
   <<: *common-template
@@ -163,7 +150,6 @@ checks on debian-testing system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks shared libs on debian-testing system with gcc:
   <<: *common-template
@@ -173,7 +159,6 @@ checks shared libs on debian-testing system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on debian10 system with gcc:
   <<: *common-template
@@ -183,7 +168,6 @@ checks on debian10 system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on opensuse system with gcc:
   <<: *common-template
@@ -193,7 +177,6 @@ checks on opensuse system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on fedora system with gcc:
   <<: *common-template
@@ -203,7 +186,6 @@ checks on fedora system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on centos system with gcc:
   <<: *common-template
@@ -213,7 +195,6 @@ checks on centos system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks on centos9 system with gcc:
   <<: *common-template
@@ -223,7 +204,6 @@ checks on centos9 system with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 # Despite what the description on docker hub says, silkeh/clang:latest is
 # not always the latest stable build, which is a pity.
@@ -235,7 +215,6 @@ checks with clang:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks with clangdev:
   <<: *common-template
@@ -245,7 +224,6 @@ checks with clangdev:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks with icc:
   <<: *common-template
@@ -258,7 +236,6 @@ checks with icc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 including_mpi specific checks with openmpi:
   <<: *common-template
@@ -270,7 +247,6 @@ including_mpi specific checks with openmpi:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 expensive checks with gcc:
   <<: *common-template
@@ -281,7 +257,6 @@ expensive checks with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 checks under valgrind on debian-testing system on a debug build with gcc:
   rules:
@@ -304,7 +279,6 @@ checks under valgrind on debian-testing system on a debug build with gcc:
     - ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
   artifacts:
     # https://gitlab.com/gitlab-org/gitlab-foss/-/issues/4034#note_17683608
     when: always
@@ -321,7 +295,6 @@ bwc.sagemath specific expensive checks with gcc:
     - sudo -E ci/ci/00-prepare-docker.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
 
 ############################################################################
 # coverage. Actually, this is not really dependent on checks, after all.
@@ -423,7 +396,6 @@ checks on osx system:
     - ci/ci/00-prepare-shell.sh
   script:
     - *checks-script
-  <<: *checks-junit-report
  
 # See #30036: it seems that testing with gcc on freebsd is
 # definitely too much pain now.
