@@ -353,7 +353,11 @@ size_t reservation_group::print_number_of_updates() const {
         s += count[i];
     }
     struct timespec ts[1];
+#if defined(__linux__) || defined(__APPLE__)
     clock_gettime(CLOCK_MONOTONIC_RAW, ts);
+#else
+    clock_gettime(CLOCK_MONOTONIC, ts);
+#endif
     printf("@%lu.%09ld %p %d %s %zu %d %zu\n",
             (unsigned long) ts->tv_sec,
             ts->tv_nsec,
