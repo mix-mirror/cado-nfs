@@ -35,7 +35,9 @@ build_step_name_build1="Building"
 step_build1() {
     target=all
     if [ "$specific_checks" = "bwc.sagemath" ] ; then
-        target=all_sagemath_test_dependencies
+        # tests are removed, and that includes all sagemath tests as well
+        # target=all_sagemath_test_dependencies
+        :
     fi
     if [ "$using_cmake_directly" ] ; then
         SOURCEDIR="$PWD"
@@ -47,6 +49,8 @@ step_build1() {
 
 build_step_name_build2="Building test dependencies"
 step_build2() {
+    # tests are removed
+    return
     target=all_test_dependencies
     if [ "$specific_checks" = "bwc.sagemath" ] ; then
         # already covered in build1 anyway
