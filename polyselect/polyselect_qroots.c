@@ -59,15 +59,15 @@ void
 polyselect_qroots_rearrange (polyselect_qroots_ptr R)
 {
     if (R->size <= 1) return;
-#if 1
+#if 0
     /* honestly, it's embarrassing to have an insertion sort. */
     /* We'll keep it on just for debugging, since change in the ordering
      * leads to a a change in the polynomials that are examined!
      */
-    unsigned int i, j, k, max, tmpq, tmpnr;
+    unsigned int j, k, max, tmpq, tmpnr;
     uint64_t *tmpr = malloc (MAX_DEGREE * sizeof (uint64_t));
 
-    for (i = 0; i < R->size; i ++) {
+    for (unsigned int i = 0; i < R->size; i ++) {
         max = i;
         for (j = i+1; j < R->size; j++) {
             if (R->nr[j] > R->nr[max]) {
@@ -106,6 +106,12 @@ polyselect_qroots_rearrange (polyselect_qroots_ptr R)
            R->roots[i] = tmp[i].roots;
        }
        free(tmp);
+#endif
+
+#ifdef DEBUG_POLYSELECT
+    for (unsigned int i = 0; i < R->size; i ++) {
+        printf("q=%d nr=%d\n", R->q[i], R->nr[i]);
+    }
 #endif
 }
 
