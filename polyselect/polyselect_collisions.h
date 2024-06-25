@@ -6,6 +6,8 @@
 #include "polyselect_thread.h"
 #include "polyselect_shash.h"
 
+#define DEBUG_POLYSELECT
+
 #ifdef __cplusplus
 extern "C" {
 #endif

@@ -1,6 +1,8 @@
 #ifndef POLYSELECT_QROOTS_H_
 #define POLYSELECT_QROOTS_H_
 
+#define DEBUG_POLYSELECT
+
 #include <stdint.h>
 
 #ifdef __cplusplus
