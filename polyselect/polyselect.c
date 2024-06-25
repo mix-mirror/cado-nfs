@@ -109,6 +109,7 @@ polyselect_process_match_async(polyselect_thread_league_srcptr league, polyselec
 	     p1, (long long) i, p2, (long long) i, header->ad,
 	     (unsigned long long) q, rq);
   gmp_printf("m0=%Zd\n", header->m0);
+  return;
 #endif
 
   mpz_init(l);
