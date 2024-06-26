@@ -240,6 +240,9 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                     lingen_pz lingen_${layer}
                 )
                 create_magma_sage_diversions(${t})
+                if(SAGE)
+                    cado_set_test_timeout(test_bwc_${t}_with_sagemath 240)
+                endif()
             endif()
 
             set(t modp_inhomogeneous_minimal_2rhs_mn4)
@@ -257,6 +260,9 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                     TARGET_DEPENDENCIES
                     lingen_pz lingen_${layer})
                 create_magma_sage_diversions(${t})
+                if(SAGE)
+                    cado_set_test_timeout(test_bwc_${t}_with_sagemath 240)
+                endif()
             endif()
 
             if(DEFINED ENV{CHECKS_EXPENSIVE})
@@ -266,6 +272,9 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                 TARGET_DEPENDENCIES
                     lingen_pz lingen_${layer})
                 create_magma_sage_diversions(${t})
+                if(SAGE)
+                    cado_set_test_timeout(test_bwc_${t}_with_sagemath 240)
+                endif()
             endif()
 
             # This one is a bit of a lie, to be honest. Depending on the
@@ -284,6 +293,9 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
                 TARGET_DEPENDENCIES
                 lingen_pz lingen_${layer})
             create_magma_sage_diversions(${t})
+            if(SAGE)
+                cado_set_test_timeout(test_bwc_${t}_with_sagemath 240)
+            endif()
 
             ## this one isn't really useful
             # set(t modp_inhomogeneous_minimal_2rhs_mn2)
@@ -293,6 +305,9 @@ foreach(layer ${BWC_GFP_ARITHMETIC_BACKENDS_FOR_TESTS})
             #   TARGET_DEPENDENCIES
             #   lingen_pz lingen_${layer})
             # create_magma_sage_diversions(${t})
+            # if(SAGE)
+            #     cado_set_test_timeout(test_bwc_${t}_with_sagemath 240)
+            # endif()
         endif()
 
         set(t modp_secure_continuation_${layer})
@@ -596,7 +611,7 @@ add_bwc_test(mod2_2k_simd128 bwc-ptrace.sh prime=2 nullspace=left
 )
 create_magma_sage_diversions(mod2_2k_simd128)
 if(SAGE)
-    cado_set_test_timeout(test_bwc_mod2_2k_simd128_with_sagemath 480)
+    cado_set_test_timeout(test_bwc_mod2_2k_simd128_with_sagemath 600)
 endif()
 
 # There's (a priori) no b256 code, so we're using the bz code here.
@@ -609,7 +624,7 @@ add_bwc_test(mod2_simd256 bwc-ptrace.sh prime=2 nullspace=left
 )
 create_magma_sage_diversions(mod2_simd256)
 if(SAGE)
-    cado_set_test_timeout(test_bwc_mod2_simd256_with_sagemath 480)
+    cado_set_test_timeout(test_bwc_mod2_simd256_with_sagemath 600)
 endif()
 
 set(mod2_oddthr mpi_rect1 mpi_rect2 mpi_square1 mpi_square2)
