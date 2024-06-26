@@ -3,6 +3,7 @@ import re
 import sys
 import math
 import copy
+from functools import cached_property
 
 from sage.matrix.constructor import matrix
 from sage.rings.finite_rings.finite_field_constructor import GF
@@ -122,11 +123,11 @@ class BwcMatrix(object):
                 raise ValueError("please do not do things like MQ*MQ")
 
             if self.params.is_nullspace_right():
-                Qy = self.parent.Q * y
-                return self.parent.M * Qy
+                return self.parent.M * (self.parent.Q * y)
             else:
-                yM = y.transpose() * self.parent.M
-                return (yM * self.parent.Q).transpose()
+                # yM = y.transpose() * self.parent.M
+                # return (yM * self.parent.Q).transpose()
+                return self.parent.tQ * (self.parent.tM * y)
 
         def __rmul__(self, x):
             """
@@ -140,17 +141,25 @@ class BwcMatrix(object):
                 raise ValueError("please do not do things like MQ*MQ")
 
             if self.params.is_nullspace_right():
-                xM = x.transpose() * self.parent.M
-                return (xM * self.parent.Q).transpose()
+                # xM = x.transpose() * self.parent.M
+                # return (xM * self.parent.Q).transpose()
+                return self.parent.tQ * (self.parent.tM * x)
             else:
-                Qx = self.parent.Q * x
-                return self.parent.M * Qx
+                return self.parent.M * (self.parent.Q * x)
 
         def __pow__(self, exponent):
             return BwcMatrixPower(self, exponent)
 
     def decorrelated(self):
         return self.DecorrelatedMatrix(self)
+
+    @cached_property
+    def tM(self):
+        return self.M.transpose()
+
+    @cached_property
+    def tQ(self):
+        return self.Q.transpose()
 
     # Not absolutely sure we want to keep these two operators, in fact
     def __mul__(self, y):
@@ -162,7 +171,8 @@ class BwcMatrix(object):
         if self.params.is_nullspace_right():
             return self.M * y
         else:
-            return (y.transpose() * self.M).transpose()
+            return self.tM * y
+            # return (y.transpose() * self.M).transpose()
 
     def __rmul__(self, x):
         """
@@ -171,7 +181,8 @@ class BwcMatrix(object):
         permutation.
         """
         if self.params.is_nullspace_right():
-            return (x.transpose() * self.M).transpose()
+            return self.tM * x
+            # return (x.transpose() * self.M).transpose()
         else:
             return self.M * x
 
@@ -303,7 +314,10 @@ class BwcMatrix(object):
             self.nrows = max(self.nrows_orig, self.ncols_orig)
             self.ncols = max(self.nrows_orig, self.ncols_orig)
 
-        self.M = matrix(GF(self.params.p), self.nrows, self.ncols, sparse=True)
+        self.M = matrix(GF(self.params.p),
+                        self.nrows,
+                        self.ncols,
+                        sparse=(self.nrows * self.ncols > 2**24))
         if self.params.p == 2:
             for i, j in inline_data:
                 if self.M[i, j] != 0:
@@ -348,8 +362,18 @@ class BwcMatrix(object):
                 # id = f"{self.balancing.checksum:08x}.h{i}.v{j}"
                 id = f"h{i}.v{j}"
                 fname = os.path.join(dir, sdir, f"{sdir}.{id}.bin")
-                nrp = bal.tr // bal.nh
-                ncp = bal.tc // bal.nv
+                if self.params.is_nullspace_left():
+                    # The matrix is stored transposed in this case (see
+                    # also below). It's really really weird. In effect,
+                    # say if we have nh=2 and nv=1 on a 100x100 matrix,
+                    # the h0v0 and h1v1 are two 100x50 matrices that,
+                    # *once transposed* (which we do below) are the
+                    # chunks that we expect.
+                    nrp = bal.tc // bal.nv
+                    ncp = bal.tr // bal.nh
+                else:
+                    nrp = bal.tr // bal.nh
+                    ncp = bal.tc // bal.nv
                 self.submatrices[i][j] = BwcMatrix(self.params, fname)
                 self.submatrices[i][j].__read(nrows=nrp, ncols=ncp)
         # Now we want to check the consistency of the matrix that we just
@@ -363,11 +387,11 @@ class BwcMatrix(object):
         if self.params.is_nullspace_left():
             t = lambda x:x.transpose()
 
-
         self.Mx = block_matrix(nh, nv,
                                [t(self.__subM(i, j))
                                 for i in range(nh)
                                 for j in range(nv)])
+        # changing the base ring to GF(p) does not help.
         self.sigma = self.S.sc.matrix()
         self.Q = self.S.shuf.matrix()
         self.xQ = self.S.xshuf.matrix()

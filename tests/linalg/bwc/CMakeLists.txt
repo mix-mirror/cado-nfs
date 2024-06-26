@@ -577,18 +577,39 @@ add_bwc_test(mod2_rolling bwc-ptrace.sh prime=2 nullspace=left random_matrix_siz
     seed=1 thr=2x2 stop_at_step=lingen
     TARGET_DEPENDENCIES mf_scan)
 
-add_bwc_test(mod2_8k bwc-ptrace.sh prime=2 nullspace=left random_matrix_size=8000 m=128 n=128 seed=1 thr=2
+add_bwc_test(mod2_8k bwc-ptrace.sh prime=2 nullspace=left
+    random_matrix_size=2000 m=128 n=128 seed=1 thr=2x1
     TARGET_DEPENDENCIES mf_scan
     AVOID_CONCURRENT 4
     TIMEOUT 120
 )
 
-if (COMPILE_MPFQ_BINARY_FIELD_m128)
-    add_bwc_test(mod2_8k_simd128 bwc-ptrace.sh prime=2 nullspace=left random_matrix_size=8000 m=128 n=128 seed=1 thr=2 simd=128
+# This might call the specially built b128 code, but we do not promise
+# that it's always included. So it may turn out that we call the variable
+# width bz code.
+add_bwc_test(mod2_2k_simd128 bwc-ptrace.sh prime=2 nullspace=left
+    random_matrix_size=2000 m=128 n=128 seed=1 thr=2x1 simd=128
+    interval=10
     TARGET_DEPENDENCIES mf_scan
     AVOID_CONCURRENT 4
     TIMEOUT 90
 )
+create_magma_sage_diversions(mod2_2k_simd128)
+if(SAGE)
+    cado_set_test_timeout(test_bwc_mod2_2k_simd128_with_sagemath 480)
+endif()
+
+# There's (a priori) no b256 code, so we're using the bz code here.
+add_bwc_test(mod2_simd256 bwc-ptrace.sh prime=2 nullspace=left
+    random_matrix_size=1000 m=256 n=256 seed=1 thr=2x1 simd=256
+    interval=10
+    TARGET_DEPENDENCIES mf_scan
+    AVOID_CONCURRENT 4
+    TIMEOUT 90
+)
+create_magma_sage_diversions(mod2_simd256)
+if(SAGE)
+    cado_set_test_timeout(test_bwc_mod2_simd256_with_sagemath 480)
 endif()
 
 set(mod2_oddthr mpi_rect1 mpi_rect2 mpi_square1 mpi_square2)
@@ -596,7 +617,7 @@ add_bwc_test(mod2_oddthr bwc-ptrace.sh prime=2 nullspace=left random_matrix_size
     TARGET_DEPENDENCIES mf_scan)
 
 add_bwc_test(mod2_interleaving bwc-ptrace.sh prime=2 nullspace=left random_matrix_size=800 m=128 n=128
-    interleaving=1 seed=1 thr=2
+    interleaving=1 seed=1 thr=2x1
     TARGET_DEPENDENCIES mf_scan)
  
 add_bwc_test(mod2_m_neq_n bwc-ptrace.sh prime=2 nullspace=left random_matrix_size=400 m=128 n=64
