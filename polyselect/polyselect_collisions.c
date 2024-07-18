@@ -1135,10 +1135,13 @@ collision_on_sq_conductor(unsigned long c, polyselect_thread_ptr thread)
 
           collision_on_batch_sq_r(SQ_R, q, idx_q, invqq, c,
                   &curr_nq, k, thread);
-          if (thread->team->league->main->verbose > 2)
+          if (thread->team->league->main->verbose > 2) {
+              pthread_mutex_lock(&polyselect_iolock);
               fprintf(stderr,
                       "#  stage (special-q) for %lu special-q's took %lums\n",
                       curr_nq, milliseconds() - st2);
+              pthread_mutex_unlock(&polyselect_iolock);
+          }
       }
 
       unsigned long ret = next_comb(lq, k, idx_q);
