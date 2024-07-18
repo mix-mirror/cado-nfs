@@ -7,7 +7,9 @@
 #include "roots_mod.h"
 #include "gcd.h"       // for invert_ul
 #include "gmp_aux.h"       // mpz_set_uint64
+#include "polyselect_main_data.h"
 
+#include <pthread.h>
 
 /* first combination of k elements among 0, ..., n-1: 0, 1, 2, 3, \cdots */
 void
@@ -127,8 +129,15 @@ comp_sq_roots ( polyselect_poly_header_srcptr header,
     mpz_set (r1, header->Ntilde);
     mpz_mod_ui (r1, r1, q*q);
 
-    gmp_fprintf (stderr, "Ntilde: %Zd, Ntilde (mod %u): %Zd\n", 
+    /*
+    {
+        pthread_mutex_lock(&polyselect_iolock);
+
+        gmp_fprintf (stderr, "Ntilde: %Zd, Ntilde (mod %u): %Zd\n", 
                 header->Ntilde, q*q, r1);
+        pthread_mutex_unlock(&polyselect_iolock);
+    }
+    */
 
     for (j = 0; j < nrq; j ++) {
       mpz_set (r2, header->m0);

@@ -104,11 +104,15 @@ polyselect_process_match_async(polyselect_thread_league_srcptr league, polyselec
 
   /* the expected rotation space is S^5 for degree 6 */
 #ifdef DEBUG_POLYSELECT
-  gmp_printf("Found match: (%lu,%lld) (%lu,%lld) for "
-	     "ad=%Zd, q=%llu, rq=%Zd\n",
-	     p1, (long long) i, p2, (long long) i, header->ad,
-	     (unsigned long long) q, rq);
-  gmp_printf("m0=%Zd\n", header->m0);
+  {
+      pthread_mutex_lock(&polyselect_iolock);
+      gmp_printf("Found match: (%lu,%lld) (%lu,%lld) for "
+              "ad=%Zd, q=%llu, rq=%Zd\n",
+              p1, (long long) i, p2, (long long) i, header->ad,
+              (unsigned long long) q, rq);
+      gmp_printf("m0=%Zd\n", header->m0);
+      pthread_mutex_unlock(&polyselect_iolock);
+  }
   return;
 #endif
 
@@ -343,14 +347,13 @@ polyselect_process_match_async(polyselect_thread_league_srcptr league, polyselec
 
   if (league->main->verbose >= 0) {
       {
-          static pthread_mutex_t iolock = PTHREAD_MUTEX_INITIALIZER;
-          pthread_mutex_lock(&iolock);
+          pthread_mutex_lock(&polyselect_iolock);
           polyselect_fprintf_poly_pair(stdout, header->N, f_raw, g_raw, 1);
           puts("#");
           polyselect_fprintf_poly_pair(stdout, header->N, f, g, 0);
           /* There's a significant carriage return to print. */
           puts("");
-          pthread_mutex_unlock(&iolock);
+          pthread_mutex_unlock(&polyselect_iolock);
       }
   }
 
@@ -586,12 +589,14 @@ void * thread_loop(polyselect_thread_ptr thread)
                      * interested, why not go for the chronogram data
                      * instead?
                      */
+                    pthread_mutex_lock(&polyselect_iolock);
                     printf("# thread %u completed ad=%.0f at time=%.2fs ; ad: %.2fs\n",
                             thread->thread_index,
                             mpz_get_d(team->ad),
                             wct_seconds() - main_data->stats->wct0,
                             wct_seconds() - thread->stats->wct0);
                     fflush(stdout);
+                    pthread_mutex_unlock(&polyselect_iolock);
                 }
             } else {
                 for( ; ; ) {
@@ -659,11 +664,13 @@ void * thread_loop(polyselect_thread_ptr thread)
         pthread_mutex_unlock(main_lock);
     }
     {
+        pthread_mutex_lock(&polyselect_iolock);
         /* XXX TODO acquire a lock, probably main_lock */
         printf("# thread %u exits at time=%.2fs\n",
                 thread->thread_index,
                 wct_seconds() - main_data->stats->wct0);
         fflush(stdout);
+        pthread_mutex_unlock(&polyselect_iolock);
     }
     pthread_mutex_unlock(team_lock);
 
@@ -783,9 +790,11 @@ int main(int argc, char *argv[])
 
 
   if (main_data->verbose >= 0) {
+      pthread_mutex_lock(&polyselect_iolock);
       /* This is very weird. What's the point? */
       main_data->stats->potential_collisions *= polyselect_main_data_expected_collisions(main_data);
       polyselect_stats_display_final(main_data->stats, main_data->verbose);
+      pthread_mutex_unlock(&polyselect_iolock);
   }
 
 

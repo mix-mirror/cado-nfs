@@ -23,6 +23,7 @@
 //#define DEBUG_POLYSELECT2
 
 
+pthread_mutex_t polyselect_iolock = PTHREAD_MUTEX_INITIALIZER;
 
 void polyselect_main_data_init_defaults(polyselect_main_data_ptr main)
 {
@@ -148,10 +149,12 @@ find_suitable_lq(polyselect_poly_header_srcptr header,
   for (lq = *k; number_comb(SQ_R, *k, lq) < main->nq && lq < SQ_R->size; lq++);
 
   if (main->verbose > 0) {
-    printf("# Info: nq=%lu leads to choosing k (k=%lu) primes among %lu (out of %u).\n",
-            main->nq, *k, lq, SQ_R->size);
-    printf("# Info: a combination of all %u possible primes leads to nq=%lu.\n",
-            SQ_R->size, number_comb(SQ_R, *k, SQ_R->size));
+      pthread_mutex_lock(&polyselect_iolock);
+      printf("# Info: nq=%lu leads to choosing k (k=%lu) primes among %lu (out of %u).\n",
+              main->nq, *k, lq, SQ_R->size);
+      printf("# Info: a combination of all %u possible primes leads to nq=%lu.\n",
+              SQ_R->size, number_comb(SQ_R, *k, SQ_R->size));
+      pthread_mutex_unlock(&polyselect_iolock);
   }
 
   return lq;

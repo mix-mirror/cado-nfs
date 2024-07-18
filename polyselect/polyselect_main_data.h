@@ -16,6 +16,8 @@
 #include <hwloc.h>
 #endif
 
+extern pthread_mutex_t polyselect_iolock;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
