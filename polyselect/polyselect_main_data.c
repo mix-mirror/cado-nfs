@@ -150,8 +150,10 @@ find_suitable_lq(polyselect_poly_header_srcptr header,
   if (main->verbose > 0) {
     printf("# Info: nq=%lu leads to choosing k (k=%lu) primes among %lu (out of %u).\n",
             main->nq, *k, lq, SQ_R->size);
-    printf("# Info: a combination of all %u possible primes leads to nq=%lu.\n",
-            SQ_R->size, number_comb(SQ_R, *k, SQ_R->size));
+    printf("# Info: combinations of k=%lu primes among lq=%lu lead to nq=%lu.\n",
+            *k, lq, number_comb(SQ_R, *k, lq));
+    printf("# Info: combinations of k=%lu primes among all %u possible primes leads to nq=%lu.\n",
+            *k, SQ_R->size, number_comb(SQ_R, *k, SQ_R->size));
   }
 
   return lq;

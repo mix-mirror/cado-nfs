@@ -1010,8 +1010,10 @@ collision_on_batch_sq_r(polyselect_qroots_srcptr SQ_R,
 	  re = aux_nextcomb(ind_qr, k, len_qnr);
 	  (*curr_nq)++;
 	  num_rq++;
+    /*
 	  if ((*curr_nq) >= thread->team->league->main->nq)
 	    re = 0;
+      */
 	}
 
       /* core function for a fixed qq and several rqqz[] */
@@ -1117,7 +1119,7 @@ collision_on_sq_conductor(unsigned long c, polyselect_thread_ptr thread)
 
   first_comb(k, idx_q);
 
-  for ( ; curr_nq < thread->team->league->main->nq ; )
+  for ( ; /* curr_nq < thread->team->league->main->nq */ ; )
     {
       q = return_q_norq(SQ_R, idx_q, k);
 
