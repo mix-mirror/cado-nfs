@@ -1,6 +1,6 @@
 from .BwcSVector import BwcSVector
 from .BwcVectorSetBase import BwcVectorSetBase
-from .tools import NOTHING_TO_DO, OK, NOK
+from cado_sage.tools import NOTHING_TO_DO, OK, NOK
 
 
 class BwcSVectorSet(BwcVectorSetBase):
