@@ -5,9 +5,9 @@ import sys
 from sage.rings.integer_ring import ZZ
 from sage.rings.real_mpfr import RR
 from sage.rings.number_field.number_field import NumberField
-from cado_sage.tools import get_verbose
-from cado_sage.tools import NOK
-from .CadoNumberTheory import CadoNumberTheory
+from .tools import get_verbose
+from .tools import NOK
+from .number_theory import CadoNumberTheory
 
 
 class CadoPolyFile(object):

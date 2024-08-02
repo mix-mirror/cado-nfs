@@ -4,7 +4,7 @@ from sage.rings.integer import Integer
 from sage.groups.perm_gps.permgroup_named import SymmetricGroup
 from cado_sage.tools import u32, u64
 from cado_sage.tools import NOK
-from .BwcParameters import BwcParameters
+from .parameters import BwcParameters
 
 
 class BwcBalancing(object):

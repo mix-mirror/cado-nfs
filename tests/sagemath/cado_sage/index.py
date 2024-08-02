@@ -60,3 +60,12 @@ class CadoIndexFile(object):
         return matrix(dict(sum([
             [((i, j), v) for j, v in e]
             for i, e in enumerate(self.relsets)], [])))
+
+    def __iter__(self):
+        return iter(self.relsets)
+
+    def __getitem__(self, i):
+        return self.relsets[i]
+
+    def __len__(self):
+        return len(self.relsets)

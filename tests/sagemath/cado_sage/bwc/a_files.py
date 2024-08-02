@@ -7,7 +7,7 @@ from sage.rings.finite_rings.finite_field_constructor import GF
 
 from collections import defaultdict
 
-from .BwcParameters import BwcParameters
+from .parameters import BwcParameters
 from .matrix_tools import mcoeff, read_one_matrix
 from cado_sage.tools import OK, NOK, EXCL
 

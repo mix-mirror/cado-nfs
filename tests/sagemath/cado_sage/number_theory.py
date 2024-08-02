@@ -1,16 +1,25 @@
 import functools
-from sage.categories.homset import Hom
-from sage.modules.free_module import VectorSpace
-from sage.rings.real_mpfr import RealField
-from sage.modules.free_module_element import vector
-from sage.rings.rational_field import QQ
-from sage.arith.misc import gcd, valuation
+
 from sage.arith.functions import lcm
-from sage.misc.misc_c import prod
-from sage.rings.padics.factory import Zp
-from sage.rings.finite_rings.finite_field_constructor import GF
-from sage.rings.integer_ring import ZZ
+from sage.arith.misc import gcd, valuation
+from sage.categories.homset import Hom
 from sage.categories.sets_cat import Sets
+from sage.misc.flatten import flatten
+from sage.misc.functional import sqrt
+from sage.misc.misc_c import prod
+from sage.modules.free_module import VectorSpace
+from sage.modules.free_module_element import vector
+from sage.rings.complex_double import CDF
+from sage.rings.complex_mpfr import ComplexField
+from sage.rings.finite_rings.finite_field_constructor import GF
+from sage.rings.infinity import Infinity
+from sage.rings.integer_ring import ZZ
+from sage.rings.padics.factory import Zp
+from sage.rings.rational_field import QQ
+from sage.rings.real_double import RDF
+from sage.rings.real_mpfr import RealField
+from sage.symbolic.ring import SR
+from sage.functions.log import exp
 
 # This class is only here to embed code that is attached to the cado-nfs
 # diagram. Of course, almost everything we'll ever need is there in
@@ -26,42 +35,63 @@ class CadoNumberFieldWrapper(object):
         """
         Compute the log embeddings.
 
-        In essence, this is exactly the same as
-        NumberField.log_embeddings from sagemath, except that
-        we want to fix a sagemath bug, which is that the precision
-        is ignored.
+        The embeddings are returned so that the exponential of the sum of
+        the log embeddings is the algebraic norm
+
+        In essence, the code below is exactly the same as
+        NumberField.log_embeddings from sagemath, except that we want to
+        fix a sagemath bug, which is that the precision is ignored.
 
         https://github.com/sagemath/sage/blob/79c047c0a22a98bea4567d182c694fd4df1aea81/src/sage/rings/number_field/number_field.py#L9574
+
+        further fixes:
+         - clean up the code,
+         - add better treatment of the precision (for consistency with
+           K.places())
+         - add better treatment of log(0)
+
+        TESTS:
+
+            sage: x = polygen(QQ, 'x')
+            sage: F.<alpha> = NumberField(x^3 - 2);
+            sage: from cado_sage import CadoNumberFieldWrapper
+            sage: N = CadoNumberFieldWrapper(F)
+            sage: z = alpha^2 - 12 * alpha + 47
+            sage: L = N.LogMap()
+            sage: ratio = exp(sum(L(z))) / z.norm()
+            sage: ratio > 0.99 and ratio < 1.01
+            True
+
         """
 
         K = self.K
-        Reals = RealField(prec)
+        R = RDF if prec == 53 else RealField(prec)
 
         def closure_map(x, prec=53):
-            K_embeddings = K.places(prec)
+            # Do not use K.places(prec): it won't do what you expect
+            pl = K.places(prec=prec)
             r1, r2 = K.signature()
-            r = r1 + r2 - 1
 
             if x == 0:
-                return vector([Reals(0) for _ in range(r + 1)])
+                # I don't think theere much sense in returning something
+                # different from -infinity here.
+                return vector([-SR(Infinity)] * (r1 + r2))
 
             x_logs = []
-            for i in range(r1):
-                sigma = K_embeddings[i]
-                x_logs.append(Reals(abs(sigma(x))).log())
-            for i in range(r1, r + 1):
-                tau = K_embeddings[i]
-                x_logs.append(2 * Reals(abs(tau(x))).log())
+            x_logs += [ R(abs(sigma(x))).log() for sigma in pl[:r1] ]
+            x_logs += [ 2 * R(abs(tau(x))).log() for tau in pl[r1:] ]
 
             return vector(x_logs)
 
-        hom = Hom(K, VectorSpace(Reals, len(closure_map(K(0), prec))), Sets())
+        hom = Hom(K, VectorSpace(R, len(closure_map(K(0), prec))), Sets())
         return hom(closure_map)
 
     def LogDriftMap(self, prec=53):
         """
         This is almost like the log embeddings, except that we're
         actually returning the drift with respect to the norm.
+
+        At some point we thought it was useful.
         """
 
         L = self.LogMap(prec)
@@ -244,7 +274,7 @@ class CadoNumberFieldWrapper(object):
 
         def c(z):
             assert z.norm().valuation(ell) == 0
-            ze = [list(l.expansion(start_val=0))
+            ze = [ZP(list(l.expansion(start_val=0)))
                   for l in list(z.polynomial()(Kell.gen())**expo)]
             assert ze[0][0] == 1
             assert prod([ze[i][0] == (i == 0) for i in range(n)])
@@ -252,6 +282,82 @@ class CadoNumberFieldWrapper(object):
             return (GF(ell)**n)(Pl)
 
         return hom(c)
+
+    def real_representation_of_embeddings(self, z, prec=53):
+        r"""
+        given a number field element z return an n-uple of real numbers
+        that has the same L2 norm as the vector $\left(z_{\theta_1},
+        \ldots, z(\theta_{r_1}), z(\theta_{r_1+1}),
+        z(\bar{\theta_{r_1+1}}), \ldots\right)$
+
+        TESTS:
+            sage: x = polygen(QQ, 'x')
+            sage: F.<alpha> = NumberField(x^3 - 2);
+            sage: from cado_sage import CadoNumberFieldWrapper
+            sage: N = CadoNumberFieldWrapper(F)
+            sage: z = alpha^2 - 12 * alpha + 47
+            sage: Rz = N.real_representation_of_embeddings(z)
+            sage: pl = F.places()
+            sage: r1, r2 = F.signature()
+            sage: eR = [p(z) for p in pl[:r1]]
+            sage: eC = flatten([(p(z), p(z).conjugate()) for p in pl[r1:]])
+            sage: tensor_C = vector(eR + eC)
+            sage: ratio = tensor_C.norm(2) / Rz.norm(2)
+            sage: ratio > 0.99 and ratio < 1.01
+            True
+        """
+
+        if prec == 53:
+            C = CDF
+        else:
+            C = ComplexField(prec)
+
+        K = self.K
+        pl = K.places(prec=prec)
+        r1, r2 = K.signature()
+        embs = [ P(z) for P in pl[:r1] ]
+        sqrt2 = sqrt(C(2))
+        embs += flatten([list(sqrt2 * P(z)) for P in pl[r1:]])
+        return vector(embs)
+
+    def modules_of_embeddings_from_log_embeddings(self, logs):
+        """
+        given the log embeddings as returned by LogMap, returns the
+        absolute values of all $n$ embeddings, which can a priori be
+        compared to the vector returned by
+        real_representation_of_embeddings (that is, we won't necessarily
+        get a vector with only ones and minus ones because we're going to
+        have cosines and sines as well, but in any case we should get a
+        vector whose L2-norm is exactly $\sqrt{n}$ ---it's the rotation
+        of the all ones vector by a unitary matrix.)
+
+        TESTS:
+            sage: x = polygen(QQ, 'x')
+            sage: F.<alpha> = NumberField(x^3 - 2);
+            sage: n = F.degree()
+            sage: from cado_sage import CadoNumberFieldWrapper
+            sage: N = CadoNumberFieldWrapper(F)
+            sage: z = alpha^2 - 12 * alpha + 47
+            sage: Rz = N.real_representation_of_embeddings(z)
+            sage: Lz = N.LogMap()(z)
+            sage: M = N.modules_of_embeddings_from_log_embeddings(Lz)
+            sage: ratio = vector([Rz[i] / M[i] for i in range(n)]).norm() / float(sqrt(n))
+            sage: ratio > 0.99 and ratio < 1.01
+            True
+
+        """
+        K = self.K
+        r1, r2 = K.signature()
+
+        rr = [exp(r) for r in logs[:r1]]
+
+        # there's really a nasty thing with 2.
+        cc = flatten([(exp(c/2),)*2 for c in logs[r1:]])
+
+        return vector(rr + cc)
+
+
+
 
 
 class CadoNumberTheory(object):

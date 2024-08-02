@@ -2,7 +2,7 @@ import re
 import os
 import sys
 import cado_sage
-from cado_sage.bwc_sage import *
+from cado_sage.bwc import *
 from cado_sage.tools import HURRAH, OK, NOK
 
 if __name__ == '__main__':

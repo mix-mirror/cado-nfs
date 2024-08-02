@@ -45,3 +45,12 @@ class CadoIdealsMapFile(object):
             j = ZZ(j, 16)
             self.ideals_map.append(j)
         assert len(self.ideals_map) == ideals_map_length
+
+    def __iter__(self):
+        return iter(self.ideals_map)
+
+    def __getitem__(self, i):
+        return self.ideals_map[i]
+
+    def __len__(self):
+        return len(self.ideals_map)

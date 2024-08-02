@@ -1,6 +1,6 @@
 from sage.matrix.special import block_matrix
-from .BwcVector import BwcVector
-from .BwcVectorSetBase import BwcVectorSetBase
+from .vector import BwcVector
+from .vector_set_base import BwcVectorSetBase
 from cado_sage.tools import OK, EXCL
 
 

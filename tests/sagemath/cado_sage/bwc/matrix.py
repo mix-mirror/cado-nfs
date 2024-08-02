@@ -13,8 +13,8 @@ from cado_sage import get_verbose
 
 from cado_sage.tools import OK, NOK, EXCL
 from cado_sage.tools import u32, s32
-from .BwcParameters import BwcParameters
-from .BwcBalancing import BwcBalancing, BwcShuffling
+from .parameters import BwcParameters
+from .balancing import BwcBalancing, BwcShuffling
 
 
 class BwcMatrix(object):

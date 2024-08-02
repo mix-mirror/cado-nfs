@@ -1,8 +1,8 @@
 import os
 import re
 
-from .BwcParameters import BwcParameters
-from .BwcVectorBase import BwcVectorBase
+from .parameters import BwcParameters
+from .vector_base import BwcVectorBase
 from cado_sage.tools import OK, NOK, EXCL
 
 
