@@ -16,7 +16,7 @@ from cado_sage.bwc import BwcParameters, BwcMatrix
 
 cado_sage.set_verbose(True)
 
-exponent=65537
+exponent=23
 wdir="/tmp/blah"
 name="c30"
 number_of_solutions=3
@@ -27,7 +27,7 @@ prec = 53
 
 
 matrixfile = f"{wdir}/{name}.sparse.bin"
-solution_files = [f"{wdir}/{name}.bwc/K.sols{i}-{i+1}.0.txt"
+solution_files = [f"{wdir}/{name}.bwc.{exponent}/K.sols{i}-{i+1}.0.txt"
                   for i in range(number_of_solutions)]
 purgedfile = f"{wdir}/{name}.purged.gz"
 indexfile = f"{wdir}/{name}.index.gz"
@@ -155,4 +155,24 @@ E = matrix([ L(a - b * K.gen()) for a,b,rel in abpairs ])
 embeddings = ker_power * R * E / exponent
 
 MM = CadoMontgomeryReductionProcess(poly, side, ideals, valuations, embeddings)
+MM.status()
 
+while (MM.nplus + MM.nminus)[1] > 100:
+    MM.one_reduction_step(256)
+    MM.status()
+
+gamma = MM.accumulated.prod()
+
+# even for exponent=23, this takes an absurdly long time. In production,
+# we'll never do this.
+print("computing the absurdly big algebraic number (LONG!)")
+big_power = prod([ (ab[0] - ab[1] * alpha1)**(ker_power * R)[i] for i,ab in enumerate(abpairs) ])
+
+print("computing the remaining bit after all cancellations")
+rest = big_power / gamma**exponent
+
+print("computing the final e-th root")
+delta = rest.nth_root(exponent)
+
+# then (gamma * delta) is an e-th root of big_power
+print("Final check: ", big_power / (gamma*delta)**exponent)

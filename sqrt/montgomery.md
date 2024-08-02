@@ -154,7 +154,7 @@ the unit rank.
 
 
 ```
-./build/coffee/linalg/bwc/bwc.pl :complete matrix=/tmp/blah/c30.sparse.bin prime=65537 nullspace=LEFT m=8 n=4 solutions=0-3
+./build/coffee/linalg/bwc/bwc.pl :complete matrix=/tmp/blah/c30.sparse.bin prime=23 wdir=/tmp/blah/c30.bwc.23 nullspace=LEFT m=8 n=4 solutions=0-3
 ```
 
 # Debugging
