@@ -483,9 +483,15 @@ std::string generic_sagemath_string(cxx_mpz_poly const & f, int side, cxx_mpz co
             continue;
         int inertia = A.get_inertia_degree(x);
         if (inertia != 1) {
+            /* we do this because for some reason, the references to mpzs
+             * get resolved to mpz_srcptr, and libfmt8 don't want to
+             * format these. Pretty annoying, to be honest.
+             */
+            cxx_mpz pp = p;
+            cxx_mpz rr = r;
             std::cerr << fmt::format(FMT_STRING(
                         "# note: seemingly innocuous prime ideal ({},{}) on side {} has non-trivial residue class degree {}\n"),
-                    p, r, side, inertia);
+                    pp, rr, side, inertia);
         }
         if (k != -1)
             throw std::runtime_error("ideal is not prime");
