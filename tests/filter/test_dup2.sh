@@ -7,12 +7,13 @@ set -e
 
 : ${WORKDIR?missing}
 
+build_tree="$PROJECT_BINARY_DIR"
 DL=()
 
 while [ $# -gt 0 ] ; do
     if [ "$1" = "-b" ] ; then
         shift
-        BUILD_DIR="$1"
+        build_tree="$1"
         shift
     elif [ "$1" = "-poly" ] ; then
         shift
@@ -46,7 +47,7 @@ while [ $# -gt 0 ] ; do
     fi
 done
 
-: ${BUILD_DIR?missing}
+: ${build_tree?missing}
 : ${POLY?missing}
 : ${LPBS?missing}
 : ${RELS?missing}
@@ -58,11 +59,11 @@ cp "$RELS" "$WORK_RELS"
 
 common=(-poly "$POLY" -renumber "${RENUMBER}")
 
-"${BUILD_DIR}/sieve/freerel" "${common[@]}" \
+"${build_tree}/sieve/freerel" "${common[@]}" \
                            -lpbs "$LPBS"
 # bail out early if debug_renumber sees an inconsistency.
-"${BUILD_DIR}/misc/debug_renumber" "${common[@]}" -check -quiet
-"${BUILD_DIR}/filter/dup2" "${common[@]}"       \
+"${build_tree}/misc/debug_renumber" "${common[@]}" -check -quiet
+"${build_tree}/filter/dup2" "${common[@]}"       \
                     -nrels $(gzip -dc "$WORK_RELS" | wc -l) "${DL[@]}" "${WORK_RELS}"
 
 if [ "$REFERENCE_SHA1" ] ; then
@@ -117,6 +118,6 @@ EOF
 fi
 
 if [ "$SAGE" ] ; then
-    "${BUILD_DIR}/misc/explain_indexed_relation" -renumber  "$RENUMBER" -poly "$POLY" -dl -relations <(zcat "$WORK_RELS" )  > "$WORKDIR/check.sage"
+    "${build_tree}/misc/explain_indexed_relation" -renumber  "$RENUMBER" -poly "$POLY" "${DL[@]}" -relations <(zcat "$WORK_RELS" )  > "$WORKDIR/check.sage"
     "$SAGE" "$WORKDIR/check.sage"
 fi

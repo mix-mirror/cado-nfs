@@ -321,7 +321,7 @@ class CadoNumberFieldWrapper(object):
         return vector(embs)
 
     def modules_of_embeddings_from_log_embeddings(self, logs):
-        """
+        r"""
         given the log embeddings as returned by LogMap, returns the
         absolute values of all $n$ embeddings, which can a priori be
         compared to the vector returned by
