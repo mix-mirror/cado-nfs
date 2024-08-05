@@ -1501,7 +1501,7 @@ int renumber_t::inertia_from_p_r(p_r_side x) const
         if (x.p == y.first) {
             static std::mutex m;
             {
-                std::lock_guard dummy(m);
+                std::lock_guard<std::mutex> dummy(m);
                 auto it = exceptional_inertia.find(x);
                 if (it != exceptional_inertia.end())
                     return it->second;
@@ -1509,7 +1509,7 @@ int renumber_t::inertia_from_p_r(p_r_side x) const
             cxx_gmp_randstate state;
             int inertia = get_inertia_of_prime_ideal(f, x.p, x.r);
             {
-                std::lock_guard dummy(m);
+                std::lock_guard<std::mutex> dummy(m);
                 exceptional_inertia[x] = inertia;
             }
             if (inertia != 1) {
