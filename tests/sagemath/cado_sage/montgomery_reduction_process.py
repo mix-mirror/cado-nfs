@@ -9,6 +9,8 @@ from sage.functions.log import exp
 from sage.matrix.special import vandermonde
 from sage.rings.complex_double import CDF
 from sage.rings.complex_mpfr import ComplexField
+from sage.misc.misc_c import prod
+from sage.misc.functional import sqrt
 import math
 
 
@@ -161,6 +163,10 @@ class CadoMontgomeryReductionProcess(object):
         # reduction in two steps.
         d = self.K.degree()
         s = self.poly.skewness
+        f = self.K.defining_polynomial()
+        x = f.parent().gen()
+        L2s_norm_of_f = float(vector(list(f(s*x) / s**(d / 2))).norm())
+
         skew0 = diagonal_matrix([(s ** (i - (d - 1)/2)) for i in range(d)])
         M1 = self.skewed_LLL(M0, skew0)
 
@@ -168,7 +174,31 @@ class CadoMontgomeryReductionProcess(object):
 
         # The theory is that the skewed norm of the vector M1[0] is
         # bounded as follows
-        assert float((M1[0]*skew0).norm()) < float(2**((d-1)/4)*M0.determinant()**(1/d))
+        bound_on_L2s_norm_of_v = abs(float(
+                2**((d - 1) / 4) * M0.determinant()**(1 / d)
+                ))
+        L2s_norm_of_v = abs(float((M1[0]*skew0).norm()))
+
+        L2s_approximation_ratio = L2s_norm_of_v / bound_on_L2s_norm_of_v
+
+        print("L2s approximation ratio for 1st reduction (expected <= 1):",
+              L2s_approximation_ratio)
+        assert L2s_approximation_ratio <= 1
+
+        # we can just ignore the discriminant quotient. It just makes the
+        # bound sharper if we happen to know it, that's it.
+        alg_norm_quotient = abs(gens1[0].norm() / I.norm())
+        bound_on_alg_norm_quotient = float(prod([
+            2**(d * (d - 1) / 4),
+            L2s_norm_of_f**(d - 1),
+            sqrt(f.discriminant() / self.OK.discriminant())]))
+
+        # This norm is obtained by Hadamard + Cauchy-Schwarz, and is
+        # expected to be very loose.
+        alg_norm_approximation_ratio = alg_norm_quotient / bound_on_alg_norm_quotient
+        print("alg norm approximation ratio for 1st reduction (expected <= 1):",
+              alg_norm_approximation_ratio)
+        assert alg_norm_approximation_ratio <= 1
 
 
         # We now have alternative, somewhat smaller generators of our
@@ -182,7 +212,6 @@ class CadoMontgomeryReductionProcess(object):
 
         modules = self.nt.modules_of_embeddings_from_log_embeddings(self.embeddings)
 
-        f = self.K.defining_polynomial()
         prec = 53
 
         if prec == 53:

@@ -16,7 +16,7 @@ from cado_sage.bwc import BwcParameters, BwcMatrix
 
 cado_sage.set_verbose(True)
 
-exponent=23
+exponent=29
 wdir="/tmp/blah"
 name="c30"
 number_of_solutions=3
@@ -119,7 +119,11 @@ assert S.subdivision(0,1).rank() <= unit_rank[1]
 
 if False:
     # The code here is much simpler, but it is also a lot slower. The
-    # good thing is that we do compute the same thing!
+    # good thing is that we do compute the same thing! The
+    # code here is not smart enough to cope with e dividing the norm of
+    # a-b*alpha, so it clearly does not have the level of generality that
+    # we get from n.schirokauer_map() -- it will probably crash on your
+    # example if you try to run it.L
     sm2 = [n.schirokauer_map_simple(exponent) for n in nt]
     schirokauer_block2 = matrix([vector(sum([list(sm2[i](a - b * n.K.gen()))
                                         for i,n in enumerate(nt)

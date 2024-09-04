@@ -45,7 +45,7 @@ Examples:
 
 ```
 N=123412341234618726123412341234611
-e=65537
+e=29 ; # we don't need it until the linear algebra.
 wdir=/tmp/blah
 name=c30
 eval `make show` ; # build_tree=/tmp/cado
@@ -108,10 +108,11 @@ Again, we have some debug tools. Consistency of the relations can be
 checked as follows:
 
 ```
-zcat $wdir/0/dup1.0000.gz  | head | $build_tree/misc/explain_indexed_relation -renumber $wdir/$name.renumber-dl.gz -poly $wdir/$name.poly -dl > /tmp/ck.sage
+zcat $wdir/$name.dup1/0/$name.dup1.0000.gz  | head | $build_tree/misc/explain_indexed_relation -renumber $wdir/$name.renumber-dl.gz -poly $wdir/$name.poly -dl -relations /dev/stdin > /tmp/ck.sage
 sage /tmp/ck.sage
 
 $build_tree/misc/explain_indexed_relation -renumber $wdir/$name.renumber-dl.gz -poly $wdir/$name.poly -dl -python -all -skip-ideal-checks < /dev/null > $wdir/$name.debug-ideals.py
+$build_tree/misc/explain_indexed_relation -renumber $wdir/$name.renumber-dl.gz -poly $wdir/$name.poly -dl -raw -all -skip-ideal-checks < /dev/null > $wdir/$name.debug-ideals.txt
 ```
 
 ### redo the `purge` / `merge-dl` / `replay-dl` steps
@@ -152,9 +153,13 @@ The blocking factor n must be at least as large as the number of
 solutions that are requested, which in turn must be at least as large as
 the unit rank.
 
+Here we choose exponent `e=29`. This works for the example I tried, but
+it might not work for yours. Most probably it would work for a larger
+exponent such as 65537 with overwhelming probability. (but for testing,
+small e is preferred, obviously)
 
 ```
-./build/coffee/linalg/bwc/bwc.pl :complete matrix=/tmp/blah/c30.sparse.bin prime=23 wdir=/tmp/blah/c30.bwc.23 nullspace=LEFT m=8 n=4 solutions=0-3
+e=29; ./build/coffee/linalg/bwc/bwc.pl :complete matrix=/tmp/blah/c30.sparse.bin prime=$e wdir=/tmp/blah/c30.bwc.$e nullspace=LEFT m=8 n=4 solutions=0-3
 ```
 
 # Debugging

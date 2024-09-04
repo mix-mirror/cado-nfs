@@ -320,6 +320,15 @@ class CadoNumberFieldWrapper(object):
         embs += flatten([list(sqrt2 * P(z)) for P in pl[r1:]])
         return vector(embs)
 
+    def all_complex_roots(self, prec=53):
+        K = self.K
+        pl = K.places(all_complex=True, prec=prec)
+        r1, r2 = K.signature()
+        z = K.gen()
+        embs = [ P(z) for P in pl[:r1] ]
+        embs += flatten([(P(z), P(z).conjugate()) for P in pl[r1:]])
+        return vector(embs)
+
     def modules_of_embeddings_from_log_embeddings(self, logs):
         r"""
         given the log embeddings as returned by LogMap, returns the
