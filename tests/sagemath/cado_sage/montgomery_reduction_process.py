@@ -11,12 +11,13 @@ from sage.rings.complex_double import CDF
 from sage.rings.complex_mpfr import ComplexField
 from sage.misc.misc_c import prod
 from sage.misc.functional import sqrt
+from sage.functions.other import floor
 import math
 
 
 class CadoMontgomeryReductionProcess(object):
     def __init__(self, poly, side,
-                 ideals, valuations, embeddings):
+                 ideals, valuations, embeddings, precision=53):
         """
         with respect to the given side, and the corresponding matrices
         that give the valuations and log embeddings for that field,
@@ -25,7 +26,7 @@ class CadoMontgomeryReductionProcess(object):
 
         self.current = { I : valuations[i] for i, I in enumerate(ideals)
                         if valuations[i] }
-        self.accumulated = 1
+        self.accumulated = Factorization([])
         self.embeddings = embeddings
         self.nplus = vector([0, 0])
         self.nminus = vector([0, 0])
@@ -34,6 +35,15 @@ class CadoMontgomeryReductionProcess(object):
         self.OK = self.K.maximal_order()
         self.L = poly.nt[side].LogMap()
         self.poly = poly
+
+        if precision == 53:
+            self.C = CDF
+        else:
+            self.C = ComplexField(precision)
+
+        f = self.K.defining_polynomial()
+        self.V = vandermonde(f.roots(self.C, multiplicities=False)).transpose()
+
 
     def skewed_LLL(self, M, skew, algorithm='pari'):
         """
@@ -124,6 +134,9 @@ class CadoMontgomeryReductionProcess(object):
               + f" num bits {self.nplus[1]:.2f} ({self.nplus[0]:.0f} ideals),"
               + f" denom bits {self.nminus[1]:.2f} ({self.nminus[0]:.0f} ideals)")
 
+        print("embeddings: ", self.embeddings)
+        print("bounds: ", self.bound_on_coefficients_of_remaining_part())
+
     def accumulate(self, g, num_or_den, hint=Factorization([])):
         """
         Take action, and register a new term for the product, updating
@@ -147,7 +160,23 @@ class CadoMontgomeryReductionProcess(object):
                 # print(f"Just got rid of {Ibits:.2f}-bit ideal")
                 del self.current[I]
 
+    def bound_on_coefficients_of_remaining_part(self):
+        Vi = self.V**-1
+        d = self.K.degree()
+        Amax = self.nt.modules_of_embeddings_from_log_embeddings(self.embeddings)
+        return [floor(sum([abs(Amax[i] * Vi[i,j]) for i in range(d)])) for j in range(d)]
+
     def one_reduction_step(self, bits=64):
+        d = self.K.degree()
+        s = self.poly.skewness
+        f = self.K.defining_polynomial()
+        x = f.parent().gen()
+
+        if not self.current:
+            # if we have no outstanding ideals, do nothing
+            print("cannot reduce further, no ideals left")
+            return
+
         num_or_den = 1 if self.nplus[1] > self.nminus[1] else -1
 
         hint = self.pick_an_ideal_product_to_kill(num_or_den, bits)
@@ -161,10 +190,6 @@ class CadoMontgomeryReductionProcess(object):
 
         # There does seem to be a computational advantage in doing the
         # reduction in two steps.
-        d = self.K.degree()
-        s = self.poly.skewness
-        f = self.K.defining_polynomial()
-        x = f.parent().gen()
         L2s_norm_of_f = float(vector(list(f(s*x) / s**(d / 2))).norm())
 
         skew0 = diagonal_matrix([(s ** (i - (d - 1)/2)) for i in range(d)])
@@ -211,16 +236,7 @@ class CadoMontgomeryReductionProcess(object):
         # current embeddings of the target lie on.
 
         modules = self.nt.modules_of_embeddings_from_log_embeddings(self.embeddings)
-
-        prec = 53
-
-        if prec == 53:
-            C = CDF
-        else:
-            C = ComplexField(prec)
-
-
-        V = vandermonde(f.roots(C, multiplicities=False)).transpose()
+        V = self.V
 
         # note that V * V.transpose() is the Hankel matrix whose
         # coefficients are the Newton sums, which we can compute fairly
