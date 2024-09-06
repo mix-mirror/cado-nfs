@@ -162,6 +162,21 @@ small e is preferred, obviously)
 e=29; ./build/coffee/linalg/bwc/bwc.pl :complete matrix=/tmp/blah/c30.sparse.bin prime=$e wdir=/tmp/blah/c30.bwc.$e nullspace=LEFT m=8 n=4 solutions=0-3
 ```
 
+### Compute the Schirokauer maps
+
+The sagemath code is capable of computing the Schirokauer maps, but as a
+matter of fact the cado-nfs C programs can also do this. I'm just not
+sure that the latter correctly deals with the case where the exponent
+(called ell in the Schirokauer maps contexts, e in the e-th root
+computation context) is within the factor base (it appears to be the
+case, but more thorough checking would be needed). For sure the sagemath
+code has provision to deal with this case. Anyway, to get the Schirokauer
+maps from the C code, here is the command line.
+
+```
+$build_tree/filter/sm_append -ell $e -in $wdir/$name.purged.gz -poly $wdir/$name.poly | gzip >  $wdir/$name.purged_withsm.gz
+```
+
 # Debugging
 
 To keep track of what the linear algebra step did, see `montgomery.sage`
