@@ -13,6 +13,7 @@ from cado_sage import CadoIdealsDebugFile
 from cado_sage import CadoNumberTheory
 from cado_sage import CadoMontgomeryReductionProcess
 from cado_sage.bwc import BwcParameters, BwcMatrix
+from cado_sage.tools import cat_or_zcat
 from collections import defaultdict
 
 cado_sage.set_verbose(True)
@@ -32,6 +33,7 @@ matrixfile = f"{wdir}/{name}.sparse.bin"
 solution_files = [f"{wdir}/{name}.bwc.{exponent}/K.sols{i}-{i+1}.0.txt"
                   for i in range(number_of_solutions)]
 purgedfile = f"{wdir}/{name}.purged.gz"
+purgedfile_withsm = f"{wdir}/{name}.purged_withsm.gz"
 indexfile = f"{wdir}/{name}.index.gz"
 polyfile = f"{wdir}/{name}.poly"
 idealsmapfile = f"{wdir}/{name}.ideals.gz"
@@ -41,7 +43,12 @@ idealsdebugfile = f"{wdir}/{name}.debug-ideals.txt"
 
 M = BwcMatrix(par, matrix=matrixfile, wdir=wdir)
 M.read()
-ker = matrix([[ZZ(c) for c in open(f).readlines()] for f in solution_files])
+def get_solution_file(f):
+    print(f"Reading {f}")
+    return [ZZ(c) for c in open(f).readlines()]
+
+ker = matrix([get_solution_file(f) for f in solution_files])
+
 assert ker * M.M == 0
 
 
@@ -305,18 +312,44 @@ if extra_checks:
 # It's not much of an issue, since in that case we're going to have a
 # zero-rank block and that's all
 
-# we need to precompute the maps and not create them multiple times.
-sm = [ n.schirokauer_maps(exponent) for n in nt ]
-def sm_apply(m, x):
-    L = [f(x) for f in m]
-    return flatten(L, ltypes=(type(L[0]),))
+if not os.path.exists(purgedfile_withsm):
+    print("Computing the Schirokauer maps with sage")
 
-schirokauer_block = block_matrix([[matrix([sm_apply(sm[i],a - b * n.K.gen())
-                                           for a,b,rel in abpairs])
-                                   for i,n in enumerate(nt)]])
-S = ker * R * schirokauer_block
-assert S.subdivision(0,0).rank() <= unit_rank[0]
-assert S.subdivision(0,1).rank() <= unit_rank[1]
+    # we need to precompute the maps and not create them multiple times.
+    sm = [ n.schirokauer_maps(exponent) for n in nt ]
+    def sm_apply(m, x):
+        L = [f(x) for f in m]
+        return flatten(L, ltypes=(type(L[0]),))
+
+    schirokauer_block = block_matrix([[matrix([sm_apply(sm[i],a - b * n.K.gen())
+                                               for a,b,rel in abpairs])
+                                       for i,n in enumerate(nt)]])
+
+    S = ker * R * schirokauer_block
+    assert S.subdivision(0,0).rank() <= unit_rank[0]
+    assert S.subdivision(0,1).rank() <= unit_rank[1]
+
+else:
+    print("Fetching the Schirokauer maps from file")
+    # Alternatively, we can get the SMs from the sm_append output.
+    def get_schirokauer_block_from_file(f):
+        rows = []
+        i = 0
+        print(f"Reading {f}")
+        for t in cat_or_zcat(f):
+            if t.startswith(b'#'):
+                continue
+            ab, rel, smdata = t.decode('ascii').split(':')
+            a, b = [ZZ(c, 16) for c in ab.split(',')]
+            smdata = [ZZ(c) for c in smdata.split(',')]
+            assert (a,b) == abpairs[i][:2]
+            rows.append(smdata)
+            i += 1
+        return matrix(rows)
+
+    schirokauer_block_from_file = get_schirokauer_block_from_file(purgedfile_withsm)
+    S = ker * R * schirokauer_block
+
 
 if False:
     # The code here is much simpler, but it is also a lot slower. The
@@ -344,7 +377,6 @@ ker_power = (S.left_kernel().basis()[0] * ker).lift_centered()
 side = 1
 
 K = poly.K[side]
-OO = nt[side].OrderCastMap()
 OK = K.maximal_order()
 d = K.degree()
 
@@ -423,4 +455,4 @@ else:
     delta = rest.nth_root(exponent)
 
 # then (gamma * delta) is an e-th root of big_power
-print("Final check: ", big_power / (gamma*delta)**exponent)
+print("Final check: ", big_power / (gamma*delta)**exponent, " (both +1 and -1 are fine)")
