@@ -15,10 +15,11 @@ from cado_sage import CadoMontgomeryReductionProcess
 from cado_sage.bwc import BwcParameters, BwcMatrix
 from cado_sage.tools import cat_or_zcat
 from collections import defaultdict
+import os.path
 
 cado_sage.set_verbose(True)
 
-exponent=29
+exponent=79
 wdir="/tmp/blah"
 name="c30"
 number_of_solutions=3
@@ -33,7 +34,7 @@ matrixfile = f"{wdir}/{name}.sparse.bin"
 solution_files = [f"{wdir}/{name}.bwc.{exponent}/K.sols{i}-{i+1}.0.txt"
                   for i in range(number_of_solutions)]
 purgedfile = f"{wdir}/{name}.purged.gz"
-purgedfile_withsm = f"{wdir}/{name}.purged_withsm.gz"
+purgedfile_withsm = f"{wdir}/{name}.purged_withsm{exponent}.gz"
 indexfile = f"{wdir}/{name}.index.gz"
 polyfile = f"{wdir}/{name}.poly"
 idealsmapfile = f"{wdir}/{name}.ideals.gz"
@@ -120,6 +121,7 @@ all_ideals.read()
 ncB = len(ideals_map)
 ncL = len(all_ideals)
 
+print("Fixing the contributions of J everywhere")
 fixup_matrix = matrix(ZZ, ncB + ncL, ncB + ncL, sparse=True)
 fixup_matrix.subdivide([],[ncB])
 
@@ -233,6 +235,8 @@ if extra_checks:
     # definition of MB_and_ML, we would have had some wraparound every
     # now and then.
 
+
+print("Computing the column renumbering")
 
 # We're only really interested in the valuations per number field. Since
 # we now have all the information available, we can split the matrix in

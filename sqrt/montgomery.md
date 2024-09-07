@@ -173,8 +173,15 @@ case, but more thorough checking would be needed). For sure the sagemath
 code has provision to deal with this case. Anyway, to get the Schirokauer
 maps from the C code, here is the command line.
 
+Further analysis tells that if the Schirokauer maps that `sm_append`
+computes use pieces that involve an ideal of degree 1, then there is a
+chance that this ideal is encountered in the factorizations of
+`$a-b*\alpha$`, and the output is clearly rubbish in that case. Oddly
+enough, the computation still seems to work on our baby example, but I
+don't believe it's going to work more broadly.
+
 ```
-$build_tree/filter/sm_append -ell $e -in $wdir/$name.purged.gz -poly $wdir/$name.poly | gzip >  $wdir/$name.purged_withsm.gz
+$build_tree/filter/sm_append -ell $e -in $wdir/$name.purged.gz -poly $wdir/$name.poly | gzip >  $wdir/$name.purged_withsm${e}.gz
 ```
 
 # Debugging
