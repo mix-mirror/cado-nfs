@@ -15,10 +15,11 @@ from cado_sage import CadoMontgomeryReductionProcess
 from cado_sage.bwc import BwcParameters, BwcMatrix
 from cado_sage.tools import cat_or_zcat
 from collections import defaultdict
+import os.path
 
 cado_sage.set_verbose(True)
 
-exponent=29
+exponent=79
 wdir="/tmp/blah"
 name="c30"
 number_of_solutions=3
@@ -33,7 +34,7 @@ matrixfile = f"{wdir}/{name}.sparse.bin"
 solution_files = [f"{wdir}/{name}.bwc.{exponent}/K.sols{i}-{i+1}.0.txt"
                   for i in range(number_of_solutions)]
 purgedfile = f"{wdir}/{name}.purged.gz"
-purgedfile_withsm = f"{wdir}/{name}.purged_withsm.gz"
+purgedfile_withsm = f"{wdir}/{name}.purged_withsm{exponent}.gz"
 indexfile = f"{wdir}/{name}.index.gz"
 polyfile = f"{wdir}/{name}.poly"
 idealsmapfile = f"{wdir}/{name}.ideals.gz"
@@ -120,6 +121,7 @@ all_ideals.read()
 ncB = len(ideals_map)
 ncL = len(all_ideals)
 
+print("Fixing the contributions of J everywhere")
 fixup_matrix = matrix(ZZ, ncB + ncL, ncB + ncL, sparse=True)
 fixup_matrix.subdivide([],[ncB])
 
@@ -234,6 +236,8 @@ if extra_checks:
     # now and then.
 
 
+print("Computing the column renumbering")
+
 # We're only really interested in the valuations per number field. Since
 # we now have all the information available, we can split the matrix in
 # two blocks, one per number field.
@@ -343,11 +347,11 @@ else:
             a, b = [ZZ(c, 16) for c in ab.split(',')]
             smdata = [ZZ(c) for c in smdata.split(',')]
             assert (a,b) == abpairs[i][:2]
-            rows.append(smdata)
+            rows.append(vector(GF(exponent), smdata))
             i += 1
         return matrix(rows)
 
-    schirokauer_block_from_file = get_schirokauer_block_from_file(purgedfile_withsm)
+    schirokauer_block = get_schirokauer_block_from_file(purgedfile_withsm)
     S = ker * R * schirokauer_block
 
 
