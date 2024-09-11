@@ -270,9 +270,9 @@ checks with icc:
     - *checks-script
   <<: *checks-junit-report
 
-including_mpi specific checks with openmpi:
+including_mpi specific checks on fedora system with openmpi:
   <<: *common-template
-  image: alpine:latest
+  image: fedora:latest
   stage: early
   tags:
     - mpi
