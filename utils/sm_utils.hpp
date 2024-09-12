@@ -55,10 +55,14 @@
 #include <stdint.h>
 #include <stdio.h>      // FILE
 #include <gmp.h>        // mpz_t
+#include <vector>
+#include <utility>
+
 #include "mpz_poly.h"
 #include "mpz_mat.h"
 #include "cxx_mpz.hpp"
 #include "cado_poly.h"  // MAX_DEGREE, NB_POLYS_MAX
+#include "numbertheory.hpp"
 
 enum sm_mode {
     SM_MODE_LEGACY_PRE2018 = 1,
@@ -76,11 +80,40 @@ struct sm_side_info {
     cxx_mpz_poly f;       /* monic */
     cxx_mpz exponent;
 
+#if 0
+    all_valuations_above_p nt;
+
+    struct one_ideal {
+        cxx_mpz_mat H;  /* HNF basis with respect to the order */
+        cxx_mpz_mat a;  /* valuation helper with respect to the order */
+        cxx_mpq_mat uniformizer;        /* as a polynomial in alpha */
+        one_ideal(cxx_mpz_mat const & H, cxx_mpz_mat const & a, cxx_mpq_mat const & u)
+            : H(H), a(a), uniformizer(u)
+        {}
+        one_ideal(one_ideal const &) = default;
+        one_ideal(one_ideal &&) = default;
+        one_ideal& operator=(one_ideal const &) = default;
+        one_ideal& operator=(one_ideal &&) = default;
+    };
+    std::vector<one_ideal> ideals;
+#endif
+
+    /* ell-maximal order O, and O-ideals above ell. M is the
+     * multiplication table of O. We don't accept the case where ell
+     * ramifies, so we don't need to store the ramification index. On the
+     * other hand, a uniformizing element is stored for each ideal, with
+     * respect to the polynomial basis.
+     */
+    cxx_mpq_mat O;
+    cxx_mpz_mat M;
+
     struct piece {
         cxx_mpz_poly g;
         int m;
         bool is_used;
         cxx_mpz exponent;
+        cxx_mpz_mat a;  /* valuation helper with respect to the order */
+        cxx_mpq_mat uniformizer;        /* as a polynomial in alpha */
         piece(cxx_mpz_poly const & g, const int & m, bool is_used, int exponent)
             : g(g)
             , m(m)
@@ -104,7 +137,7 @@ struct sm_side_info {
      * compatible, as the change of basis is precomputed within the
      * sm_side_info structure.
      */
-    void compute_piecewise(mpz_poly_ptr dst, mpz_poly_srcptr u) const;
+    void compute_piecewise(cxx_mpz_poly & dst, cxx_mpz_poly const & u) const;
 };
 
 typedef struct {
@@ -121,14 +154,26 @@ typedef const sm_relset_struct_t * sm_relset_srcptr;
  * related to the pair.
  * This is only used by thread_sm
  */
-struct pair_and_sides_s {
+struct pair_and_sides {
     /* mpz_poly because we might think of using higher degree */
-    mpz_poly ab;
+    cxx_mpz_poly ab;
     unsigned int active_sides[2];
+    pair_and_sides(mpz_srcptr a, mpz_srcptr b, int s0, int s1) {
+        mpz_poly_set_mpz_ab(ab, a, b);
+        active_sides[0] = s0;
+        active_sides[1] = s1;
+    }
+    pair_and_sides(int64_t a, uint64_t b, int s0, int s1) {
+        mpz_poly_set_ab(ab, a, b);
+        active_sides[0] = s0;
+        active_sides[1] = s1;
+    }
+    pair_and_sides() = default;
+    pair_and_sides(pair_and_sides const &) = default;
+    pair_and_sides(pair_and_sides &&) = default;
+    pair_and_sides& operator=(pair_and_sides const &) = default;
+    pair_and_sides& operator=(pair_and_sides &&) = default;
 };
-typedef struct pair_and_sides_s pair_and_sides[1];
-typedef struct pair_and_sides_s * pair_and_sides_ptr;
-typedef const struct pair_and_sides_s * pair_and_sides_srcptr;
 
 #ifdef __cplusplus
 extern "C" {
@@ -148,7 +193,7 @@ void mpz_poly_init_set_ab (mpz_poly_ptr, int64_t, uint64_t);
 // corresponding side.
 void sm_build_one_relset (sm_relset_ptr rel,
                     const uint64_t *r, const int64_t *e, int len,
-                    const pair_and_sides * ps,
+                    std::vector<pair_and_sides> const & ps,
                     const mpz_poly_srcptr * F, int nb_polys,
 		    mpz_srcptr ell2);
 

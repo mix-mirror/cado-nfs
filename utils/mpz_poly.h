@@ -109,6 +109,7 @@ int mpz_poly_set_from_expression(mpz_poly_ptr f, const char * value);
 void mpz_poly_init_set_ab (mpz_poly_ptr rel, int64_t a, uint64_t b);
 void mpz_poly_set_ab (mpz_poly_ptr rel, int64_t a, uint64_t b);
 void mpz_poly_init_set_mpz_ab (mpz_poly_ptr rel, mpz_srcptr a, mpz_srcptr b);
+void mpz_poly_set_mpz_ab (mpz_poly_ptr rel, mpz_srcptr a, mpz_srcptr b);
 
 void mpz_poly_setcoeff(mpz_poly_ptr f, int i, mpz_srcptr z);
 void mpz_poly_setcoeff_si(mpz_poly_ptr f, int i, long z);
@@ -116,7 +117,6 @@ void mpz_poly_setcoeff_ui(mpz_poly_ptr f, int i, unsigned long z);
 void mpz_poly_setcoeff_int64(mpz_poly_ptr f, int i, int64_t z);
 void mpz_poly_setcoeff_uint64(mpz_poly_ptr f, int i, uint64_t z);
 void mpz_poly_setcoeff_double(mpz_poly_ptr f, int i, double z);
-void mpz_poly_getcoeff(mpz_ptr res, int i, mpz_poly_srcptr f);
 
 void mpz_poly_set_signed_urandomb (mpz_poly_ptr f, int d, gmp_randstate_ptr state, int k);
 void mpz_poly_set_signed_rrandomb (mpz_poly_ptr f, int d, gmp_randstate_ptr state, int k);
@@ -272,6 +272,7 @@ void mpz_poly_factor_list_clear(mpz_poly_factor_list_ptr l);
 void mpz_poly_factor_list_flush(mpz_poly_factor_list_ptr l);
 void mpz_poly_factor_list_push(mpz_poly_factor_list_ptr l, mpz_poly_srcptr f, int m);
 void mpz_poly_factor_list_fprintf(FILE* fp, mpz_poly_factor_list_srcptr l);
+void mpz_poly_factor_list_accumulate(mpz_poly_ptr f, mpz_poly_factor_list_srcptr l);
 int mpz_poly_factor_sqf(mpz_poly_factor_list_ptr lf, mpz_poly_srcptr f, mpz_srcptr p);
 int mpz_poly_factor_ddf(mpz_poly_factor_list_ptr lf, mpz_poly_srcptr f0, mpz_srcptr p);
 int mpz_poly_factor_edf(mpz_poly_factor_list_ptr lf, mpz_poly_srcptr f, int k, mpz_srcptr p, gmp_randstate_t rstate);

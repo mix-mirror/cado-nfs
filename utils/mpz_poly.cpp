@@ -721,6 +721,11 @@ void
 mpz_poly_init_set_mpz_ab (mpz_poly_ptr rel, mpz_srcptr a, mpz_srcptr b)
 {
     mpz_poly_init(rel, 1);
+    mpz_poly_set_mpz_ab (rel, a, b);
+}
+
+void mpz_poly_set_mpz_ab (mpz_poly_ptr rel, mpz_srcptr a, mpz_srcptr b)
+{
     mpz_poly_setcoeff(rel, 0, a);
     mpz_t mb;
     mpz_init(mb);
@@ -946,15 +951,6 @@ void mpz_poly_setcoeff_double(mpz_poly_ptr f, int i, double z)
   mpz_set_d (f->_coeff[i], z);
   if (i >= f->deg)
     mpz_poly_cleandeg (f, i);
-}
-
-/* Get coefficient for the i-th term. */
-void mpz_poly_getcoeff(mpz_ptr res, int i, mpz_poly_srcptr f)
-{
-    if (i > f->deg)
-        mpz_set_ui (res, 0);
-    else
-        mpz_set (res, f->_coeff[i]);
 }
 
 /* x^i is often useful */
@@ -2409,13 +2405,12 @@ void mpz_poly_to_monic(mpz_poly_ptr g, mpz_poly_srcptr f)
     mpz_t fd,temp;
     mpz_init(fd);
     mpz_init(temp);
-    mpz_poly_getcoeff(fd,f->deg,f);
 
     mpz_poly_set(g,f);
     for (int k = 0 ; k < g->deg ; k++) {
-        mpz_poly_getcoeff(temp,k,g);
+        mpz_set(temp,mpz_poly_coeff_const(g, k));
         for(int j = 1 ; j <= g->deg-1-k ; j++){
-            mpz_mul(temp,temp,fd);
+            mpz_mul(temp,temp,mpz_poly_lc(f));
         }
         mpz_poly_setcoeff(g,k,temp);
     }
@@ -2450,7 +2445,7 @@ mpz_poly_parallel_interface<inf>::mpz_poly_reduce_frac_mod_f_mod_mpz (
   {
     mpz_t inv;
     mpz_init (inv);
-    mpz_poly_getcoeff (inv, 0, denom); /* inv <- denom[0] */
+    mpz_set (inv, mpz_poly_coeff_const(denom, 0)); /* inv <- denom[0] */
     mpz_invert (inv, inv, m);          /* inv <- denom[0]^-1 */
     mpz_poly_mul_mpz(num, num, inv);  /* num <- num * inv */
     mpz_poly_mod_mpz(num, num, m, NULL); /* num <- num * inv mod m */
@@ -3740,6 +3735,16 @@ void mpz_poly_factor_list_fprintf(FILE* fp, mpz_poly_factor_list_srcptr l)
     }
     fprintf(fp, "\n");
 }
+
+void mpz_poly_factor_list_accumulate(mpz_poly_ptr f, mpz_poly_factor_list_srcptr l)
+{
+    cxx_mpz_poly T;
+    mpz_poly_set_ui(f, 1);
+    for (int i = 0 ; i < l->size ; i++){
+        mpz_poly_pow_ui(T, l->factors[i]->f, l->factors[i]->m);
+        mpz_poly_mul(f, f, T);
+    }
+}
 /* Squarefree factorization */
 
 /* This auxiliary function almost does the sqf. It fills
@@ -4023,7 +4028,7 @@ static int mpz_poly_factor2(mpz_poly_factor_list_ptr list, mpz_poly_srcptr f,
   mpz_t coeff;
   mpz_init(coeff);
   for (int i = 0; i <= f->deg; i++) {
-    mpz_poly_getcoeff(coeff, i, f);
+    mpz_set(coeff, mpz_poly_coeff_const(f, i));
     mpz_mod(coeff, coeff, p);
     mpz_poly_setcoeff(fcopy, i, coeff);
   }
@@ -4092,33 +4097,14 @@ static int mpz_poly_factor2(mpz_poly_factor_list_ptr list, mpz_poly_srcptr f,
 
 #ifndef NDBEBUG
   //Verify if the factorisation is good.
-  mpz_poly_cleandeg(fcopy, -1);
-  for (int i = 0; i <= f->deg; i++) {
-    mpz_poly_getcoeff(coeff, i, f);
-    mpz_mod(coeff, coeff, p);
-    mpz_poly_setcoeff(fcopy, i, coeff);
-  }
+  mpz_poly_mod_mpz(fcopy, f, p, NULL);
 
-  mpz_poly fmul;
-  mpz_poly_init(fmul, -1);
-  mpz_poly_set(fmul, list->factors[0]->f);
-  for (int j = 1; j < list->factors[0]->m; j++) {
-    mpz_poly_mul(fmul, fmul, list->factors[0]->f);
-  }
-  for (int i = 1; i < list->size ; i++) {
-    for (int j = 0; j < list->factors[i]->m; j++) {
-      mpz_poly_mul(fmul, fmul, list->factors[i]->f);
-    }
-  }
-  for (int i = 0; i <= fmul->deg; i++) {
-    mpz_poly_getcoeff(coeff, i, fmul);
-    mpz_mod(coeff, coeff, p);
-    mpz_poly_setcoeff(fmul, i, coeff);
-  }
+  cxx_mpz_poly fmul;
+  mpz_poly_factor_list_accumulate(fmul, list);
+  mpz_poly_mod_mpz(fmul, fmul, p, NULL);
 
   ASSERT(mpz_poly_cmp(fcopy, fmul) == 0);
 
-  mpz_poly_clear(fmul);
 #endif // NDBEBUG
 
   mpz_clear(coeff);
