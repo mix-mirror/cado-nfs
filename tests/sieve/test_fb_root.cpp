@@ -20,6 +20,7 @@
 #include "las-fbroot-qlattice.hpp"
 #include "fb.hpp"
 #include "timing.h"  // seconds
+#include "fmt/ostream.h"
 #include "fmt/format.h"
 #include "tests_common.h"
 
@@ -53,31 +54,8 @@ std::ostream& operator<<(std::ostream& os, fb_root_p1_t<T> const & R)
  * https://stackoverflow.com/questions/25594644/warning-specialization-of-template-in-different-namespace
  */
 namespace fmt {
-template <typename T> struct /* fmt:: */ formatter<fb_root_p1_t<T>>: formatter<string_view> {
-    // only allow {} for formatting. No :, no :x, etc. It could be nice
-    // to allow them, though. Note that this should be constexpr with
-    // c++-14 or later
-    // auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) { return ctx.begin(); }
-    template <typename FormatContext>
-        auto format(fb_root_p1_t<T> const & c, FormatContext& ctx) -> decltype(ctx.out()) {
-            std::ostringstream os;
-            os << c;
-            return formatter<string_view>::format( string_view(os.str()), ctx);
-        }
-};
-
-template <> struct /* fmt:: */ formatter<qlattice_basis>: formatter<string_view> {
-    // only allow {} for formatting. No :, no :x, etc. It could be nice
-    // to allow them, though. Note that this should be constexpr with
-    // c++-14 or later
-    // auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) { return ctx.begin(); }
-    template <typename FormatContext>
-        auto format(qlattice_basis const & c, FormatContext& ctx) -> decltype(ctx.out()) {
-            std::ostringstream os;
-            os << c;
-            return formatter<string_view>::format( string_view(os.str()), ctx);
-        }
-};
+template <typename T> struct formatter<fb_root_p1_t<T>>: ostream_formatter {};
+template <> struct formatter<qlattice_basis>: ostream_formatter {};
 }
 
 

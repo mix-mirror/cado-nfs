@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <stdlib.h>
 #include "fmt/format.h"
+#include "fmt/ostream.h"
 #include <sstream>
 #include "gmp_aux.h"
 #include "gmp_auxx.hpp"
@@ -234,28 +235,8 @@ inline std::istream& operator>>(std::istream& is, cxx_mpz & x) { return is >> (m
 inline std::istream& operator>>(std::istream& is, cxx_mpq & x) { return is >> (mpq_ptr) x; }
 
 namespace fmt {
-    template <> struct /* fmt:: */ formatter<cxx_mpz>: formatter<string_view> {
-    // only allow {} for formatting. No :, no :x, etc. It could be nice
-    // to allow them, though. Note that this should be constexpr with
-    // c++-14 or later
-    // auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) { return ctx.begin(); }
-    template <typename FormatContext>
-        auto format(cxx_mpz const & c, FormatContext& ctx) const -> decltype(ctx.out())
-        {
-            std::ostringstream os;
-            os << c;
-            return formatter<string_view>::format(string_view(os.str()), ctx);
-        }
-};
-    template <> struct formatter<cxx_mpq>: formatter<string_view> {
-    template <typename FormatContext>
-        auto format(cxx_mpq const & c, FormatContext& ctx) -> decltype(ctx.out())
-        {
-            std::ostringstream os;
-            os << c;
-            return formatter<string_view>::format(string_view(os.str()), ctx);
-        }
-};
+    template <> struct formatter<cxx_mpz>: ostream_formatter {};
+    template <> struct formatter<cxx_mpq>: ostream_formatter {};
 }
 
 #endif	/* CXX_MPZ_HPP_ */

@@ -15,6 +15,7 @@
 #include <istream>      // std::istream // IWYU pragma: keep
 #include <ostream>      // std::ostream // IWYU pragma: keep
 #include <type_traits>
+#include "fmt/ostream.h"
 #include "fmt/format.h"
 #include "cxx_mpz.hpp"
 #endif
@@ -394,24 +395,8 @@ struct mpz_poly_coeff_list {
 std::ostream& operator<<(std::ostream& os, mpz_poly_coeff_list const & P);
 
 namespace fmt {
-    template <> struct /* fmt:: */ formatter<mpz_poly_coeff_list>: formatter<string_view> {
-    template <typename FormatContext>
-        auto format(mpz_poly_coeff_list const & c, FormatContext& ctx) const -> decltype(ctx.out())
-        {
-            std::ostringstream os;
-            os << c;
-            return formatter<string_view>::format( string_view(os.str()), ctx);
-        }
-};
-    template <> struct /* fmt:: */ formatter<cxx_mpz_poly>: formatter<string_view> {
-    template <typename FormatContext>
-        auto format(cxx_mpz_poly const & c, FormatContext& ctx) const -> decltype(ctx.out())
-        {
-            std::ostringstream os;
-            os << c;
-            return formatter<string_view>::format( string_view(os.str()), ctx);
-        }
-};
+    template <> struct formatter<cxx_mpz_poly>: ostream_formatter {};
+    template <> struct formatter<mpz_poly_coeff_list>: ostream_formatter {};
 }
 
 
