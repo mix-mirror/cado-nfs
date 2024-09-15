@@ -2403,6 +2403,12 @@ mpz_poly_parallel_interface<inf>::mpz_poly_mod_f_mod_mpz (mpz_poly_ptr R, mpz_po
 void mpz_poly_to_monic(mpz_poly_ptr g, mpz_poly_srcptr f)
 {
     mpz_t fd,temp;
+
+    if (f->deg == -1) {
+        mpz_poly_set_zero(g);
+        return;
+    }
+
     mpz_init(fd);
     mpz_init(temp);
 

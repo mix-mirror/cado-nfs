@@ -339,6 +339,14 @@ struct cxx_mpz_poly {
         mpz_poly_set_mpz(x, b);
         return *this;
     }
+    cxx_mpz_poly (const cxx_mpz & rhs) {
+        mpz_poly_init(x, -1);
+        *this = rhs;
+    }
+    cxx_mpz_poly & operator=(cxx_mpz const & a) {
+        mpz_poly_set_mpz(x, a);
+        return *this;
+    }
 #if __cplusplus >= 201103L
     cxx_mpz_poly(cxx_mpz_poly && o) {
         mpz_poly_init(x, -1);
@@ -412,6 +420,11 @@ std::vector<std::pair<cxx_mpz_poly, int>> mpz_poly_factor(mpz_poly_srcptr f, mpz
 std::vector<std::pair<cxx_mpz_poly, int>> 
 mpz_poly_factor_and_lift_padically(mpz_poly_srcptr f, mpz_srcptr ell, int prec, gmp_randstate_t rstate);
 
+/* returns 1 if parsing was successful */
+inline int mpz_poly_set_from_expression(mpz_poly_ptr f, std::string const & value)
+{
+    return mpz_poly_set_from_expression(f, value.c_str());
+}
 #endif
 
 #endif	/* MPZ_POLY_H_ */
