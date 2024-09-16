@@ -1512,9 +1512,8 @@ utils/dllist.h
 utils/double_poly.cpp
 utils/double_poly.h
 utils/electric_alloc.h
-utils/embedded/fmt/ChangeLog.rst
-utils/embedded/fmt/LICENSE.rst
-utils/embedded/fmt/README.rst
+utils/embedded/fmt/LICENSE
+utils/embedded/fmt/README.md
 utils/embedded/fmt/args.h
 utils/embedded/fmt/chrono.h
 utils/embedded/fmt/color.h
