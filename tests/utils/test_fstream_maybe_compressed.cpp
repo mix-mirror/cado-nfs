@@ -3,6 +3,7 @@
 #include <string>
 #include <unistd.h>
 #include "gzip.h"
+#include "macros.h"
 
 // coverity[root_function]
 int main(int argc, char * argv[])
@@ -10,7 +11,8 @@ int main(int argc, char * argv[])
     const char * filename = "test.gz";
 
     if (argc > 2 && std::string(argv[1]) == "--wdir") {
-        chdir(argv[2]);
+        int rc = chdir(argv[2]);
+        ASSERT_ALWAYS(rc == 0);
         argc--,argv++;
         argc--,argv++;
     }
