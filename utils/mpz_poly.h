@@ -236,6 +236,12 @@ void mpz_poly_gcd_mpz (mpz_poly_ptr h, mpz_poly_srcptr f, mpz_poly_srcptr g, mpz
 // compute f = GCD(f,g) mod N. If this fails, put the factor in the last
 // given argument.
 int mpz_poly_pseudogcd_mpz(mpz_poly_ptr , mpz_poly_ptr , mpz_srcptr , mpz_ptr);
+/* lc(b)*(deg(a)-deg(b)+1) = q*b+r */
+void mpz_poly_pseudo_division(mpz_poly_ptr q, mpz_poly_ptr r,
+    mpz_poly_srcptr a, mpz_poly_srcptr b);
+/* lc(b)*(deg(a)-deg(b)+1) = q*b+r */
+void mpz_poly_pseudo_remainder(mpz_poly_ptr r,
+    mpz_poly_srcptr a, mpz_poly_srcptr b);
 void mpz_poly_xgcd_mpz(mpz_poly_ptr gcd, mpz_poly_srcptr f, mpz_poly_srcptr g, mpz_poly_ptr u, mpz_poly_ptr v, mpz_srcptr p);
 void mpz_poly_homography (mpz_poly_ptr Fij, mpz_poly_srcptr F, int64_t H[4]);
 void mpz_poly_homogeneous_eval_siui (mpz_ptr v, mpz_poly_srcptr f, const int64_t i, const uint64_t j);
@@ -343,6 +349,20 @@ struct cxx_mpz_poly {
         return *this;
     }
 #endif
+    cxx_mpz_poly(std::string const & e) : cxx_mpz_poly() {
+        mpz_poly_set_from_expression(x, e.c_str());
+    }
+    cxx_mpz_poly& operator=(std::string const & e) {
+        mpz_poly_set_from_expression(x, e.c_str());
+        return *this;
+    }
+    cxx_mpz_poly(const char * e) : cxx_mpz_poly() {
+        mpz_poly_set_from_expression(x, e);
+    }
+    cxx_mpz_poly& operator=(const char * e) {
+        mpz_poly_set_from_expression(x, e);
+        return *this;
+    }
     operator mpz_poly_ptr() { return x; }
     operator mpz_poly_srcptr() const { return x; }
     mpz_poly_ptr operator->() { return x; }

@@ -25,6 +25,8 @@
 
 using namespace std;
 
+/* we'd like to get rid of this! */
+using namespace numbertheory_internals;
 
     std::ostream& badideal::print_dot_badideals_file(std::ostream & o, int side) const {/*{{{*/
         o << p

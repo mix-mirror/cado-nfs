@@ -3269,115 +3269,55 @@ mpz_poly_divide_by_content (mpz_poly_ptr F)
  *  See Henri Cohen, "A Course in Computational Algebraic Number Theory",
  *  for more information.
  *
- * Assume that deg(a) >= deg(b) and b is not the zero polynomial.
+ * b must be non-zero
+ * set q=NULL if the quotient is not needed
+ * a==r is supported
  */
-static void mpz_poly_pseudo_division(mpz_poly_ptr q, mpz_poly_ptr r,
+void mpz_poly_pseudo_division(mpz_poly_ptr q, mpz_poly_ptr r,
     mpz_poly_srcptr a, mpz_poly_srcptr b)
 {
-  ASSERT(a->deg >= b->deg);
-  ASSERT(b->deg != -1);
+    ASSERT_ALWAYS(b->deg != -1);
 
-  int m = a->deg;
-  int n = b->deg;
-  mpz_t d;
-  int e;
-  mpz_poly s;
+    if (q) mpz_poly_set_zero(q);
+    mpz_poly_set(r, a);
 
-#ifndef NDEBUG
-  MAYBE_UNUSED mpz_poly q_tmp;
-#endif // NDEBUG
+    if (a->deg < b->deg)
+        return;
 
-  mpz_init(d);
-  mpz_set(d, mpz_poly_lc(b));
+    int m = a->deg;
+    int n = b->deg;
+    int e = m - n + 1;
 
-  if (q != NULL) {
-    mpz_poly_set_zero(q);
-  }
+    cxx_mpz d = mpz_poly_lc(b);
 
-#ifndef NDEBUG
-  else {
-    mpz_poly_init(q_tmp, 0);
-  }
-#endif // NDEBUG
+    while (r->deg >= n) {
+        cxx_mpz_poly s;
+        mpz_poly_setcoeff(s, r->deg - n, mpz_poly_lc(r));
+        if (q) {
+            mpz_poly_mul_mpz(q, q, d);
+            mpz_poly_add(q, q, s);
+        }
 
-  mpz_poly_set(r, a);
-
-  e = m - n + 1;
-
-  while (r->deg >= n) {
-    mpz_poly_init(s, r->deg - n);
-    mpz_poly_setcoeff(s, r->deg - n, mpz_poly_lc(r));
-    if (q != NULL) {
-      mpz_poly_mul_mpz(q, q, d);
-      mpz_poly_add(q, s, q);
+        mpz_poly_mul_mpz(r, r, d);
+        mpz_poly_mul(s, b, s);
+        mpz_poly_sub(r, r, s);
+        e--;
     }
 
-#ifndef NDEBUG
-    else {
-      mpz_poly_mul_mpz(q_tmp, q_tmp, d);
-      mpz_poly_add(q_tmp, s, q_tmp);
-    }
-#endif // NDEBUG
+    ASSERT(e >= 0);
 
+    mpz_pow_ui(d, d, (unsigned long int) e);
+
+    if (q) mpz_poly_mul_mpz(q, q, d);
     mpz_poly_mul_mpz(r, r, d);
-    mpz_poly_mul(s, b, s);
-    mpz_poly_sub(r, r, s);
-    mpz_poly_clear(s);
-    e--;
-  }
-
-  ASSERT(e >= 0);
-
-  mpz_pow_ui(d, d, (unsigned long int) e);
-  if (q != NULL) {
-    mpz_poly_mul_mpz(q, q, d);
-  }
-
-#ifndef NDEBUG
-  else {
-    mpz_poly_mul_mpz(q_tmp, q_tmp, d);
-  }
-#endif // NDEBUG
-
-  mpz_poly_mul_mpz(r, r, d);
-
-#ifndef NDEBUG
-  mpz_poly f, g;
-  mpz_poly_init(f, a->deg);
-  mpz_poly_init(g, b->deg);
-  mpz_poly_set(f, a);
-  mpz_poly_set(g, b);
-
-  mpz_set(d, mpz_poly_lc(g));
-
-  ASSERT(m - n + 1 >= 0);
-
-  mpz_pow_ui(d, d, (unsigned long int) (m - n + 1));
-  mpz_poly_mul_mpz(f, f, d);
-
-  if (q != NULL) {
-    mpz_poly_mul(g, g, q);
-  } else {
-    mpz_poly_mul(g, g, q_tmp);
-  }
-  mpz_poly_add(g, g, r);
-
-  ASSERT(mpz_poly_cmp(f, g) == 0);
-
-  mpz_poly_clear(f);
-  mpz_poly_clear(g);
-  if (q == NULL) {
-    mpz_poly_clear(q_tmp);
-  }
-#endif // NDEBUG
-
-  mpz_clear(d);
 }
 
 /*
  * Like mpz_poly_pseudo_division, but give only the remainder.
+ *
+ * a==r is supported
  */
-static void mpz_poly_pseudo_remainder(mpz_poly_ptr r, mpz_poly_srcptr a,
+void mpz_poly_pseudo_remainder(mpz_poly_ptr r, mpz_poly_srcptr a,
     mpz_poly_srcptr b)
 {
   mpz_poly_pseudo_division(NULL, r, a, b);

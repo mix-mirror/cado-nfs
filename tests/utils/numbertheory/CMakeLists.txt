@@ -33,6 +33,28 @@ cado_define_test(
     test-ant
     )
 
+cado_define_test(
+    numbertheory-object-interface
+    PROGRAM
+    ${CMAKE_CURRENT_BINARY_DIR}/test-ant
+    -test nt-object-interface
+    TARGET_DEPENDENCIES
+    test-ant
+    )
+
+if (SAGE)
+    cado_define_test(
+        numbertheory-object-interface_with_sagemath
+        PROGRAM
+        ${CADO_NFS_SOURCE_DIR}/tests/provide-wdir.sh  --env wdir
+        ${CADO_NFS_SOURCE_DIR}/tests/pipe_to_sage.sh
+        ${CMAKE_CURRENT_BINARY_DIR}/test-ant
+        -test nt-object-interface
+        TARGET_DEPENDENCIES
+        test-ant
+        )
+endif()
+
 find_program(MAGMA magma HINTS ENV MAGMA)
 if(MAGMA AND DEFINED ENV{CHECKS_EXPENSIVE})
 cado_define_test(

@@ -244,7 +244,16 @@ namespace fmt {
         {
             std::ostringstream os;
             os << c;
-            return formatter<string_view>::format( string_view(os.str()), ctx);
+            return formatter<string_view>::format(string_view(os.str()), ctx);
+        }
+};
+    template <> struct formatter<cxx_mpq>: formatter<string_view> {
+    template <typename FormatContext>
+        auto format(cxx_mpq const & c, FormatContext& ctx) -> decltype(ctx.out())
+        {
+            std::ostringstream os;
+            os << c;
+            return formatter<string_view>::format(string_view(os.str()), ctx);
         }
 };
 }

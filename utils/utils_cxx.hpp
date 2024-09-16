@@ -183,4 +183,26 @@ struct integral_fits : integral_fits_final<integral_fits_<T, U>::value> {};
 template <typename T, typename U >
 using integral_fits_t = typename integral_fits<T, U>::type;
 
+#define CADO_DEFAULT_CXX_CTOR(T)        \
+    T() = default
+
+#define CADO_DEFAULT_COPY_CTOR(T)       \
+    T(T const &) = default
+
+#define CADO_DEFAULT_COPY_ASSIGNMENT(T) \
+    T& operator=(T const &) = default
+
+#define CADO_DEFAULT_MOVE_CTOR(T)       \
+    T(T&&) = default
+
+#define CADO_DEFAULT_MOVE_ASSIGNMENT(T) \
+    T& operator=(T&&) = default
+
+#define CADO_DEFAULT_ALL_FIVE(T)        \
+    CADO_DEFAULT_CXX_CTOR(T);           \
+    CADO_DEFAULT_COPY_CTOR(T);          \
+    CADO_DEFAULT_COPY_ASSIGNMENT(T);    \
+    CADO_DEFAULT_MOVE_CTOR(T);          \
+    CADO_DEFAULT_MOVE_ASSIGNMENT(T)
+
 #endif	/* UTILS_CXX_HPP_ */
