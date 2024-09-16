@@ -367,7 +367,7 @@ std::ostream& operator<<(std::ostream& os, mpz_poly_coeff_list const & P);
 namespace fmt {
     template <> struct /* fmt:: */ formatter<mpz_poly_coeff_list>: formatter<string_view> {
     template <typename FormatContext>
-        auto format(mpz_poly_coeff_list const & c, FormatContext& ctx) -> decltype(ctx.out())
+        auto format(mpz_poly_coeff_list const & c, FormatContext& ctx) const -> decltype(ctx.out())
         {
             std::ostringstream os;
             os << c;
@@ -376,7 +376,7 @@ namespace fmt {
 };
     template <> struct /* fmt:: */ formatter<cxx_mpz_poly>: formatter<string_view> {
     template <typename FormatContext>
-        auto format(cxx_mpz_poly const & c, FormatContext& ctx) -> decltype(ctx.out())
+        auto format(cxx_mpz_poly const & c, FormatContext& ctx) const -> decltype(ctx.out())
         {
             std::ostringstream os;
             os << c;

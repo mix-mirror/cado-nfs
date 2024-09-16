@@ -240,7 +240,7 @@ namespace fmt {
     // c++-14 or later
     // auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) { return ctx.begin(); }
     template <typename FormatContext>
-        auto format(cxx_mpz const & c, FormatContext& ctx) -> decltype(ctx.out())
+        auto format(cxx_mpz const & c, FormatContext& ctx) const -> decltype(ctx.out())
         {
             std::ostringstream os;
             os << c;
