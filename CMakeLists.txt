@@ -168,7 +168,11 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         set (CMAKE_CXX_FLAGS "-std=gnu++11 ${CMAKE_CXX_FLAGS}")
     else()
         # according to https://gcc.gnu.org/projects/cxx-status.html
-        if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 12.0)
+        # we're pushing the min gcc version from 12 to 14, in order to
+        # avoid a false positive with libfmt. I observe
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109717 with g++13
+        # and not g++14
+        if (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 14.0)
             set (CMAKE_CXX_FLAGS "-std=c++20 -Wno-c++11-compat ${CMAKE_CXX_FLAGS}")
             message(STATUS "Enabling C++20 support")
         elseif (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 7.0)
