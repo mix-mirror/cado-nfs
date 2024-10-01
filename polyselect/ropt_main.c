@@ -750,9 +750,7 @@ main_basic (int argc, char **argv)
 
 
 /**
- * There are two interfaces: either call "main_adv" or "main_basic"
- * depending whether we have the option --adv.
- * Note the cadoprograms.py uses the main_basic() interface.
+ * Main interface
  */
 int
 main (int argc, char **argv)
