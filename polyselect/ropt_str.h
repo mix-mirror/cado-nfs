@@ -216,8 +216,6 @@ extern "C" {
 
 void ropt_poly_init ( ropt_poly_ptr );
 
-void ropt_poly_refresh ( ropt_poly_ptr );
-
 void ropt_poly_setup ( ropt_poly_ptr );
 
 bool ropt_poly_setup_check ( ropt_poly_ptr );

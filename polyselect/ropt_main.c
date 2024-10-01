@@ -46,7 +46,7 @@
 #include "ropt.h"
 #include "ropt_param.h"    // L1_cachesize
 #include "ropt_str.h"    // ropt_param_t
-#include "ropt_io.h"    // ropt_L1_cachesize ropt_on_cadopoly
+#include "ropt_io.h"    // ropt_L1_cachesize
 #include "timing.h"             // for seconds_thread
 #include "verbose.h"             // verbose_output_print
 #include "version_info.h"        // cado_revision_string
@@ -495,110 +495,6 @@ ropt_wrapper (cado_poly_ptr input_poly, unsigned int poly_id,
   cado_poly_clear (ropt_poly);
 }
 
-/**
- * Interface main_adv(). This will call ropt_on_cadopoly().
- */
-static int
-main_adv (int argc, char **argv)
-{
-
-  char **argv0 = argv;
-  argv += 1;
-  argc -= 1;
-  int i;
-
-  ropt_param param;
-  ropt_param_init (param);
-
-  /* print command-line arguments */
-  fprintf (stderr, "# %s.r%s", *argv, cado_revision_string);
-  for (i = 1; i < argc; i++)
-    fprintf (stderr, " %s", *(argv+i));
-  fprintf (stderr, "\n");
-
-  /* read polynomials in cado format */
-  if (argc >= 3 && strcmp(argv[1], "-f") == 0) {
-
-    FILE *file = NULL;
-    char *filename = NULL;
-    // coverity[parm_assign]
-    filename = argv[2];
-    argv += 2;
-    argc -= 2;
-
-    file = fopen(filename, "r");
-    if (file == NULL) {
-      fprintf(stderr, "# Error in reading file\n");
-      exit (1);
-    }
-
-    /* parse parameters */
-    ropt_parse_param (argc, argv, param);
-
-    /* call ropt_on_cadopoly() */
-    ropt_on_cadopoly (file, param);
-
-    fclose (file);
-    ropt_param_clear (param);
-
-    return EXIT_SUCCESS;
-  }
-  /* read polynomials in msieve format */
-  else if (argc >= 3 && strcmp(argv[1], "-fm") == 0) {
-
-    FILE *file = NULL;
-    char *filename = NULL;
-    filename = argv[2];
-    argv += 2;
-    argc -= 2;
-
-    file = fopen(filename, "r");
-    if (file == NULL) {
-      fprintf(stderr, "# Error in reading file\n");
-      exit (1);
-    }
-
-    /* parse parameters */
-    ropt_parse_param (argc, argv, param);
-
-    if (mpz_cmp_ui(param->n, 0) == 0) {
-      fprintf(stderr, "# Error: please input parameter \"-n number\"\n");
-      exit (1);
-    }
-    if ( param->d == 0 ) {
-      fprintf(stderr, "# Error: please input parameter \"-n degree\"\n");
-      exit (1);
-    }
-
-    /* call ropt_on_msievepoly() */
-    ropt_on_msievepoly (file, param);
-
-    fclose (file);
-    ropt_param_clear (param);
-
-    return EXIT_SUCCESS;
-  }
-  /* read polynomials from stdin */
-  else if (argc >= 3)
-  {
-
-    /* parse parameters */
-    ropt_parse_param (argc, argv, param);
-
-    /* call ropt_on_stdin() */
-    ropt_on_stdin (param);
-
-    ropt_param_clear (param);
-
-    return EXIT_SUCCESS;
-  }
-  else
-    usage_adv (argv0);
-
-  return EXIT_SUCCESS;
-}
-
-
 static void
 declare_usage_basic (param_list pl)
 {
@@ -866,10 +762,7 @@ main (int argc, char **argv)
   /* detect L1 cache size */
   ropt_L1_cachesize ();
 
-  if (argc > 1 && strcmp(argv[1], "--adv") == 0)
-    return main_adv (argc, argv);
-  else
-    return main_basic (argc, argv);
+  return main_basic (argc, argv);
 }
 
 // NOLINTEND

@@ -244,25 +244,6 @@ ropt_poly_init ( ropt_poly_ptr poly )
 
 
 /**
- * clean coefficients
- */
-void
-ropt_poly_refresh ( ropt_poly_ptr poly )
-{
-  mpz_set_ui (poly->n, 0);
-  mpz_set_ui (poly->m, 0);
-
-  mpz_poly_set_zero(poly->f);
-  mpz_poly_set_zero(poly->g);
-  for (unsigned int i = 0; i <= ropt_primes[ROPT_NPRIMES-1]; i++) {
-    mpz_set_ui (poly->fx[i], 0);
-    mpz_set_ui (poly->gx[i], 0);
-    mpz_set_ui (poly->numerator[i], 0);
-  }
-}
-
-
-/**
  * Evaluation polynomials at many points.
  */
 static inline void

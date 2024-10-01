@@ -19,9 +19,6 @@ void ropt_L1_cachesize ();
 /* ropt on polys in formats cado or msieve or from stdin */
 void ropt_on_stdin ( ropt_param_ptr param );
 
-void ropt_on_cadopoly ( FILE *file,
-                        ropt_param_ptr param );
-
 void ropt_on_msievepoly ( FILE *file,
                           ropt_param_ptr param );
 

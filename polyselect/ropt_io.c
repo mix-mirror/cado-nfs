@@ -193,50 +193,6 @@ ropt_on_stdin ( ropt_param_ptr param )
 
 
 /**
- * Ropt on all CADO-format polynomials in the file.
- */
-void
-ropt_on_cadopoly ( FILE *file,
-                   ropt_param_ptr param )
-{
-  unsigned int count = 0U;
-
-  /* poly struct */
-  ropt_poly poly;
-  ropt_poly_init (poly);
-
-  for(;;) {
-      cado_poly cpoly;
-      cado_poly_init(cpoly);
-      cado_poly_read_next_poly_from_stream(cpoly, file);
-
-      int ret = cado_poly_check_mapping(NULL, cpoly, cpoly->n);
-      ASSERT_ALWAYS(ret != 0);
-
-      mpz_poly_set(poly->f, cpoly->pols[ALG_SIDE]);
-      mpz_poly_set(poly->g, cpoly->pols[RAT_SIDE]);
-
-      poly->d = poly->f->deg;
-      param->d = poly->d;
-      mpz_set(param->n, cpoly->n);
-
-      if ( poly->f->deg >= 3 && poly->f->deg <= 7) {
-          if (ropt_poly_setup_check (poly)) {
-              fprintf (stderr, "\n# Polynomial (# %5d).\n", count);
-              ropt_common (poly, param, 0);
-              count ++;
-              ropt_poly_refresh (poly);
-          }
-      }
-      // next line
-  }
-
-  ropt_poly_clear (poly);
-}
-
-
-
-/**
  * Ropt on all Msieve-format polynomials in the file.
  */
 void
