@@ -12,6 +12,7 @@
 #endif
 #include "filter_config.h"
 #include "merge_replay_matrix.h"
+#include "merge_heap.h"
 #include "sparse.h"
 #include "macros.h"
 
@@ -21,6 +22,7 @@
 void
 initMat (filter_matrix_t *mat, uint32_t skip)
 {
+  heap_setup(mat->heap);
   /* we start with cwmax = 2, and we increase it in mergeOneByOne() when
      the Markowitz queue is empty */
   mat->cwmax = 2;
@@ -39,7 +41,7 @@ initMat (filter_matrix_t *mat, uint32_t skip)
   ASSERT_ALWAYS (mat->wt != NULL);
   memset (mat->wt, 0, mat->ncols * sizeof(col_weight_t));
   mat->p = NULL; /* recompress() assumes mat->p = 0 at the beginning,
-                    in which case it just renumbers */
+		    in which case it just renumbers */
 }
 
 void
@@ -47,6 +49,7 @@ clearMat (filter_matrix_t *mat)
 {
   free (mat->rows);
   free (mat->wt);
+  heap_clear(mat->heap);
 }
 
 int cmp_u64(const uint64_t * a, const uint64_t * b)
@@ -71,18 +74,18 @@ weightSum(filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
     len2 = (isRowNull(mat, i2) ? 0 : matLengthRow(mat, i2));
 #if DEBUG >= 1
     if((len1 == 0) || (len2 == 0))
-        fprintf(stderr, "i1=%d i2=%d len1=%d len2=%d\n", i1, i2, len1, len2);
+	fprintf(stderr, "i1=%d i2=%d len1=%d len2=%d\n", i1, i2, len1, len2);
 #endif
 #ifdef FOR_DL /* look for the exponents of j in i1 and i2*/
     int e1 = 0, e2 = 0;
     int d;
     unsigned int l;
     for (l = 1 ; l <= len1 ; l++)
-        if (matCell(mat, i1, l) == j)
-            e1 = mat->rows[i1][l].e;
+	if (matCell(mat, i1, l) == j)
+	    e1 = mat->rows[i1][l].e;
     for (l = 1 ; l <= len2 ; l++)
-        if (matCell(mat, i2, l) == j)
-            e2 = mat->rows[i2][l].e;
+	if (matCell(mat, i2, l) == j)
+	    e2 = mat->rows[i2][l].e;
 
     ASSERT (e1 != 0 && e2 != 0);
 
@@ -94,32 +97,32 @@ weightSum(filter_matrix_t *mat, index_t i1, index_t i2, MAYBE_UNUSED index_t j)
     w = 0;
     while((k1 <= len1) && (k2 <= len2))
     {
-        if(matCell(mat, i1, k1) < matCell(mat, i2, k2))
-        {
+	if(matCell(mat, i1, k1) < matCell(mat, i2, k2))
+	{
 #ifdef FOR_DL
-            w += (e2 * mat->rows[i1][k1].e == 0) ? 0 : 1;
+	    w += (e2 * mat->rows[i1][k1].e == 0) ? 0 : 1;
 #else
-            w++;
+	    w++;
 #endif
-            k1++;
-        }
-        else if(matCell(mat, i1, k1) > matCell(mat, i2, k2))
-        {
+	    k1++;
+	}
+	else if(matCell(mat, i1, k1) > matCell(mat, i2, k2))
+	{
 #ifdef FOR_DL
-            w += (e1 * mat->rows[i2][k2].e == 0) ? 0 : 1;
+	    w += (e1 * mat->rows[i2][k2].e == 0) ? 0 : 1;
 #else
-            w++;
+	    w++;
 #endif
-            k2++;
-        }
-        else
-        {
+	    k2++;
+	}
+	else
+	{
 #ifdef FOR_DL
-            w += (e2*mat->rows[i1][k1].e + e1*mat->rows[i2][k2].e == 0) ? 0 : 1;
+	    w += (e2*mat->rows[i1][k1].e + e1*mat->rows[i2][k2].e == 0) ? 0 : 1;
 #endif
-            k1++;
-            k2++;
-        }
+	    k1++;
+	    k2++;
+	}
     }
 #ifdef FOR_DL
     // finish with k1

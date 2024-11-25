@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "omp_proxy.h"
 #include "timing.h"
+#include "merge_types.h"
 #include "merge_heap.h"
 #include "sparse.h"
 #include "read_purgedfile_in_parallel.h"
@@ -164,7 +165,7 @@ void vector_of_typerow_push_back(vector_of_typerow_ptr V, const typerow_t * p)
     memcpy(V->x + V->size++, p, sizeof(typerow_t));
 }
 
-void read_local_rows(vector_of_typerow_pointer_ptr V, FILE * fi, off_t bytes_to_read, uint64_t skip)
+void read_local_rows(heapctx_t heap, vector_of_typerow_pointer_ptr V, FILE * fi, off_t bytes_to_read, uint64_t skip)
 {
     size_t local_next_report = 256;
     size_t local_nrows_at_last_report = 0;
@@ -241,7 +242,7 @@ void read_local_rows(vector_of_typerow_pointer_ptr V, FILE * fi, off_t bytes_to_
 
         /* 0 here must eventually become the row index, but we can't
          * write it right now. We'll do so later on.  */
-        typerow_t *newrow = heap_alloc_row(0, z);
+        typerow_t *newrow = heap_alloc_row(heap, 0, z);
         compressRow(newrow, &primes->x[0], z);
         vector_of_typerow_pointer_push_back(V, newrow);
 
@@ -320,7 +321,7 @@ uint64_t read_purgedfile_in_parallel(filter_matrix_t * mat,
         off_t bytes_to_read = spos_tab[i + 1] - spos_tab[i];
         vector_of_typerow_pointer V;
         vector_of_typerow_pointer_init(V);
-        read_local_rows(V, fi, bytes_to_read, mat->skip);
+        read_local_rows(mat->heap, V, fi, bytes_to_read, mat->skip);
         rows_per_thread[i] = V->size;
 
 #pragma omp barrier
