@@ -19,10 +19,10 @@
    The relations are renumbered according to the file given via the
    '-renumberfile' argument. Input relations are of the following format:
 
-       a,b:p1,p2,...,pj:q1,q2,...,qk                                 (*)
+       a,b:p01,p02,...:p11,p12,...:...                               (*)
 
-   where p1,p2,...,pj are rational (side 0) ideals (possibly duplicate), and
-   q1,q2,...,qk are algebraic (side 1) ideals (possibly duplicate). Output is:
+   where pi1,pi2,... are ideals on side i (possibly duplicate), for 0 <= i < s
+   if there is s sides. Output is:
 
        a,b:r1,r2,...,rm                                              (**)
 
@@ -31,9 +31,13 @@
    '-dl' argument.
 
    The format of each file is recognized by counting the number of ':' in the
-   first line: if two we have the raw format (*), if only one we have the
-   renumbered format (**). It is assumed that all files in renumbered format
-   come first.
+   first line: if there is as many ':' as sides, we have the raw format (*), if
+   there is only one we have the renumbered format (**). It is assumed that all
+   files in renumbered format come first.
+
+   Special case for one-sided polynomial files: it is assumed that there is an
+   extra ':' at the end of the relation in raw format (*) to distinguish
+   between (*) and (**).
 
    Algorithm: for each (a,b) pair, we compute h(a,b) = (CA*a+CB*b) % 2^64.
 
@@ -565,6 +569,8 @@ int check_whether_file_is_renumbered(const char * filename, unsigned int npoly)
         return 1;
     else if (count == npoly)
         return 0;
+    else if (npoly == 1 && count == 2 && s[strlen(s)-2] == ':')
+        return 0; /* when only 1 poly, an additional ':' is put at the end */
     else
     {
       fprintf (stderr, "Error: invalid line in %s (line has %u colons but %u "
