@@ -19,10 +19,11 @@
    The relations are renumbered according to the file given via the
    '-renumberfile' argument. Input relations are of the following format:
 
-       a,b:p01,p02,...:p11,p12,...:...                               (*)
+       a,b[@s1,s2]:p1,p2,...,pj:q1,q2,...,qk                         (*)
 
-   where pi1,pi2,... are ideals on side i (possibly duplicate), for 0 <= i < s
-   if there is s sides. Output is:
+   where p1,p2,...,pj are ideals on side s1 (possibly duplicate), and
+   q1,q2,...,qk are ideals on side s2 (possibly duplicate). The part '@s1,s2'
+   is optional and will default to s1=0 and s2=1 if not present. Output is:
 
        a,b:r1,r2,...,rm                                              (**)
 
@@ -31,13 +32,9 @@
    '-dl' argument.
 
    The format of each file is recognized by counting the number of ':' in the
-   first line: if there is as many ':' as sides, we have the raw format (*), if
-   there is only one we have the renumbered format (**). It is assumed that all
-   files in renumbered format come first.
-
-   Special case for one-sided polynomial files: it is assumed that there is an
-   extra ':' at the end of the relation in raw format (*) to distinguish
-   between (*) and (**).
+   first line: if two we have the raw format (*), if only one we have the
+   renumbered format (**). It is assumed that all files in renumbered format
+   come first.
 
    Algorithm: for each (a,b) pair, we compute h(a,b) = (CA*a+CB*b) % 2^64.
 
@@ -518,7 +515,7 @@ thread_root(void * p MAYBE_UNUSED, earlyparsed_relation_ptr rel)
     return NULL;
 }
 
-int check_whether_file_is_renumbered(const char * filename, unsigned int npoly)
+int check_whether_file_is_renumbered(const char * filename)
 {
     unsigned int count = 0;
     char s[1024];
@@ -567,14 +564,12 @@ int check_whether_file_is_renumbered(const char * filename, unsigned int npoly)
     
     if (count == 1)
         return 1;
-    else if (count == npoly)
+    else if (count == 2)
         return 0;
-    else if (npoly == 1 && count == 2 && s[strlen(s)-2] == ':')
-        return 0; /* when only 1 poly, an additional ':' is put at the end */
     else
     {
-      fprintf (stderr, "Error: invalid line in %s (line has %u colons but %u "
-                       "were expected):\n %s", filename, count, npoly, s);
+      fprintf (stderr, "Error: invalid line in %s (line has %u colons but 1 "
+                       "or 2 were expected):\n %s", filename, count, s);
       abort();
     }
 }
@@ -748,7 +743,7 @@ main (int argc, char const * argv[])
       for (char const ** p = files; *p; p++) {
           /* always strdup these, so that we can safely call
            * filelist_clear in the end */
-          if (check_whether_file_is_renumbered(*p, renumber_table_get_nb_polys(renumber_tab))) {
+          if (check_whether_file_is_renumbered(*p)) {
               files_already_renumbered[nb_f_renumbered++] = strdup(*p);
           } else {
               files_new[nb_f_new++] = strdup(*p);
