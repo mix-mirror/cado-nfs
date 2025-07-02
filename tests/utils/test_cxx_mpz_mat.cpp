@@ -1,25 +1,29 @@
 #include "cado.h" // IWYU pragma: keep
-#include <stdio.h>
-#include <stdlib.h>
-#include <iosfwd>     // for std
-#include <utility>    // for pair, make_pair
+
+#include <cstdio>
+#include <cstdlib>
+
+#include <utility>
 #include <map>
 #include <algorithm>
-#include <gmp.h>
-#include "mpz_mat.h"
 
-using namespace std;
+#include <gmp.h>
+
+#include "gmp_aux.h"
+#include "mpz_mat.h"
 
 // coverity[root_function]
 int main(int argc, char const * argv[])
 {
+    cxx_gmp_randstate state;
+
     if (argc > 1) {
-        unsigned int seed;
-        seed = atoi(argv[1]);
-        srand(seed);
+        unsigned long seed;
+        seed = strtoul(argv[1], nullptr, 0);
+        gmp_randseed_ui(state, seed);
     }
 
-    map<unsigned long, cxx_mpz_mat> v;
+    std::map<unsigned long, cxx_mpz_mat> v;
 
     mpz_t det;
     mpz_init(det);
@@ -32,10 +36,10 @@ int main(int argc, char const * argv[])
     for(int i = 0 ; i < 10 ; i++) {
         cxx_mpz_mat M;
 
-        mpz_mat_realloc(M, rand() % 16 + 2, rand() % 16 + 2);
+        mpz_mat_realloc(M, gmp_urandomb_ui(state, 4) + 2, gmp_urandomb_ui(state, 4) + 2);
         for(unsigned int i = 0 ; i < M->m ; i++) {
             for(unsigned int j = 0 ; j < M->n ; j++) {
-                mpz_set_si(mpz_mat_entry(M, i, j), (rand() - (RAND_MAX / 2)));
+                mpz_set_si(mpz_mat_entry(M, i, j), (static_cast<long>(gmp_urandomb_ui(state, 16)) - 32768));
             }
         }
         mpz_mat_mod_ui(M, M, p);
@@ -47,12 +51,12 @@ int main(int argc, char const * argv[])
         mpz_mat_submat_swap(M2, 0, 0, M1, 0, 0, d, d);
         mpz_mat_determinant_triangular(det, M2);
         mpz_mod_ui(det, det, p);
-        v.insert(make_pair(mpz_get_ui(det), M));
+        v.insert(std::make_pair(mpz_get_ui(det), M));
     }
 
-    for(map<unsigned long, cxx_mpz_mat>::const_iterator it = v.begin() ; it != v.end() ; it++) {
-        printf("[det=%ld] ", it->first);
-        mpz_mat_fprint(stdout, it->second);
+    for(auto const & x : v) {
+        printf("[det=%ld] ", x.first);
+        mpz_mat_fprint(stdout, x.second);
     }
 
     mpz_clear(det);
