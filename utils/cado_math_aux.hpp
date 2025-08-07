@@ -108,9 +108,12 @@ namespace cado_math_aux
 #endif
 
     /* {{{ simple wrappers around std::pow, + cxx_mpfr extensions */
+    /* see comment about ldexpf and friends
     inline float pow(float x, float e) { return std::pow(x, e); }
     inline double pow(double x, double e) { return std::pow(x, e); }
     inline long double pow(long double x, long double e) { return std::pow(x, e); }
+    */
+    using std::pow;
     // inline float pow(float x, long e) { return std::pow(x, e); }
     // inline double pow(double x, int e) { return std::pow(x, e); }
     // inline long double pow(long double x, int e) { return std::pow(x, e); }
@@ -149,9 +152,12 @@ namespace cado_math_aux
     /* }}} */
             
     /* {{{ simple wrappers around std::isnan, + cxx_mpfr extensions */
+    /* see comment about ldexpf and friends
     inline bool isnan(float x) { return std::isnan(x); }
     inline bool isnan(double x) { return std::isnan(x); }
     inline bool isnan(long double x) { return std::isnan(x); }
+    */
+    using std::isnan;
 #ifdef HAVE_MPFR
     inline bool isnan(cxx_mpfr const & x) { return mpfr_nan_p(mpfr_srcptr(x)); }
 #endif
@@ -163,18 +169,27 @@ namespace cado_math_aux
     /* }}} */
             
     /* {{{ simple wrappers around std::isinf, + cxx_mpfr extensions */
+    /* see comment about ldexpf and friends
     inline bool isinf(float x) { return std::isinf(x); }
     inline bool isinf(double x) { return std::isinf(x); }
     inline bool isinf(long double x) { return std::isinf(x); }
+    */
+    using std::isinf;
 #ifdef HAVE_MPFR
     inline bool isinf(cxx_mpfr const & x) { return mpfr_inf_p(mpfr_srcptr(x)); }
 #endif
     /* }}} */
             
     /* {{{ simple wrappers around std::ldexp, + cxx_mpfr extensions */
-    inline float ldexp(float x, int e) { return std::ldexpf(x, e); }
+
+    /* we used to have std::{ldexpf,ldexp,ldexpl} here, but see the drama
+     * with https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79700 ; so I
+     * think that simply importing std::ldexp _should_ be enough
+    inline float ldexp(float x, int e) { return std::ldexp(x, e); }
     inline double ldexp(double x, int e) { return std::ldexp(x, e); }
-    inline long double ldexp(long double x, int e) { return std::ldexpl(x, e); }
+    inline long double ldexp(long double x, int e) { return std::ldexp(x, e); }
+     */
+    using std::ldexp;
 #ifdef HAVE_MPFR
     inline cxx_mpfr ldexp(cxx_mpfr const & x, int e) {
         cxx_mpfr res = x;
@@ -188,9 +203,12 @@ namespace cado_math_aux
     /* }}} */
 
     /* {{{ simple wrappers around std::frexp, + cxx_mpfr extensions */
+    /* see above
     inline float frexp(float x, int * e) { return std::frexp(x, e); }
     inline double frexp(double x, int * e) { return std::frexp(x, e); }
     inline long double frexp(long double x, int * e) { return std::frexp(x, e); }
+    */
+    using std::frexp;
 #ifdef HAVE_MPFR
     inline cxx_mpfr frexp(cxx_mpfr const & x, int * e) {
         mpfr_exp_t ee;
@@ -203,9 +221,12 @@ namespace cado_math_aux
     /* }}} */
 
     /* {{{ simple wrappers around std::abs, + cxx_mpfr extensions */
+    /* see above
     inline float abs(float x) { return std::abs(x); }
     inline double abs(double x) { return std::abs(x); }
     inline long double abs(long double x) { return std::abs(x); }
+    */
+    using std::abs;
 #ifdef HAVE_MPFR
     inline cxx_mpfr abs(cxx_mpfr const & x) {
         cxx_mpfr res = x;
@@ -226,9 +247,12 @@ namespace cado_math_aux
     /* {{{ fma/fms operation -- we have to use a function in order to have a
      * unified interface
      */
+    /* see above
     inline float fma(float x, float y, float z) { return std::fmaf(x, y, z); }
     inline double fma(double x, double y, double z) { return std::fma(x, y, z); }
     inline long double fma(long double x, long double y, long double z) { return std::fmal(x, y, z); }
+    */
+    using std::fma;
     inline float fms(float x, float y, float z) { return std::fmaf(x, y, -z); }
     inline double fms(double x, double y, double z) { return std::fma(x, y, -z); }
     inline long double fms(long double x, long double y, long double z) { return std::fma(x, y, -z); }
