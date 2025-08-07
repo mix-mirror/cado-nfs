@@ -18,6 +18,10 @@
 #include "gmp_auxx.hpp"
 #include "macros.h"
 
+/* TODO: This uses enable_if_t, which is in fact c++14.
+ * At some point we really need to bite the bullet and decide that cado
+ * uses all these modern things.
+ */
 struct cxx_mpz {
 public:
     typedef mp_limb_t WordType;
