@@ -31,5 +31,5 @@ namespace fmt {
                 return begin;
             }
     };
-}       /* nameespace fmt */
+} /* namespace fmt */
 #endif	/* UTILS_NUMBERTHEORY_FMT_HELPERS_HPP_ */
