@@ -50,7 +50,7 @@ template<typename T>
 struct polynomial;
 
 /* forward-declare the template. We need it in order to be able to
- * declare it as a friend of the polynomial<>struct 
+ * declare it as a friend of the polynomial<>struct
  */
 template<typename T> std::istream& operator>>(std::istream& in, polynomial_details::polynomial<T> & F);
 template<typename T> std::ostream& operator<<(std::ostream& o, polynomial_details::polynomial<T> const & f);
@@ -654,7 +654,7 @@ struct polynomial : public number_context<T>
             /* if coeffs[0] == 0, we have a root at zero which doesn't
              * count as positive
              */
-            int c01 = sgn(coeffs[0]) * sgn(coeffs[1] ? coeffs[1] : coeffs[2]);
+            int c01 = sgn(coeffs[0]) * sgn(coeffs[1] ? coeffs[1] : (sgn(bound) * coeffs[2]));
             bool no_chance = c01 * sgn(bound) > 0 || coeffs[0] == 0;
             for(size_t i = 0 ; i < v.size() ; i++) {
                 U b = v[i];
@@ -990,7 +990,7 @@ struct polynomial : public number_context<T>
     }
 
     std::string print(std::string const& var = "x") const
-    { 
+    {
         std::ostringstream os;
         if (degree() < 0) os << "0";
         for(int i = 0 ; i <= degree() ; i++) {
