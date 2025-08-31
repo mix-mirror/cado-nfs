@@ -1,16 +1,16 @@
-#ifndef CADO_UTILS_NUMBERTHEORY_FMT_HELPERS_HPP
-#define CADO_UTILS_NUMBERTHEORY_FMT_HELPERS_HPP
+#ifndef CADO_UTILS_FMT_HELPER_SAGEMATH_HPP
+#define CADO_UTILS_FMT_HELPER_SAGEMATH_HPP
 
 #include "fmt/base.h"
 
 namespace fmt {
+    enum fmt_helper_sagemath_types { TEXT, SAGEMATH, MACHINE, MAGMA };
+
     template<typename T>
-    struct fmt_helper_sagemath {
-        protected:
-            enum { TEXT, SAGEMATH, MACHINE, MAGMA } custom_format = formatter<T>::custom_format_default;
+    struct fmt_helper_sagemath : public formatter<string_view> {
+            fmt_helper_sagemath_types custom_format = formatter<T>::custom_format_default;
             /* this can be overridden */
             static constexpr const decltype(custom_format) custom_format_default = SAGEMATH;
-        public:
             FMT_CONSTEXPR auto parse(basic_format_parse_context<char>& ctx)
                 -> decltype(ctx.begin())
             {
@@ -32,4 +32,5 @@ namespace fmt {
             }
     };
 } /* namespace fmt */
-#endif	/* UTILS_NUMBERTHEORY_FMT_HELPERS_HPP_ */
+
+#endif	/* CADO_UTILS_FMT_HELPER_SAGEMATH_HPP_ */

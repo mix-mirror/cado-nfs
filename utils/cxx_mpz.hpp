@@ -15,13 +15,8 @@
 
 #include "gmp_aux.h"
 #include "gmp_auxx.hpp"
-#include "utils_cxx.hpp"
 #include "macros.h"
 
-/* TODO: This uses enable_if_t, which is in fact c++14.
- * At some point we really need to bite the bullet and decide that cado
- * uses all these modern things.
- */
 struct cxx_mpz {
 public:
     typedef mp_limb_t WordType;
@@ -192,6 +187,50 @@ struct cxx_mpq{
     cxx_mpq& operator=(cxx_mpq && o) {
         mpq_swap(x, o.x);
         return *this;
+    }
+
+    template <typename T>
+        // NOLINTNEXTLINE(hicpp-explicit-conversions)
+        cxx_mpq (const T & rhs)
+        requires cado::converts_via<T, int64_t>
+        {
+            mpq_init(x);
+            gmp_auxx::mpz_init_set(mpq_numref(x), int64_t(rhs));
+            mpz_set_ui(mpq_denref(x), 1);
+            mpq_canonicalize(x);
+        }
+    template <typename T>
+        cxx_mpq & operator=(const T a)
+        requires cado::converts_via<T, int64_t>
+        {
+            gmp_auxx::mpz_set(mpq_numref(x), int64_t(a));
+            mpz_set_ui(mpq_denref(x), 1);
+            mpq_canonicalize(x);
+            return *this;
+        }
+    template <typename T>
+        // NOLINTNEXTLINE(hicpp-explicit-conversions)
+        cxx_mpq (const T & rhs)
+        requires cado::converts_via<T, uint64_t>
+        {
+            mpq_init(x);
+            gmp_auxx::mpz_set(mpq_numref(x), uint64_t(rhs));
+            mpz_set_ui(mpq_denref(x), 1);
+            mpq_canonicalize(x);
+        }
+    template <typename T>
+        cxx_mpq & operator=(const T a)
+        requires cado::converts_via<T, uint64_t>
+        {
+            gmp_auxx::mpz_set(mpq_numref(x), uint64_t(a));
+            mpz_set_ui(mpq_denref(x), 1);
+            mpq_canonicalize(x);
+            return *this;
+        }
+    // NOLINTNEXTLINE(hicpp-explicit-conversions)
+    cxx_mpq(mpq_srcptr a) {
+        mpq_init(x);
+        mpq_set(x, a);
     }
     operator mpq_ptr() { return x; }
     operator mpq_srcptr() const { return x; }
