@@ -637,18 +637,55 @@ static void test_some_arithmetic()
     for( ; q.degree() >= 0 ; ) {
         const int e = 10;
         auto [ nq, r ] = q.div_qr_xminusr(e);
-        auto s = fmt::format("({}) * (x-{}) + {}", nq, e, r);
-        fmt::print("{} == {}\n", q, s);
-        ASSERT_ALWAYS(q == polynomial(s, q.ctx()));
+        {
+            auto s = q.div_q_xminusr(e);
+            ASSERT_ALWAYS(s == nq);
+        }
+        {
+            auto s = fmt::format("({}) * (x-{}) + {}", nq, e, r);
+            fmt::print("{} == {}\n", q, s);
+            ASSERT_ALWAYS(q == polynomial(s, q.ctx()));
+        }
         q = nq;
     }
 
     {
         /* some parsing */
-        ASSERT_ALWAYS(polynomial<T>("-(x+1)^0+(x+1)^2-(-x)^2-2*x") == 0);
+        ASSERT_ALWAYS(polynomial<T>("-(x+1)^0+(x+1)^2-(-x)*-x-2*x") == 0);
+    }
 
+    {
+        const polynomial<int> A { 1, 2 };
+        const polynomial<T> B(A);
+        ASSERT_ALWAYS(B.derivative() == 2);
+        const cado::number_context<T> tr(128); /* 128 only for cxx_mpfr */
+        polynomial<T> C(A, tr);
+        ASSERT_ALWAYS(C.derivative() == 2);
+        C.set_zero();
+        ASSERT_ALWAYS(C == 0);
+        ASSERT_ALWAYS(C.pow(12) == 0);
+        ASSERT_ALWAYS(C.pow(0) == 1);
+
+        const auto A7 = A.pow(7);
+        ASSERT_ALWAYS(A7.degree() == 7);
+        const polynomial<int> K(2187);
+        ASSERT_ALWAYS(K == A7(1));
+
+        auto [ q, r ] = C.div_qr_xminusr(tr(1));
+        ASSERT_ALWAYS(q == 0);
+        ASSERT_ALWAYS(r == 0);
     }
 }
+
+/* things from polynomial.hpp what are not yet covered (I think)
+ *
+ * findroot_dichotomy and the code path that leads to it (corner case in
+ * findroot_falseposition). test_init_norms might trigger this, though.
+ *
+ * corner cases in pseudo_division, resultant, and inverse_scale
+ *
+ * and throwing branches.
+ */
 
 template<typename T>
 static void all_tests()

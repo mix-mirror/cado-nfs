@@ -149,7 +149,7 @@ struct polynomial : public number_context<T>
     template<typename U>
         explicit polynomial(polynomial<U> const & a)
         requires (!std::is_same_v<U, T>)
-        : polynomial(a, a.ctx())
+        : polynomial(a, number_context<T>(a.ctx()))
     {}
 
     void set_zero() { coeffs.clear(); }
