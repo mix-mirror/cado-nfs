@@ -1,6 +1,8 @@
 #ifndef CADO_UTILS_CADO_MATH_AUX_HPP
 #define CADO_UTILS_CADO_MATH_AUX_HPP
 
+#include "cado_config.h"
+
 #include <cmath>
 #include <cfenv>
 #include <cstddef>
@@ -11,11 +13,26 @@
 #include <array>
 #include <limits>
 #include <type_traits>
+#include <complex>
 
 #include <gmp.h>
+
 #include "cxx_mpz.hpp"
-#include "macros.h"
+#include "cado_type_traits.hpp"
+#include "utils_cxx.hpp"
 #include "gmp_aux.h"
+
+#ifdef HAVE_MPFR
+#include <mpfr.h>
+#include "cxx_mpfr.hpp"
+#include "mpfr_aux.h"
+#endif
+
+#ifdef HAVE_MPC
+#include <mpc.h>
+#include "cxx_mpc.hpp"
+#include "mpc_aux.h"
+#endif
 
 namespace cado_math_aux
 {
@@ -26,19 +43,470 @@ namespace cado_math_aux
     template<> inline long double abs<long double>(long double x) { return fabsl(x); }
     */
 
+    /* {{{ compile-time left shift */
+    namespace details {
     template<typename T, int n>
-        struct multiply_by_poweroftwo {
-            constexpr T operator()(T x) const {
-                return multiply_by_poweroftwo<T, n-1>()(2*x);
+        struct multiply_by_poweroftwo_impl {
+            constexpr T operator()(T const & x) const {
+                return multiply_by_poweroftwo_impl<T, n-1>()(2*x);
             }
         };
 
     template<typename T>
-        struct multiply_by_poweroftwo<T, 0> {
-            constexpr T operator()(T x) const {
+        struct multiply_by_poweroftwo_impl<T, 0> {
+            constexpr T operator()(T const & x) const {
                 return x;
             }
         };
+    } /* namespace details */
+    template<int n, typename T>
+    static T constexpr multiply_by_poweroftwo(T const & x) {
+        return details::multiply_by_poweroftwo_impl<T, n>()(x);
+    }
+    /* }}} */
+
+#if 0
+    /* {{{ POC: wrap around std::pow */
+    template<typename T, typename = void>
+        constexpr bool has_pow = false;
+    template<typename T>
+        constexpr bool has_pow<T,
+                std::void_t<decltype(std::pow(std::declval<T>(),1))>
+                  > = true;
+
+    static_assert(has_pow<float>);
+    static_assert(has_pow<double>);
+
+    template<typename T>
+        T pow(T const & x, int e)
+        requires has_pow<T>
+        {
+            return std::pow(x, e);
+        }
+    template<typename T>
+        T pow(T const & x, T const & e)
+        requires has_pow<T>
+        {
+            return std::pow(x, e);
+        }
+
+#ifdef HAVE_MPFR
+    static_assert(!has_pow<cxx_mpfr>);
+    inline cxx_mpfr pow(cxx_mpfr const & x, int e)
+    {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpfr_pow_si(res, x, e, MPFR_RNDN);
+        return res;
+    }
+    inline cxx_mpfr pow(cxx_mpfr const & x, cxx_mpfr const & e)
+    {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpfr_pow(res, x, e, MPFR_RNDN);
+        return res;
+    }
+#endif
+    /* }}} */
+#endif
+
+    /* {{{ simple wrappers around std::pow, + cxx_mpfr extensions */
+    /* see comment about ldexpf and friends
+    inline float pow(float x, float e) { return std::pow(x, e); }
+    inline double pow(double x, double e) { return std::pow(x, e); }
+    inline long double pow(long double x, long double e) { return std::pow(x, e); }
+    */
+    using std::pow;
+    // inline float pow(float x, long e) { return std::pow(x, e); }
+    // inline double pow(double x, int e) { return std::pow(x, e); }
+    // inline long double pow(long double x, int e) { return std::pow(x, e); }
+#ifdef HAVE_MPFR
+    inline cxx_mpfr pow(cxx_mpfr const & x, cxx_mpfr const & e)
+    {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpfr_pow(res, x, e, MPFR_RNDN);
+        return res;
+    }
+    inline cxx_mpfr pow(cxx_mpfr const & x, int e)
+    {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpfr_pow_si(res, x, e, MPFR_RNDN);
+        return res;
+    }
+#endif
+#ifdef HAVE_MPC
+    inline cxx_mpc pow(cxx_mpc const & x, cxx_mpc const & e)
+    {
+        cxx_mpc res;
+        mpc_set_prec(res, x.prec());
+        mpc_pow(res, x, e, MPC_RNDNN);
+        return res;
+    }
+    inline cxx_mpc pow(cxx_mpc const & x, int e)
+    {
+        cxx_mpc res;
+        mpc_set_prec(res, x.prec());
+        mpc_pow_si(res, x, e, MPC_RNDNN);
+        return res;
+    }
+#endif
+    /* }}} */
+            
+    /* {{{ simple wrappers around std::isnan, + cxx_mpfr extensions */
+    /* see comment about ldexpf and friends
+    inline bool isnan(float x) { return std::isnan(x); }
+    inline bool isnan(double x) { return std::isnan(x); }
+    inline bool isnan(long double x) { return std::isnan(x); }
+    */
+    using std::isnan;
+#ifdef HAVE_MPFR
+    inline bool isnan(cxx_mpfr const & x) { return mpfr_nan_p(mpfr_srcptr(x)); }
+#endif
+#ifdef HAVE_MPC
+    inline bool isnan(cxx_mpc const & x) {
+        return mpfr_nan_p(mpc_realref(x)) || mpfr_nan_p(mpc_imagref(x));
+    }
+#endif
+    /* }}} */
+            
+    /* {{{ simple wrappers around std::isinf, + cxx_mpfr extensions */
+    /* see comment about ldexpf and friends
+    inline bool isinf(float x) { return std::isinf(x); }
+    inline bool isinf(double x) { return std::isinf(x); }
+    inline bool isinf(long double x) { return std::isinf(x); }
+    */
+    using std::isinf;
+#ifdef HAVE_MPFR
+    inline bool isinf(cxx_mpfr const & x) { return mpfr_inf_p(mpfr_srcptr(x)); }
+#endif
+    /* }}} */
+            
+    /* {{{ simple wrappers around std::ldexp, + cxx_mpfr extensions */
+
+    /* we used to have std::{ldexpf,ldexp,ldexpl} here, but see the drama
+     * with https://gcc.gnu.org/bugzilla/show_bug.cgi?id=79700 ; so I
+     * think that simply importing std::ldexp _should_ be enough
+    inline float ldexp(float x, int e) { return std::ldexp(x, e); }
+    inline double ldexp(double x, int e) { return std::ldexp(x, e); }
+    inline long double ldexp(long double x, int e) { return std::ldexp(x, e); }
+     */
+    using std::ldexp;
+#ifdef HAVE_MPFR
+    inline cxx_mpfr ldexp(cxx_mpfr const & x, int e) {
+        cxx_mpfr res = x;
+        if (e > 0)
+            mpfr_mul_2exp(res, x, e, MPFR_RNDN);
+        if (e < 0)
+            mpfr_div_2exp(res, x, -e, MPFR_RNDN);
+        return res;
+    }
+#endif
+    /* }}} */
+
+    /* {{{ simple wrappers around std::frexp, + cxx_mpfr extensions */
+    /* see above
+    inline float frexp(float x, int * e) { return std::frexp(x, e); }
+    inline double frexp(double x, int * e) { return std::frexp(x, e); }
+    inline long double frexp(long double x, int * e) { return std::frexp(x, e); }
+    */
+    using std::frexp;
+#ifdef HAVE_MPFR
+    inline cxx_mpfr frexp(cxx_mpfr const & x, int * e) {
+        mpfr_exp_t ee;
+        cxx_mpfr res = x;
+        mpfr_frexp(&ee, res, x, MPFR_RNDN);
+        *e = ee;
+        return res;
+    }
+#endif
+    /* }}} */
+
+    /* {{{ simple wrappers around std::abs, + cxx_mpfr extensions */
+    /* see above
+    inline float abs(float x) { return std::abs(x); }
+    inline double abs(double x) { return std::abs(x); }
+    inline long double abs(long double x) { return std::abs(x); }
+    */
+    using std::abs;
+#ifdef HAVE_MPFR
+    inline cxx_mpfr abs(cxx_mpfr const & x) {
+        cxx_mpfr res = x;
+        mpfr_abs(res, res, MPFR_RNDN);
+        return res;
+    }
+#endif
+#ifdef HAVE_MPC
+    inline cxx_mpfr abs(cxx_mpc const & x) {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpc_abs(res, x, MPFR_RNDN);
+        return res;
+    }
+#endif
+    /* }}} */
+    /* {{{ simple wrappers around std::log and std::exp */
+    using std::log;
+    using std::exp;
+#ifdef HAVE_MPFR
+    inline cxx_mpfr log(cxx_mpfr const & x) {
+        cxx_mpfr res = x;
+        mpfr_log(res, res, MPFR_RNDN);
+        return res;
+    }
+    inline cxx_mpfr exp(cxx_mpfr const & x) {
+        cxx_mpfr res = x;
+        mpfr_exp(res, res, MPFR_RNDN);
+        return res;
+    }
+#endif
+#ifdef HAVE_MPC
+    inline cxx_mpc exp(cxx_mpc const & x) {
+        cxx_mpc res;
+        mpc_exp(res, x, MPC_RNDNN);
+        return res;
+    }
+    inline cxx_mpc log(cxx_mpc const & x) {
+        cxx_mpc res;
+        mpc_log(res, x, MPC_RNDNN);
+        return res;
+    }
+#endif
+    /* }}} */
+
+    /* {{{ fma/fms operation -- we have to use a function in order to have a
+     * unified interface
+     */
+    /* see above
+    inline float fma(float x, float y, float z) { return std::fmaf(x, y, z); }
+    inline double fma(double x, double y, double z) { return std::fma(x, y, z); }
+    inline long double fma(long double x, long double y, long double z) { return std::fmal(x, y, z); }
+    */
+    using std::fma;
+    inline float fms(float x, float y, float z) { return std::fmaf(x, y, -z); }
+    inline double fms(double x, double y, double z) { return std::fma(x, y, -z); }
+    inline long double fms(long double x, long double y, long double z) { return std::fma(x, y, -z); }
+    inline cxx_mpz fma(cxx_mpz const & x, cxx_mpz const & y, cxx_mpz const & z) {
+        cxx_mpz res = z;
+        mpz_addmul(res, x, y);
+        return res;
+    }
+    inline cxx_mpz fms(cxx_mpz const & x, cxx_mpz const & y, cxx_mpz const & z) {
+        cxx_mpz res = -z;
+        mpz_addmul(res, x, y);
+        return res;
+    }
+#ifdef HAVE_MPFR
+    /* the working precision is the precision of x */
+    inline cxx_mpfr fma(cxx_mpfr const & x, cxx_mpfr const & y, cxx_mpfr const & z) {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpfr_fma(res, x, y, z, MPFR_RNDN);
+        return res;
+    }
+    inline cxx_mpfr fms(cxx_mpfr const & x, cxx_mpfr const & y, cxx_mpfr const & z) {
+        cxx_mpfr res;
+        mpfr_set_prec(res, x.prec());
+        mpfr_fms(res, x, y, z, MPFR_RNDN);
+        return res;
+    }
+#endif
+#ifdef HAVE_MPC
+    /* the working precision is the precision of x */
+    inline cxx_mpc fma(cxx_mpc const & x, cxx_mpc const & y, cxx_mpc const & z) {
+        cxx_mpc res;
+        mpc_set_prec(res, x.prec());
+        mpc_fma(res, x, y, z, MPC_RNDNN);
+        return res;
+    }
+    inline cxx_mpc fms(cxx_mpc const & x, cxx_mpc const & y, cxx_mpc const & z) {
+        cxx_mpc res;
+        mpc_set_prec(res, x.prec());
+        cxx_mpc nz = -z;
+        mpc_fms(res, x, y, nz, MPC_RNDNN);
+        return res;
+    }
+#endif
+    template<typename T>
+    inline std::complex<T> fma(std::complex<T> const & x, std::complex<T> const & y, std::complex<T> const & z) {
+        /* res = x * y + z
+         * re(res) = re(x) * re(y) - im(x) * im(y) + re(z)
+         * im(res) = re(x) * im(y) + im(x) * re(y) + im(z)
+         */
+        using cado_math_aux::fma;
+        using cado_math_aux::fms;
+        auto const [ xr, xi ] = std::make_pair<T, T>(x.real(), x.imag());
+        auto const [ yr, yi ] = std::make_pair<T, T>(y.real(), y.imag());
+        auto const [ zr, zi ] = std::make_pair<T, T>(z.real(), z.imag());
+        return {
+            fms(xr, yr, fms(xi, yi, zr)),
+            fma(xr, yi, fma(xi, yr, zi))
+        };
+    }
+    template<typename T>
+    inline std::complex<T> fms(std::complex<T> const & x, std::complex<T> const & y, std::complex<T> const & z) {
+        /* res = x * y - z
+         * re(res) = re(x) * re(y) - im(x) * im(y) - re(z)
+         * im(res) = re(x) * im(y) + im(x) * re(y) - im(z)
+         */
+        using cado_math_aux::fma;
+        using cado_math_aux::fms;
+        auto const [ xr, xi ] = std::make_pair<T, T>(x.real(), x.imag());
+        auto const [ yr, yi ] = std::make_pair<T, T>(y.real(), y.imag());
+        auto const [ zr, zi ] = std::make_pair<T, T>(z.real(), z.imag());
+        return {
+            fms(xr, yr, fma(xi, yi, zr)),
+            fma(xr, yi, fms(xi, yr, zi))
+        };
+    }
+    /* }}} */
+
+    /* {{{ assignment operations that also retain precision, for types that
+     * have it. Basically, this is all similar to x=0 or x=a, *but* with
+     * precision taken from an existing (reference) object, e.g. the one
+     * that is assigned to in the x=a case.
+     *
+     * Note that for the x=a case, we're knowingly not using the
+     * operator= overload to expose this interface, because that would be
+     * misleading.
+     */
+    template<typename T> inline T similar_zero(T const &) { return {}; }
+
+    /* This returns something similar to T(a), except that we take some
+     * characteristics from x in order to form the result (think precision),
+     * instead of what the default behavior of the ctor would prescribe. Of
+     * course for most types it's just "return a"
+     */
+    template<typename T, typename U>
+    inline T similar_set(T const & /* x */, U const & a) { return a; }
+#ifdef HAVE_MPFR
+    template<>
+    inline cxx_mpfr similar_zero<cxx_mpfr>(cxx_mpfr const & x)
+    {
+        cxx_mpfr e = x;
+        mpfr_set_ui(e, 0, MPFR_RNDN);
+        return e;
+    }
+    template<typename U>
+    inline cxx_mpfr similar_set(cxx_mpfr const & x, U const & a)
+    {
+        cxx_mpfr e = x;
+        mpfr_auxx::cado_mpfr_set(e, a, MPFR_RNDN);
+        return e;
+    }
+#endif
+#ifdef HAVE_MPC
+    template<>
+    inline cxx_mpc similar_zero<cxx_mpc>(cxx_mpc const & x)
+    {
+        cxx_mpc e = x;
+        mpc_set_ui(e, 0, MPC_RNDNN);
+        return e;
+    }
+    template<typename U>
+    inline cxx_mpc similar_set(cxx_mpc const & x, U const & a)
+    {
+        cxx_mpc e = x;
+        mpc_auxx::cado_mpc_set(e, a, MPC_RNDNN);
+        return e;
+    }
+#endif
+    /* }}} */
+
+    /* {{{ addmul/submul. It's similar to fma/fms, but the operand order
+     * differs. Also, addmul/submul are compound operations, while fma is
+     * not. When working with arbitrary precision types, the working
+     * precision is the precision of x.
+     *
+     * TODO ET: do we really need the three-type template?
+     */
+    template<typename T, typename U, typename V>
+    inline T& addmul(T & x, U const & y, V const & z)
+    {
+        /* return x += y*z */
+        return x = fma(similar_set(x, y), z, x);
+    }
+    template<typename T, typename U, typename V>
+    inline T& submul(T & x, U const & y, V const & z)
+    {
+        /* return x -= y*z */
+        return x = -fms(similar_set(x, y), z, x);
+    }
+
+#ifdef HAVE_MPFR
+    inline cxx_mpfr& addmul(cxx_mpfr & x, cxx_mpfr const & y, unsigned long& z)
+    {
+        mpfr_addmul_ui(x, y, z, MPFR_RNDN);
+        return x;
+    }
+    inline cxx_mpfr& addmul(cxx_mpfr & x, cxx_mpfr const & y, long& z)
+    {
+        mpfr_addmul_si(x, y, z, MPFR_RNDN);
+        return x;
+    }
+    inline cxx_mpfr& submul(cxx_mpfr & x, cxx_mpfr const & y, unsigned long& z)
+    {
+        mpfr_submul_ui(x, y, z, MPFR_RNDN);
+        return x;
+    }
+    inline cxx_mpfr& submul(cxx_mpfr & x, cxx_mpfr const & y, long& z)
+    {
+        mpfr_submul_si(x, y, z, MPFR_RNDN);
+        return x;
+    }
+#endif
+
+
+#ifdef HAVE_MPC
+    template<typename U, typename V>
+        inline cxx_mpc& addmul(cxx_mpc & x, U const & y, V const & z)
+        {
+            cxx_mpc yy = similar_set(x, y);
+            yy *= z;
+            x += yy;
+            return x;
+        }
+    template<typename U, typename V>
+        inline cxx_mpc& submul(cxx_mpc & x, U const & y, V const & z)
+        {
+            cxx_mpc yy = similar_set(x, y);
+            yy *= z;
+            return x -= yy;
+        }
+    inline cxx_mpc& addmul(cxx_mpc & x, cxx_mpc const & y, cxx_mpc const & z)
+    {
+        mpc_addmul(x, y, z, MPC_RNDNN);
+        return x;
+    }
+    inline cxx_mpc& addmul(cxx_mpc & x, cxx_mpc const & y, unsigned long& z)
+    {
+        mpc_addmul_ui(x, y, z, MPC_RNDNN);
+        return x;
+    }
+    inline cxx_mpc& addmul(cxx_mpc & x, cxx_mpc const & y, long& z)
+    {
+        mpc_addmul_si(x, y, z, MPC_RNDNN);
+        return x;
+    }
+    inline cxx_mpc& submul(cxx_mpc & x, cxx_mpc const & y, cxx_mpc const & z)
+    {
+        mpc_submul(x, y, z, MPC_RNDNN);
+        return x;
+    }
+    inline cxx_mpc& submul(cxx_mpc & x, cxx_mpc const & y, unsigned long& z)
+    {
+        mpc_submul_ui(x, y, z, MPC_RNDNN);
+        return x;
+    }
+    inline cxx_mpc& submul(cxx_mpc & x, cxx_mpc const & y, long& z)
+    {
+        mpc_submul_si(x, y, z, MPC_RNDNN);
+        return x;
+    }
+#endif
+    /* }}} */
+
 
     /* This compares two floating point values with a relative error margin
     */
@@ -48,30 +516,60 @@ namespace cado_math_aux
                 const T d2,
                 const T err_margin)
         {
-            using namespace cado_math_aux;
             return abs(d1) * (1. - err_margin) <= abs(d2) && abs(d2) <= abs(d1) * (1. + err_margin);
         }
 
 
     template<typename T>
         static bool equal_within_ulps(T x, T y, std::size_t n)
-        requires(!std::numeric_limits<T>::is_integer)
+        requires std::is_floating_point_v<T>
         {
             const T m = std::min(std::fabs(x), std::fabs(y));
             const int exp = m < std::numeric_limits<T>::min()
                 ? std::numeric_limits<T>::min_exponent - 1
                 : std::ilogb(m);
-            return std::fabs(x - y) <= n * std::ldexp(std::numeric_limits<T>::epsilon(), exp);
+            return std::fabs(x - y) <= n * cado_math_aux::ldexp(std::numeric_limits<T>::epsilon(), exp);
+        }
+
+    template<typename T>
+        static bool equal_within_ulps(T x, T y, std::size_t n)
+        requires std::is_integral_v<T>
+        {
+            return x < y ? (size_t(y - x) <= n) : (size_t(x-y) <= n);
         }
 
     template<typename T>
         static int accurate_bits(T reference, T computed)
-        requires(!std::numeric_limits<T>::is_integer)
+        requires std::is_floating_point_v<T>
         {
-            ASSERT_ALWAYS(reference != 0);
-            T c = std::fabs((computed-reference)/reference);
+            T c;
+            if (reference == 0)
+                c = computed;
+            else
+                c = (computed-reference)/reference;
+            c = std::fabs(c);
             return c == 0 ? INT_MAX : -std::ilogb(c);
         }
+
+#ifdef HAVE_MPFR
+    template<typename T>
+        static int
+        accurate_bits(T reference, T computed)
+        requires std::is_same_v<T, cxx_mpfr>
+        {
+            T c;
+            if (reference == 0)
+                c = computed;
+            else
+                c = (computed-reference)/reference;
+            mpfr_abs(c, c, MPFR_RNDN);
+            if (c == 0) return INT_MAX;
+            T mantissa;
+            mpfr_exp_t e;
+            mpfr_frexp(&e, c, c, MPFR_RNDN);
+            return -e;
+        }
+#endif
 
     template<typename T> static inline void do_not_outsmart_me(T &) {}
 #if defined(__i386)
@@ -121,8 +619,8 @@ namespace cado_math_aux
          * valgrind. ld prints as 0x8p+16381 and frexp returns 0. Both
          * are clearly bogus.
          */
-        volatile double d0 = 1.79769313486231570815e+308; // 0x1.fffffffffffffp+1023;
-        volatile double d1 = 1.9958403095347196e+292;     // 0x1.fffffffffffffp+970;
+        const volatile double d0 = 1.79769313486231570815e+308; // 0x1.fffffffffffffp+1023;
+        const volatile double d1 = 1.9958403095347196e+292;     // 0x1.fffffffffffffp+970;
         volatile long double ld = d0;
         ld += d1;
         int e;
@@ -141,7 +639,8 @@ namespace cado_math_aux
      */
 
     template<typename T>
-        cxx_mpz mpz_from(T c)
+        static inline cxx_mpz mpz_from(T c)
+        requires std::is_floating_point_v<T>
         {
             /* This converts to an mpz integer with unit accuracy (of
              * course digits below the unit are lost). Rounding is
@@ -153,7 +652,7 @@ namespace cado_math_aux
              */
             if (c == 0) return 0;
             int e;
-            T x = std::frexp(c, &e);
+            T x = cado_math_aux::frexp(c, &e);
             /* x == c * 2^-e */
             /* x is in (-1,0.5], [0.5,1) */
 
@@ -185,7 +684,7 @@ namespace cado_math_aux
                  */
 
                 const int ell = std::min(mantissa_bits - b, ui_bits);
-                const T x_ell = std::ldexp(x, ell);
+                const T x_ell = cado_math_aux::ldexp(x, ell);
                 const auto xr = (unsigned long) x_ell;
                 /* x*(2^ell) is in (0, 2^ell). We must
                  * truncate it (not round to nearest) if we want an
@@ -221,18 +720,44 @@ namespace cado_math_aux
         }
 
     template<typename T>
-    void exact_form(cxx_mpz & m, int & e, T x)
+    static inline cxx_mpz mpz_from(T const & c)
+    requires std::is_same_v<T, cxx_mpz>
+    { return c; }
+
+#ifdef HAVE_MPFR
+    template<typename T>
+    static inline cxx_mpz mpz_from(T const & c)
+    requires std::is_same_v<T, cxx_mpfr>
     {
-        int xe = 0;
-        T mantissa = std::frexp(x, &xe);
+        cxx_mpz res;
+        mpfr_get_z(res, c, MPFR_RNDN);
+        return res;
+    }
+#endif
+
+    template<typename T>
+    static inline void exact_form(cxx_mpz & m, int & e, T x)
+    requires cado_math_aux::is_real<T>::value
+    {
+        e = 0;
+        /* frexp returns x in (-1,-0.5] u [0.5,1). We want an integer, so
+         * we want to scale this up */
+        T mantissa = cado_math_aux::frexp(x, &e);
         constexpr int d = std::numeric_limits<T>::digits;
-        m = mpz_from<T>(std::ldexp(mantissa, d-1));
+        m = mpz_from<T>(cado_math_aux::ldexp(mantissa, d-1));
         e -= (d-1);
     }
 
     template<typename T>
+    static inline void exact_form(cxx_mpz & m, int & e, T const & x)
+    requires cado_math_aux::is_integral<T>::value
+    {
+        m = x;
+        e = 0;
+    }
+    template<typename T>
         T ulp(T r)
-        requires(std::is_floating_point_v<T>)
+        requires std::is_floating_point_v<T>
         {
         /*
          * Let next(r) be the smallest floating point
@@ -245,45 +770,107 @@ namespace cado_math_aux
          * because |r| is in the same binade as 1,
          *  ulp(r)/2^I == next(1)-1 = epsilon().
          */
-        return std::ldexp(std::numeric_limits<T>::epsilon(), std::ilogb(r));
+        return cado_math_aux::ldexp(std::numeric_limits<T>::epsilon(), std::ilogb(r));
     }
+
+    template<typename T>
+        struct converter_from_mpz;
 
     /* This is the same as mpz_get_ld, but should get more mantissa bits
      * correct if we are to use it with quad precision floating points.
      */
     template<typename T>
-        T
-    mpz_get (mpz_srcptr z)
-        requires(std::is_floating_point_v<T>)
-    {
-        T ld = 0;
-        cxx_mpz zr = z;
+        requires std::is_floating_point_v<T>
+        struct converter_from_mpz<T> {
+            T operator()(mpz_srcptr z) const {
+                T ld = 0;
+                cxx_mpz zr = z;
 
-        int b = mpz_sizeinbase(z, 2);
-        int e = b - std::numeric_limits<double>::max_exponent;
-        if (e > 0) {
-            /* First scale the input number down. There are still enough
-             * bits remaining to fill the mantissa, of course.
-             */
-            mpz_tdiv_q_2exp(zr, zr, e);
-        } else {
-            e = 0;
+                int b = mpz_sizeinbase(z, 2);
+                int e = b - std::numeric_limits<double>::max_exponent;
+                if (e > 0) {
+                    /* First scale the input number down. There are still enough
+                     * bits remaining to fill the mantissa, of course.
+                     */
+                    mpz_tdiv_q_2exp(zr, zr, e);
+                } else {
+                    e = 0;
+                }
+
+                constexpr int M = std::numeric_limits<double>::digits;
+                constexpr int LM = std::numeric_limits<T>::digits;
+                cxx_mpz t;
+                for(int b = 0 ; b + M < LM ; b += M) {
+                    double d = mpz_get_d (zr);
+                    mpz_set_d (t, d);
+                    mpz_sub (zr, zr, t);
+                    ld += d;
+                }
+                ld += mpz_get_d (zr);
+                ld = cado_math_aux::ldexp(ld, e);
+                return ld;
+            }
+        };
+
+    template<typename T>
+        requires cado::converts_via<T, int64_t>
+        struct converter_from_mpz<T> {
+            T operator()(mpz_srcptr z) const {
+                return mpz_get_int64(z);
+            }
+        };
+
+    template<typename T>
+        requires cado::converts_via<T, uint64_t>
+        struct converter_from_mpz<T> {
+            T operator()(mpz_srcptr z) const {
+                return mpz_get_uint64(z);
+            }
+        };
+
+    template<typename T>
+        struct converter_from_mpz<std::complex<T>> {
+            std::complex<T> operator()(mpz_srcptr z) const {
+                return { converter_from_mpz<T>()(z), 0 };
+            }
+        };
+
+    template<>
+        struct converter_from_mpz<cxx_mpz> {
+            cxx_mpz operator()(mpz_srcptr z) const {
+                return { z };
+            }
+        };
+
+    
+#ifdef HAVE_MPFR
+    template<>
+        struct converter_from_mpz<cxx_mpfr> {
+            cxx_mpfr operator() (mpz_srcptr z) const
+            {
+                cxx_mpfr res;
+                mpfr_set_z(res, z, MPFR_RNDN);
+                return res;
+            }
+        };
+#endif
+
+#ifdef HAVE_MPC
+    template<>
+        struct converter_from_mpz<cxx_mpc> {
+            cxx_mpc operator() (mpz_srcptr z) const
+            {
+                cxx_mpc res;
+                mpc_set_z(res, z, MPFR_RNDN);
+                return res;
+            }
+        };
+#endif
+
+    template<typename T>
+        static inline T mpz_get(mpz_srcptr z) {
+            return converter_from_mpz<T>()(z);
         }
-
-        constexpr int M = std::numeric_limits<double>::digits;
-        constexpr int LM = std::numeric_limits<T>::digits;
-        cxx_mpz t;
-        for(int b = 0 ; b + M < LM ; b += M) {
-            double d = mpz_get_d (zr);
-            mpz_set_d (t, d);
-            mpz_sub (zr, zr, t);
-            ld += d;
-        }
-        ld += mpz_get_d (zr);
-        ld = std::ldexp(ld, e);
-        return ld;
-    }
-
 
 
     template<typename T>
@@ -408,7 +995,7 @@ namespace cado_math_aux
 
         template<unsigned int n>
             struct mul_c_impl<n, false> {
-                typedef mul_c_impl<n/2> super;
+                using super = mul_c_impl<n/2>;
                 template<typename T, typename U>
                     static void mul(T & t, U const & a) {
                         super::mul(t, a);
@@ -423,7 +1010,7 @@ namespace cado_math_aux
             };
         template<unsigned int n>
             struct mul_c_impl<n, true> {
-                typedef mul_c_impl<n/2> super;
+                using super = mul_c_impl<n/2>;
                 template<typename T, typename U>
                     static void mul(T & t, U const & a) {
                         super::mul(t, a);
@@ -514,7 +1101,7 @@ namespace cado_math_aux
                     }
             };
 #endif
-    }
+    }   /* namespace details */
 
     /* Three chooser types. Evaluation to true means "use an addition
      * chain".
@@ -553,7 +1140,7 @@ namespace cado_math_aux
             details::addmul_c_impl_choice<n, chooser::template choose<n>::value, chooser_mul>::addmul(t, a);
         }
 #endif
-}
+}       /* namespace cado_math_aux */
 
 
 #endif	/* CADO_UTILS_CADO_MATH_AUX_HPP */
