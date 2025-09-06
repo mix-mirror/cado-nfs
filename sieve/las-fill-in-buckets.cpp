@@ -296,12 +296,14 @@ static inline bool discard_power_for_bucket_sieving(FB_ENTRY_TYPE const &)
      */
     return false;
 }
+#ifndef BUCKET_SIEVE_POWERS
 template <>
 inline bool
 discard_power_for_bucket_sieving<fb_entry_general>(fb_entry_general const & e)
 {
     return e.k > 1;
 }
+#endif
 
 /***********************************************************************/
 /* multithreaded processing of make_lattice_bases (a.k.a
@@ -514,6 +516,10 @@ static void fill_in_buckets_toplevel_sublat(
     /* top level: the fence we care about is the one defined by J */
     plattice_enumerator::fence const F(ws.conf.logI, ws.J);
 
+    int logB = LOG_BUCKET_REGIONS[LEVEL];
+    typename bucket_array_t<LEVEL, TARGET_HINT>::update_t::br_index_t bmask =
+        (1UL << logB) - 1;
+
     // FIXME: A LOT OF DUPLICATED CODE, HERE!!!
     if (first_sublat) {
         slice_offset_t i_entry = 0;
@@ -521,6 +527,22 @@ static void fill_in_buckets_toplevel_sublat(
             increment_counter_on_dtor<slice_offset_t> const _dummy(i_entry);
             if (!Q.is_coprime_to(e.p))
                 continue;
+#ifdef BUCKET_SIEVE_POWERS
+            /* the combination of bucket-sieving powers + sublattices means
+             * that powers of the primes that divide the sublattice determinant
+             * may be bucket-sieved. And of course, that leads to problems.
+             *
+             * technically, Q.sublat.m could be composite, in which case we
+             * would have a gcd to compute, here. The only really useful case
+             * at the moment is m=3 though.
+             */
+            if (Q.sublat.m == 3) {
+                if (e.p == 3)
+                    continue;
+            } else if (gcd_ul(e.p, Q.sublat.m) > 1) {
+                continue;
+            }
+#endif
             if (discard_power_for_bucket_sieving(e))
                 continue;
             e.transform_roots(transformed, Q);
@@ -547,6 +569,10 @@ static void fill_in_buckets_toplevel_sublat(
 #else
                 const fbprime_t p = 0;
 #endif
+
+                typename bucket_array_t<LEVEL, TARGET_HINT>::update_t u(
+                    0, p, hint, slice_index);
+
                 // Handle the rare special cases
                 // XXX Here, we're not bucket-sieving projective primes at
                 // all, and neither do we bucket-sieve primes with root equal
@@ -558,7 +584,8 @@ static void fill_in_buckets_toplevel_sublat(
                 /* Now, do the real work: the filling of the buckets */
                 // Without sublattices, we test (very basic) coprimality,
                 while (!ple.done(F)) {
-                    BA.push_update(ple.get_x(), p, hint, slice_index, w);
+                    u.set_x(ple.get_x() & bmask);
+                    BA.push_update(ple.get_x() >> logB, u, w);
                     ple.next(F);
                 }
             }
@@ -583,6 +610,9 @@ static void fill_in_buckets_toplevel_sublat(
             const fbprime_t p = 0;
 #endif
 
+            typename bucket_array_t<LEVEL, TARGET_HINT>::update_t u(
+                0, p, hint, slice_index);
+
             // Handle (well, do not handle, in fact) the rare special cases
             if (UNLIKELY(pli.is_vertical_line(logI) ||
                          pli.is_projective_like(logI)))
@@ -592,7 +622,8 @@ static void fill_in_buckets_toplevel_sublat(
             // Without sublattices, we test (very basic) coprimality,
             // otherwise not atm. FIXME!
             while (!ple.done(F)) {
-                BA.push_update(ple.get_x(), p, hint, slice_index, w);
+                u.set_x(ple.get_x() & bmask);
+                BA.push_update(ple.get_x() >> logB, u, w);
                 ple.next(F);
             }
         }
@@ -622,6 +653,7 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
 
     /* Write new set of pointers for the new slice */
     BA.add_slice_index(slice_index);
+    WHERE_AM_I_UPDATE(w, i, slice_index);
 
     typename FB_ENTRY_TYPE::transformed_entry_t transformed;
 
@@ -629,6 +661,14 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
     plattice_enumerator::fence const F(ws.conf.logI, ws.J);
 
     slice_offset_t i_entry = 0;
+
+    /* yes, we want the level-1 regions here */
+    int logB1 = LOG_BUCKET_REGIONS[1];
+    uint32_t maskB1I = (UINT32_C(1) << std::min(logB1, logI)) - 1;
+
+    int logB = LOG_BUCKET_REGIONS[LEVEL];
+    typename bucket_array_t<LEVEL, TARGET_HINT>::update_t::br_index_t bmask =
+        (1UL << logB) - 1;
 
     for (auto const & e: slice) {
         increment_counter_on_dtor<slice_offset_t> const _dummy(i_entry);
@@ -660,6 +700,9 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
             const fbprime_t p = 0;
 #endif
 
+            typename bucket_array_t<LEVEL, TARGET_HINT>::update_t u(
+                0, p, hint, slice_index);
+
             // Handle the rare special cases
             /* projective-like:
              *
@@ -678,31 +721,31 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
              * Root=0: only update is at (0,something).
              * note that "something" might be large !
              */
-            /* NOTE: we're at the top level here, so if we cared to write a
-             * "first_reg" condition, it would always be true here.  */
-            if (UNLIKELY(ple.is_projective_like(logI)) && !ple.done(F)) {
-
-                BA.push_update(ple.get_x(), p, hint, slice_index, w);
-#ifdef FIX_30012
-                ple.advance_to_end_of_projective_first_line(F);
-                ple.next(F);
-#else
-                continue;
-#endif
-            }
-            if (UNLIKELY(pli.is_vertical_line(logI))) {
-                if (!ple.done(F)) {
-                    BA.push_update(ple.get_x(), p, hint, slice_index, w);
+            if (UNLIKELY(ple.is_projective_like(logI))) {
+                while (!ple.done(F)) {
+                    u.set_x(ple.get_x() & bmask);
+                    int N = ple.get_x() >> logB;
+                    int n =
+                        ple.advance_to_end_of_row_or_smallest_region(maskB1I);
+                    BA.push_row_update(slice_index, ple.get_inc_step(), N, n, u,
+                                       w);
                     ple.next(F);
                 }
-                continue;
-            }
-
-            /* Now, do the real work: the filling of the buckets */
-            while (!ple.done(F)) {
-                if (LIKELY(ple.probably_coprime(F)))
-                    BA.push_update(ple.get_x(), p, hint, slice_index, w);
-                ple.next(F);
+            } else if (UNLIKELY(pli.is_vertical_line(logI))) {
+                if (!ple.done(F)) {
+                    u.set_x(ple.get_x() & bmask);
+                    BA.push_update(ple.get_x() >> logB, u, w);
+                    ple.finish();
+                }
+            } else {
+                /* Now, do the real work: the filling of the buckets */
+                while (!ple.done(F)) {
+                    if (LIKELY(ple.probably_coprime(F))) {
+                        u.set_x(ple.get_x() & bmask);
+                        BA.push_update(ple.get_x() >> logB, u, w);
+                    }
+                    ple.next(F);
+                }
             }
         }
     }
@@ -716,7 +759,7 @@ template <int LEVEL, typename TARGET_HINT>
 static void
 fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
                          nfs_work & ws, plattices_vector_t & plattices_vector,
-                         bool first_reg, where_am_I & w)
+                         bool first_reg MAYBE_UNUSED, where_am_I & w)
 {
     int const logI = ws.conf.logI;
     qlattice_basis const & Q(ws.Q);
@@ -729,12 +772,21 @@ fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
 
     /* Write new set of pointers for the new slice */
     BA.add_slice_index(slice_index);
+    WHERE_AM_I_UPDATE(w, i, slice_index);
 
     /* top level: the fence we care about is the one defined by the number
      * of bucket regions at this level, most probably (but J might
      * conceivably give a lower bound) */
     plattice_enumerator::fence const F(ws.conf.logI, ws.J,
                                        BUCKET_REGIONS[LEVEL + 1]);
+
+    /* yes, we want the level-1 regions here */
+    int logB1 = LOG_BUCKET_REGIONS[1];
+    uint32_t maskB1I = (UINT32_C(1) << std::min(logB1, logI)) - 1;
+
+    int logB = LOG_BUCKET_REGIONS[LEVEL];
+    typename bucket_array_t<LEVEL, TARGET_HINT>::update_t::br_index_t bmask =
+        (1UL << logB) - 1;
 
     for (auto & ple_orig: plattices_vector) {
         // Work with a copy, otherwise we don't get all optimizations.
@@ -757,52 +809,56 @@ fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
         const fbprime_t p = 0;
 #endif
 
+        typename bucket_array_t<LEVEL, TARGET_HINT>::update_t u(0, p, hint,
+                                                                slice_index);
+
         // Handle the rare special cases
         /* see fill_in_bucket_toplevel. */
-        if (UNLIKELY(ple.is_projective_like(logI)) && !ple.done(F)) {
+        if (UNLIKELY(ple.is_projective_like(logI))) {
             if (Q.sublat.m)
                 continue; /* XXX headaches ! */
 
-#ifdef FIX_30012
-            if (first_reg) {
-                /* same as in fill_in_bucket_toplevel */
-                BA.push_update(ple.get_x(), p, hint, slice_index, w);
-                ple.advance_to_end_of_projective_first_line(F);
+            while (!ple.done(F)) {
+                u.set_x(ple.get_x() & bmask);
+                int N = ple.get_x() >> logB;
+                int n = ple.advance_to_end_of_row_or_smallest_region(maskB1I);
+                BA.push_row_update(slice_index, ple.get_inc_step(), N, n, u, w);
                 ple.next(F);
             }
-#else
-            if (first_reg)
-                BA.push_update(ple.get_x(), p, hint, slice_index, w);
-            continue;
-#endif
-        }
-        if (UNLIKELY(ple.is_vertical_line(logI))) {
+            /* we now do the end of loop normally: store x into ple_orig, and
+             * then advance to the next area. This is because more rows can
+             * be interesting as we go towards increasing j's
+             */
+        } else if (UNLIKELY(ple.is_vertical_line(logI))) {
             if (Q.sublat.m)
                 continue; /* XXX headaches ! */
 
             if (!ple.done(F)) {
-                BA.push_update(ple.get_x(), p, hint, slice_index, w);
-                ple.next(F);
-            }
-            continue;
-        }
-
-        /* Now, do the real work: the filling of the buckets */
-        // Without sublattices, we test (very basic) coprimality,
-        // otherwise not atm. FIXME!
-        if (!Q.sublat.m) {
-            while (!ple.done(F)) {
-                if (LIKELY(ple.probably_coprime(F)))
-                    BA.push_update(ple.get_x(), p, hint, slice_index, w);
-                ple.next(F);
+                u.set_x(ple.get_x() & bmask);
+                BA.push_update(ple.get_x() >> logB, u, w);
+                // ple.next(F);
+                ple.finish();
             }
         } else {
-            while (!ple.done(F)) {
-                BA.push_update(ple.get_x(), p, hint, slice_index, w);
-                ple.next(F);
+            /* Now, do the real work: the filling of the buckets */
+            // Without sublattices, we test (very basic) coprimality,
+            // otherwise not atm. FIXME!
+            if (!Q.sublat.m) {
+                while (!ple.done(F)) {
+                    if (LIKELY(ple.probably_coprime(F))) {
+                        u.set_x(ple.get_x() & bmask);
+                        BA.push_update(ple.get_x() >> logB, u, w);
+                    }
+                    ple.next(F);
+                }
+            } else {
+                while (!ple.done(F)) {
+                    u.set_x(ple.get_x() & bmask);
+                    BA.push_update(ple.get_x() >> logB, u, w);
+                    ple.next(F);
+                }
             }
         }
-
         // save current position, and prepare for next area.
         ple_orig.set_x(ple.get_x());
         ple_orig.advance_to_next_area(F);
