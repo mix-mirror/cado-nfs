@@ -19,10 +19,11 @@
    The relations are renumbered according to the file given via the
    '-renumberfile' argument. Input relations are of the following format:
 
-       a,b:p1,p2,...,pj:q1,q2,...,qk                                 (*)
+       a,b[@s1,s2]:p1,p2,...,pj:q1,q2,...,qk                         (*)
 
-   where p1,p2,...,pj are rational (side 0) ideals (possibly duplicate), and
-   q1,q2,...,qk are algebraic (side 1) ideals (possibly duplicate). Output is:
+   where p1,p2,...,pj are ideals on side s1 (possibly duplicate), and
+   q1,q2,...,qk are ideals on side s2 (possibly duplicate). The part '@s1,s2'
+   is optional and will default to s1=0 and s2=1 if not present. Output is:
 
        a,b:r1,r2,...,rm                                              (**)
 
@@ -514,7 +515,7 @@ thread_root(void * p MAYBE_UNUSED, earlyparsed_relation_ptr rel)
     return NULL;
 }
 
-int check_whether_file_is_renumbered(const char * filename, unsigned int npoly)
+int check_whether_file_is_renumbered(const char * filename)
 {
     unsigned int count = 0;
     char s[1024];
@@ -563,12 +564,12 @@ int check_whether_file_is_renumbered(const char * filename, unsigned int npoly)
     
     if (count == 1)
         return 1;
-    else if (count == npoly)
+    else if (count == 2)
         return 0;
     else
     {
-      fprintf (stderr, "Error: invalid line in %s (line has %u colons but %u "
-                       "were expected):\n %s", filename, count, npoly, s);
+      fprintf (stderr, "Error: invalid line in %s (line has %u colons but 1 "
+                       "or 2 were expected):\n %s", filename, count, s);
       abort();
     }
 }
@@ -742,7 +743,7 @@ main (int argc, char const * argv[])
       for (char const ** p = files; *p; p++) {
           /* always strdup these, so that we can safely call
            * filelist_clear in the end */
-          if (check_whether_file_is_renumbered(*p, renumber_table_get_nb_polys(renumber_tab))) {
+          if (check_whether_file_is_renumbered(*p)) {
               files_already_renumbered[nb_f_renumbered++] = strdup(*p);
           } else {
               files_new[nb_f_new++] = strdup(*p);
