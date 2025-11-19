@@ -115,14 +115,25 @@ static void divide_primes_from_bucket(factor_list_t & fl, cxx_mpz & norm,
                         "({},{}), was divided out before\n",
                         p, N, x);
                 }
-            } else
+            } else {
+#if 0
+                for(cxx_mpz q ; mpz_tdiv_q_ui(q, norm, p) == 0 ; ) {
+                    mpz_swap(q, norm);
+                    factor_list_add(fl, p);
+                }
+#else
                 do {
                     /* Remove powers of prime divisors */
                     factor_list_add(fl, p);
                     mpz_divexact_ui(norm, norm, p);
                     /* Lacking bucket-sieving for powers, we have to check for
-                     * divisibility once again */
+                     * divisibility once again.
+                     * TODO: investigate this, now that we _do_ have
+                     * bucket-sieving for powers!
+                     * */
                 } while (mpz_divisible_ui_p(norm, p));
+#endif
+            }
         }
     }
 }
@@ -180,11 +191,22 @@ static void divide_hints_from_bucket(factor_list_t & fl, cxx_mpz & norm,
                         "divide at (N,x) = ({},{}), was divided out before\n",
                         p, N, x);
                 }
-            } else
+            } else {
+                /* the divisible + divexact option seems ever so slightly
+                 * faster.
+                 */
+#if 0
+                for(cxx_mpz q ; mpz_tdiv_q_ui(q, norm, p) == 0 ; ) {
+                    mpz_swap(q, norm);
+                    factor_list_add(fl, p);
+                }
+#else
                 do {
                     factor_list_add(fl, p);
                     mpz_divexact_ui(norm, norm, p);
                 } while (mpz_divisible_ui_p(norm, p));
+#endif
+            }
         }
     }
 }
