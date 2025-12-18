@@ -367,17 +367,17 @@ siqs_special_q_data::from_ab_to_ij(
         cxx_mpz const & Rk = crt_data_modq[k];
 
         uint64_t amodqk = a > 0 ? a % qk : qk-((-a) % qk);
-        if (mpz_fdiv_ui(Rk, qk) == amodqk) {
+        if (mpz_tdiv_uint64(Rk, qk) == amodqk) {
             rj += Rk;
         } else {
-            ASSERT((qk - mpz_fdiv_ui(Rk, qk)) == amodqk);
+            ASSERT((qk - mpz_tdiv_uint64(Rk, qk)) == amodqk);
             rj -= Rk;
             j += mask;
         }
     }
 
     cxx_mpz t;
-    mpz_sub_si(t, rj, a);
+    mpz_sub_int64(t, rj, a);
     ASSERT(mpz_divisible_p(t, doing.p));
     mpz_divexact(t, t, doing.p);
     mpz_neg(t, t); /* t = (a-rj)/q  which is i */
