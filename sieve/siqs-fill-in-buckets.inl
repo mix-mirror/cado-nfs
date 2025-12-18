@@ -78,9 +78,10 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
             auto const pp = ple.get_pp();
             auto it2 = ple.get_T2().rbegin();
             auto T2rend = ple.get_T2().rend(); /* T2 does not change during iteration */
-            for (auto const [t1, d1]: T1s) {
+            for (auto const & [t1, d1]: T1s) {
+
                 /* case t1+t2 in [0, I[ */
-                for (auto const [t2, d2]: ple.get_T2()) {
+                for (auto const & [t2, d2]: ple.get_T2()) {
                     if ((t1+t2) >> logI) {
                         break;
                     }
