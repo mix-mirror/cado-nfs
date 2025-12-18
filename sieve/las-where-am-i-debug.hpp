@@ -52,7 +52,6 @@ struct qlattice_basis;
 /*  where_am_I (debug) */
 struct where_am_I::impl {
     int logI = 0;
-    const qlattice_basis * pQ = NULL;
     struct side_data {
         const fb_factorbase::slicing * fbs = NULL;
     };

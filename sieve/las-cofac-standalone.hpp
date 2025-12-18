@@ -14,7 +14,7 @@
 
 class nfs_work_cofac; // IWYU pragma: keep
 struct special_q; // IWYU pragma: keep
-struct qlattice_basis; // IWYU pragma: keep
+struct special_q_data_base; // IWYU pragma: keep
 template <typename T> struct lock_guarded_container; // IWYU pragma: keep
 
 struct cofac_standalone {
@@ -37,7 +37,8 @@ struct cofac_standalone {
 #endif
     }
     cofac_standalone();
-    cofac_standalone(int nsides, int N, size_t x, int logI, qlattice_basis const & Q);
+    cofac_standalone(int nsides, int N, size_t x, int logI,
+                     special_q_data_base const & Q);
     bool trace_on_spot() const;
     /* TODO. Hmmm. How important is this ? We don't want to expose
      * dependence on a compile flag in a header */

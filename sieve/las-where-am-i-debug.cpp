@@ -138,11 +138,12 @@ void where_am_I::interpret_parameters(cxx_param_list & pl)
 /* This fills all the trace_* structures from the main one. The main
  * structure is the one for which a non-NULL pointer is passed.
  */
-void where_am_I::begin_special_q(nfs_work const & ws)
+void where_am_I::begin_special_q(
+        nfs_work const & ws,
+        special_q_data_class auto const & Q)
 {
     int const logI = ws.conf.logI;
     unsigned int const J = ws.J;
-    qlattice_basis const & Q(ws.Q);
 
     /* At most one of the three coordinates must be specified */
     ASSERT_ALWAYS((pl_Nx != NULL) + (pl_ab != NULL) + (pl_ij != NULL) <= 1);
@@ -203,10 +204,13 @@ void where_am_I::begin_special_q(nfs_work const & ws)
     for(int side = 0 ; side < ws.las.cpoly->nb_polys ; side++) {
         int i = trace_ij.i;
         unsigned j = trace_ij.j;
-        adjustIJsublat(i, j, Q.sublat);
-        ws.sides[side].lognorms.norm(traced_norms[side], i, j);
+        Q.sublat.adjustIJ(i, j);
+        ws.sides[side].lognorms.norm(traced_norms[side], i, j, Q);
     }
 }
+
+template void where_am_I::begin_special_q(nfs_work const &, qlattice_basis const &);
+template void where_am_I::begin_special_q(nfs_work const &, siqs_special_q_data const &);
 
 int test_divisible(where_am_I const & w)
 {

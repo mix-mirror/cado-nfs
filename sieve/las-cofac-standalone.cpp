@@ -41,7 +41,8 @@ cofac_standalone::cofac_standalone() : a(0), b(0) {/*{{{*/
     mpz_set_ui(bz, 0);
 #endif
 }/*}}}*/
-cofac_standalone::cofac_standalone(int nsides, int N, size_t x, int logI, qlattice_basis const & Q)
+cofac_standalone::cofac_standalone(int nsides, int N, size_t x, int logI,
+                                   special_q_data_base const & Q)
     : S(nsides, 0)
     , norm(nsides, 0)
     , factors(nsides)

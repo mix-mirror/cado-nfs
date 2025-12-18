@@ -215,18 +215,9 @@ get_maxnorm_rectangular (polynomial<double> const & poly, const double X,
 
 /* }}} */
 
-lognorm_base::lognorm_base(siever_config const & sc, cxx_cado_poly const & cpoly, int side, qlattice_basis const & Q, int logI, uint32_t J)
-    : logI(logI)
-    , J(J)
-    , fij(cpoly[side].homography({Q.a0, Q.b0, Q.a1, Q.b1}).divexact(
-                Q.doing.side == side ? Q.doing.p : 1))
-    /* Update floating point version of polynomial. They will be used in
-     * get_maxnorm_rectangular().
-     * Also take sublat into account: multiply all coefs by m^deg.
-     */
-    , fijd(polynomial<double>(fij) * 
-            (Q.sublat.m > 0 ? std::pow(Q.sublat.m, fij.degree()) : 1))
-    /*{{{*/
+void lognorm_base::ctor_common(siever_config const & sc,
+                               cxx_cado_poly const & cpoly,
+                               int side)
 {
     /* This is checked for in choose_sieve_area. Homographies with a
      * degree drop are always discarded */
@@ -284,17 +275,94 @@ lognorm_base::lognorm_base(siever_config const & sc, cxx_cado_poly const & cpoly
                 "not make sense (capped to limit)\n", max_lambda, side);
 
     verbose_output_end_batch();
+}
+
+template<>
+lognorm_base::lognorm_base(siever_config const & sc, cxx_cado_poly const & cpoly, int side, qlattice_basis const & Q, int logI, uint32_t J)
+    : logI(logI)
+    , J(J)
+    , fij(cpoly[side].homography({Q.a0, Q.b0, Q.a1, Q.b1}).divexact(
+                Q.doing.side == side ? Q.doing.p : 1))
+    /* Update floating point version of polynomial. They will be used in
+     * get_maxnorm_rectangular().
+     * Also take sublat into account: multiply all coefs by m^deg.
+     */
+    , fijd(polynomial<double>(fij) * 
+            (Q.sublat.m > 0 ? std::pow(Q.sublat.m, fij.degree()) : 1))
+    /*{{{*/
+{
+    ctor_common(sc, cpoly, side);
 }/*}}}*/
 
-void lognorm_base::norm(cxx_mpz & x, int i, unsigned int j) const {
+template<>
+lognorm_base::lognorm_base(
+        siever_config const & sc,
+        cxx_cado_poly const & cpoly,
+        int side,
+        siqs_special_q_data const & Q,
+        int logI,
+        uint32_t J)
+    : logI(logI)
+    , J(J)
+    , fij(cpoly[side].linear_transform(Q.doing.p, Q.doing.r).divexact(
+                Q.doing.side == side ? Q.doing.p : 1))
+    , fijd(polynomial<double>(fij))
+{
+    ctor_common(sc, cpoly, side);
+}
+
+template<>
+void lognorm_base::norm(
+        cxx_mpz & x,
+        int i,
+        unsigned int j,
+        qlattice_basis const &) const
+{
     mpz_poly_homogeneous_eval_siui(x, fij, i, j);
     mpz_abs(x, x);
 }
-unsigned char lognorm_base::lognorm(int i, unsigned int j) const {
+
+template<>
+void lognorm_base::norm(
+        cxx_mpz & x,
+        int i,
+        unsigned int j,
+        siqs_special_q_data const & Q) const
+{
+    mpz_poly_homogeneous_eval_siui(x, fij, i, 1u);
+    cxx_mpz dj = Q.delta_to_r(j);
+    if (i >= 0) {
+        mpz_addmul_ui(x, dj, 2*i);
+    } else {
+        mpz_submul_ui(x, dj, 2*((unsigned int) -i));
+    }
+    cxx_mpz t;
+    mpz_mul_2exp(t, Q.doing.r, 1);
+    mpz_add(t, t, dj);
+    mpz_mul(t, t, dj);
+    mpz_divexact(t, t, Q.doing.p);
+    mpz_add(x, x, t);
+    mpz_abs(x, x);
+}
+
+unsigned char lognorm_base::lognorm(
+        int i,
+        unsigned int j,
+        special_q_data_class auto const & Q) const
+{
     cxx_mpz x;
-    norm(x, i, j);
+    norm(x, i, j, Q);
     return log2(mpz_get_d(x)) * scale + LOGNORM_GUARD_BITS;
 }
+
+template unsigned char lognorm_base::lognorm(
+        int,
+        unsigned int,
+        qlattice_basis const &) const;
+template unsigned char lognorm_base::lognorm(
+        int,
+        unsigned int,
+        siqs_special_q_data const &) const;
 
     /* common definitions -- for the moment it's a macro, eventually I
      * expect it's gonna be something else, probably simply replicated
@@ -466,7 +534,13 @@ std::array<double, 257> lognorm_smart::cexp2_init(const double scale)
 }
 
 /* {{{ faster code */
-lognorm_smart::lognorm_smart(siever_config const & sc, cxx_cado_poly const & cpoly, int side, qlattice_basis const & Q, int logI, uint32_t J)
+lognorm_smart::lognorm_smart(
+        siever_config const & sc,
+        cxx_cado_poly const & cpoly,
+        int side,
+        special_q_data_class auto const & Q,
+        int logI,
+        uint32_t J)
     : lognorm_base(sc, cpoly, side, Q, logI, J)
     , cexp2(cexp2_init(scale))
     /*{{{*/
@@ -492,6 +566,21 @@ lognorm_smart::lognorm_smart(siever_config const & sc, cxx_cado_poly const & cpo
 #endif
     }
 }/*}}}*/
+
+template lognorm_smart::lognorm_smart(
+        siever_config const &,
+        cxx_cado_poly const &,
+        int,
+        qlattice_basis const &,
+        int,
+        uint32_t);
+template lognorm_smart::lognorm_smart(
+        siever_config const &,
+        cxx_cado_poly const &,
+        int,
+        siqs_special_q_data const &,
+        int,
+        uint32_t);
 
 static inline double compute_y(double G, double offset, double modscale) {
     double const res = lg2 ((G) + 1., offset, modscale);
