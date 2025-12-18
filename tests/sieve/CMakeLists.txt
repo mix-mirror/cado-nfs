@@ -17,6 +17,8 @@ set(makefb_path         ${CADO_NFS_BINARY_DIR}/sieve/makefb)
 set(las_path            ${CADO_NFS_BINARY_DIR}/sieve/las)
 set(las_tracek_path     ${CADO_NFS_BINARY_DIR}/sieve/las_tracek)
 set(las_descent_path    ${CADO_NFS_BINARY_DIR}/sieve/las_descent)
+set(siqs_path           ${CADO_NFS_BINARY_DIR}/sieve/siqs)
+set(siqs_tracek_path    ${CADO_NFS_BINARY_DIR}/sieve/siqs_tracek)
 set(dupsup_path         ${CADO_NFS_BINARY_DIR}/sieve/dupsup)
 
 
@@ -809,6 +811,40 @@ cado_divert_test(d20_one_sided_las_sieve dup
             REL_COUNT=27
             REFERENCE_SHA1=f9d0c3b58bdfcb51d598180cb01895b2c35931f7
             REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
+        )
+
+# test siqs and siqs_tracek
+cado_define_test(d20_siqs_sieve
+        ENVIRONMENT
+            las_I=9 poly=${d20_poly} las_B=11
+            lim0=800 lpb0=10 mfb0=21 ncurves0=2 fb0=${d20_roots}
+            nq=5 galois=_y
+            lim1=800 lpb1=10 mfb1=25 q0=42
+            # Note: the last 4 args (lim1, lpb1, mfb1 and q0) are not needed but
+            # sievetest.sh complains if they are not present
+            LAS_BINARY=${siqs_path}
+        REL_COUNT=133
+        REFERENCE_SHA1=4552474c0c4849ee3b3c7d8e591c45455fd9d533
+        REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
+        PROVIDE_TEMPORARY_WDIR
+        SCRIPT
+            ${CMAKE_CURRENT_SOURCE_DIR}/sievetest.sh
+            # the args below cannot be passed via ENVIRONMENT
+            -qfac-min 60 -qfac-nfac 4 -qidx0 3 -allow-compsq
+            -v -v
+        TARGET_DEPENDENCIES siqs
+        )
+
+cado_divert_test(d20_siqs_sieve tracek
+        APPEND_ENVIRONMENT
+            LAS_BINARY=${siqs_tracek_path}
+            REL_COUNT=21
+            REFERENCE_SHA1=2745a5a1b70bcfe14853933bfa077635ff2a5e66
+            REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
+        APPEND_ARGUMENTS
+            -nq 1 -traceab 8775462862,1
+        TARGET_DEPENDENCIES
+            siqs_tracek
         )
 
 add_subdirectory (ecm)
