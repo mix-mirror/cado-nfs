@@ -428,9 +428,6 @@ fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
                          plattices_vector_t & plattices_vector,
                          bool first_reg MAYBE_UNUSED, where_am_I & w)
 {
-    fmt::println(stderr, "#DEV {} LEVEL={} J={} logB={} logI={}",
-                         __func__, LEVEL, ws.J, LOG_BUCKET_REGIONS[LEVEL],
-                         ws.conf.logI);
     int const logI = ws.conf.logI;
 
     /* The timer stuff is dealt with by the caller */
