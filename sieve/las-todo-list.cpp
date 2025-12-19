@@ -606,7 +606,7 @@ bool siqs_todo_list::feed_qrange(gmp_randstate_t rstate)
         } else {
             idx = qidx1 - 1U;
         }
-        for( ; idx >= qidx0; idx-=1U) {
+        for( ; idx >= qidx0; idx-=1U, ++nadded) {
             push_unlocked(special_q_from_index(idx, scratch_mpz, scratch_vec));
         }
         qidx0 += nadded;
