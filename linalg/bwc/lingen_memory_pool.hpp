@@ -1,12 +1,13 @@
 #ifndef CADO_LINGEN_MEMORY_POOL_HPP
 #define CADO_LINGEN_MEMORY_POOL_HPP
-// IWYU pragma: no_include <bits/exception.h>
-#include <cstdint>          // for SIZE_MAX
-#include <new>               // for bad_alloc
-#include <mutex>
+
+#include <cstdint>
 #include <cstdlib>
 #include <cstdio>
-#include <exception> // std::exception // IWYU pragma: keep
+
+#include <new>
+#include <mutex>
+#include <exception>
 #include <string>
 
 /* A memory pool is an object from which heap storage may be allocated.
@@ -153,14 +154,14 @@ struct memory_pool : public memory_pool_details::inaccuracy_handler<loose> {
     };
 };
 
-typedef memory_pool<true> memory_pool_loose;
-typedef memory_pool<false> memory_pool_strict;
+using memory_pool_loose = memory_pool<true>;
+using memory_pool_strict = memory_pool<false>;
 
 template<typename ptr, bool is_loose>
 class memory_pool_wrapper : public memory_pool<is_loose> {
-    typedef memory_pool<is_loose> super;
+    using super = memory_pool<is_loose>;
 public:
-    inline ptr alloc(size_t s) { return (ptr) super::alloc(s); }
+    ptr alloc(size_t s) { return (ptr) super::alloc(s); }
     void free(ptr p, size_t s) { super::free((void*) p, s); }
     ptr realloc(ptr p, size_t s, size_t ns) { return (ptr) super::realloc(p, s, ns); }
 };

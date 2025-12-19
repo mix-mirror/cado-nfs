@@ -7,37 +7,40 @@
  * The WHERE_AM_I_UPDATE macro itself is defined in las-where-am-i.hpp
  */
 
-#include <cinttypes> // for PRIu32
-#include <cmath>     // for sqrt
-#include <cstdint>   // for uint32_t, uint64_t, UINT32_C
-#include <cstdlib>   // for size_t, NULL, free, realloc
-#include <cstring>   // for memset
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 
-#include <new> // for bad_alloc
+#include <new>
 #ifdef TRACE_K
-#include <type_traits> // for is_same
+#include <type_traits>
 #endif
 
 /* bucket.hpp and bucket-push-update.hpp sort of go hand in hand, but as
  * they're written we can't make two standalone files that include
  * eachother */
-#include "bucket-push-update.hpp" // IWYU pragma: keep
+#include "bucket-push-update.hpp"
 
-#include "bucket.hpp" // for bucket_array_t, bucket_update_t
-#include "memory.h"   // free_aligned
-#include "verbose.h"  // verbose_output_print
+#include "bucket.hpp"
+#include "memory.h"
+#include "verbose.h"
 
 #include "fb-types.hpp"
-#include "fb.hpp"                   // for fb_factorbase, fb_factorbase::slicing
-#include "iqsort.h"                 // for QSORT
-#include "las-config.h"             // for BUCKET_REGIONS, LOG_BUCKET_REGIONS
-#include "las-memory.hpp"           // for las_memory_accessor
-#include "las-where-am-i-proxy.hpp" // IWYU pragma: keep    // for where_am_I
-#include "las-where-am-i.hpp"       // for where_am_I, WHERE_AM_I_UPDATE
-#include "macros.h"                 // for MAYBE_UNUSED, ASSERT_ALWAYS, UNLIKELY
+#include "fb.hpp"
+#include "iqsort.h"
+#include "las-config.hpp"
+#include "las-memory.hpp"
+#include "las-where-am-i-proxy.hpp"
+#include "las-where-am-i.hpp"
+#include "macros.h"
 #ifdef TRACE_K
-#include "las-output.hpp" // for TRACE_CHANNEL
+#include "las-output.hpp"
 #endif
+#ifdef HAVE_SSE2
+#include "smallset.hpp"
+#endif
+#include "portability.h"
 
 template <int LEVEL, typename HINT> struct bucket_update_t;
 
@@ -57,43 +60,12 @@ static size_t bucket_misalignment(size_t const sz, size_t const sr MAYBE_UNUSED)
 template <int LEVEL, typename HINT>
 void bucket_array_t<LEVEL, HINT>::reset_pointers()
 {
-    aligned_medium_memcpy(bucket_write, bucket_start, size_b_align);
-    aligned_medium_memcpy(bucket_read, bucket_start, size_b_align);
-    nr_slices = 0;
-}
-
-template <int LEVEL, typename HINT>
-bucket_array_t<LEVEL, HINT>::~bucket_array_t()
-{
-    if (used_accessor)
-        used_accessor->physical_free(big_data, big_size);
-    free(slice_index);
-    free_aligned(slice_start);
-    free_aligned(bucket_read);
-    free_aligned(bucket_start);
-    free_pagealigned(bucket_write);
-}
-
-template <int LEVEL, typename HINT>
-void bucket_array_t<LEVEL, HINT>::move(bucket_array_t<LEVEL, HINT> & other)
-{
-#define MOVE_ENTRY(x, zero)                                                    \
-    do {                                                                       \
-        x = other.x;                                                           \
-        other.x = zero;                                                        \
-    } while (0)
-    MOVE_ENTRY(big_data, nullptr);
-    MOVE_ENTRY(big_size, 0);
-    MOVE_ENTRY(bucket_write, nullptr);
-    MOVE_ENTRY(bucket_start, nullptr);
-    MOVE_ENTRY(bucket_read, nullptr);
-    MOVE_ENTRY(slice_index, nullptr);
-    MOVE_ENTRY(slice_start, nullptr);
-    MOVE_ENTRY(n_bucket, 0);
-    MOVE_ENTRY(size_b_align, 0);
-    MOVE_ENTRY(nr_slices, 0);
-    MOVE_ENTRY(alloc_slices, 0);
-#undef MOVE_ENTRY
+    std::copy_n(bucket_start.get(), pointer_pack, bucket_write.get());
+    std::copy_n(bucket_start.get(), pointer_pack, bucket_read.get());
+    slice_start.clear();
+    slice_index.clear();
+    for (auto & r: row_updates)
+        r.clear();
 }
 
 /* Allocate enough memory to be able to store _n_bucket buckets, each of at
@@ -104,7 +76,7 @@ void bucket_array_t<LEVEL, HINT>::allocate_memory(
     las_memory_accessor & memory, uint32_t const new_n_bucket,
     double const fill_ratio, int logI, slice_index_t const prealloc_slices)
 {
-    used_accessor = &memory;
+    static_assert(LEVEL < FB_MAX_PARTS);
     /* Don't try to allocate anything, nor print a message, for sieving levels
      * where the corresponding factor base part is empty. We do want to
      * reset the pointers, though!!
@@ -154,42 +126,39 @@ void bucket_array_t<LEVEL, HINT>::allocate_memory(
         bs_even = bucket_misalignment(bs_even, sizeof(update_t));
         bs_odd = bucket_misalignment(bs_odd, sizeof(update_t));
         new_big_size =
-            (bs_even + bs_odd) * (new_n_bucket / 2) * sizeof(update_t);
+            (bs_even + bs_odd) * (new_n_bucket / 2);
     } else {
         bs_even = bs_odd = 3 * Q + ndev * sqrt(3 * Q);
         bs_even = bucket_misalignment(bs_even, sizeof(update_t));
         bs_odd = bucket_misalignment(bs_odd, sizeof(update_t));
-        new_big_size = bs_odd * new_n_bucket * sizeof(update_t);
+        new_big_size = bs_odd * new_n_bucket;
     }
 
     /* add 1 megabyte to each bucket array, so as to deal with overflowing
      * buckets */
-    new_big_size += 1 << 20;
+    new_big_size += (1 << 20) / sizeof(update_t);
 
     size_t const new_size_b_align =
         ((sizeof(void *) * new_n_bucket + 0x3F) & ~((size_t)0x3F));
+    size_t const new_pointer_pack = new_size_b_align / sizeof(update_t *);
 
-    if (new_big_size > big_size) {
-        if (big_data != nullptr)
-            memory.physical_free(big_data, big_size);
+    if (new_big_size > big_data.get_deleter().size) {
         if (bitmask_line_ordinate) {
-            verbose_output_print(
+            verbose_fmt_print(
                 0, 3,
-                "# [%d%c] Allocating %zu bytes for %" PRIu32
-                " buckets of %zu to %zu update entries of %zu bytes each\n",
-                LEVEL, HINT::rtti[0], new_big_size, new_n_bucket, bs_even,
-                bs_odd, sizeof(update_t));
+                "# [{}{}] Allocating {} bytes for {} buckets"
+                " of {} to {} update entries of {} bytes each\n",
+                LEVEL, HINT::rtti[0], new_big_size * sizeof(update_t),
+                new_n_bucket, bs_even, bs_odd, sizeof(update_t));
         } else {
-            verbose_output_print(
+            verbose_fmt_print(
                 0, 3,
-                "# [%d%c] Allocating %zu bytes for %" PRIu32
-                " buckets of %zu update entries of %zu bytes each\n",
-                LEVEL, HINT::rtti[0], new_big_size, new_n_bucket, bs_even,
-                sizeof(update_t));
+                "# [{}{}] Allocating {} bytes for {} buckets"
+                " of {} update entries of {} bytes each\n",
+                LEVEL, HINT::rtti[0], new_big_size * sizeof(update_t),
+                new_n_bucket, bs_even, sizeof(update_t));
         }
-        big_size = new_big_size;
-        big_data = (update_t *)memory.physical_alloc(big_size, 1);
-        void * internet_of_things MAYBE_UNUSED = nullptr;
+        big_data = memory.make_unique_physical_array<update_t>(new_big_size, true);
     }
 
     if (!big_data)
@@ -198,83 +167,53 @@ void bucket_array_t<LEVEL, HINT>::allocate_memory(
     // bucket_size = new_bucket_size;
     n_bucket = new_n_bucket;
 
-    if (new_size_b_align > size_b_align) {
-        int const all_null = (bucket_write == nullptr) &&
-                             (bucket_start == nullptr) &&
-                             (bucket_read == nullptr);
-        int const none_null = bucket_write && bucket_start && bucket_read;
-        ASSERT_ALWAYS(all_null || none_null);
-        if (none_null) {
-            verbose_output_print(0, 1,
-                                 "# [%d%c] Changing bucket allocation from %zu "
-                                 "bytes to %zu bytes\n",
-                                 LEVEL, HINT::rtti[0], size_b_align,
-                                 new_size_b_align);
-            free_pagealigned(bucket_write);
-            free_aligned(bucket_start);
-            free_aligned(bucket_read);
+    if (new_pointer_pack > pointer_pack) {
+        if (pointer_pack) {
+            verbose_fmt_print(0, 1,
+                    "# [{}{}] Changing bucket allocation"
+                    " from {} to {} pointers\n",
+                    LEVEL, HINT::rtti[0], pointer_pack,
+                    new_pointer_pack);
         }
-        size_b_align = new_size_b_align;
-        bucket_write = (update_t **)malloc_pagealigned(size_b_align);
+        pointer_pack = new_pointer_pack;
+
         /* bucket_start is allocated as an array of n_bucket+1 pointers */
-        size_t const alloc_bstart =
-            MAX(size_b_align, (n_bucket + 1) * sizeof(void *));
-        bucket_start = (update_t **)malloc_aligned(alloc_bstart, 0x40);
-        bucket_read = (update_t **)malloc_aligned(size_b_align, 0x40);
-        memset(bucket_write, 0, size_b_align);
-        memset(bucket_start, 0, alloc_bstart);
-        memset(bucket_read, 0, size_b_align);
-        if (none_null) {
-            /* must refresh this pointer too */
-            free_slice_start();
-        }
+        size_t const alloc_bstart = std::max(pointer_pack, n_bucket + 1);
+        bucket_start = make_unique_aligned_array<update_t *>(alloc_bstart, 0x40);
+        std::fill_n(bucket_start.get(), alloc_bstart, nullptr);
+
+        bucket_read = make_unique_aligned_array<update_t *>(pointer_pack, 0x40);
+        std::fill_n(bucket_read.get(), pointer_pack, nullptr);
+
+        /* there is probably _some_ sense in making bucket_write
+         * page-aligned, but the exact rationale was never spelled out in
+         * clear, I believe. Probably because the set of pointers at
+         * bucket_write[] is the one that is constantly accessed during
+         * fill-in-buckets, and it would be embarrassing if it had to
+         * span several pages.
+         */
+        bucket_write = make_unique_aligned_array<update_t *>(pointer_pack, pagesize());
+        std::fill_n(bucket_write.get(), pointer_pack, nullptr);
     }
 
-    /* This requires size_b_align to have been set to the new value */
-    if (prealloc_slices > alloc_slices)
-        realloc_slice_start(prealloc_slices - alloc_slices);
+    if (prealloc_slices) {
+        slice_start.reserve(prealloc_slices);
+        slice_index.reserve(prealloc_slices);
+    }
 
     /* Spread bucket_start pointers equidistantly over the big_data array */
-    update_t * cur = big_data;
+    update_t * cur = big_data.get();
     bucket_start[0] = cur;
     for (uint32_t i = 0; bucket_start[i] = cur, i < n_bucket; i++) {
         cur += ((i & bitmask_line_ordinate) != 0) ? bs_odd : bs_even;
     }
+
+    row_updates.assign(n_bucket, typename decltype(row_updates)::value_type());
+
     reset_pointers();
 #ifdef SAFE_BUCKET_ARRAYS
-    verbose_output_print(0, 0, "# WARNING: SAFE_BUCKET_ARRAYS is on !\n");
+    verbose_fmt_print(0, 0, "# WARNING: SAFE_BUCKET_ARRAYS is on !\n");
 #endif
-}
-
-template <int LEVEL, typename HINT>
-void bucket_array_t<LEVEL, HINT>::free_slice_start()
-{
-    free_aligned(slice_start);
-    slice_start = nullptr;
-    free(slice_index);
-    slice_index = nullptr;
-    alloc_slices = 0;
-}
-
-template <int LEVEL, typename HINT>
-void bucket_array_t<LEVEL, HINT>::realloc_slice_start(size_t const extra_space)
-{
-    size_t const new_alloc_slices = alloc_slices + extra_space;
-    if (alloc_slices)
-        verbose_output_print(0, 3,
-                             "# [%d%c] Reallocating BA->slice_start from %zu "
-                             "entries to %zu entries\n",
-                             LEVEL, HINT::rtti[0], alloc_slices,
-                             new_alloc_slices);
-
-    size_t const old_size = size_b_align * alloc_slices;
-    size_t const new_size = size_b_align * new_alloc_slices;
-    slice_start =
-        (update_t **)realloc_aligned(slice_start, old_size, new_size, 0x40);
-    ASSERT_ALWAYS(slice_start != nullptr);
-    checked_realloc(slice_index, new_alloc_slices);
-    memset(slice_index + alloc_slices, 0, extra_space * sizeof(slice_index_t));
-    alloc_slices = new_alloc_slices;
 }
 
 /* Returns how full the fullest bucket is, as a fraction of its size */
@@ -303,10 +242,12 @@ double bucket_array_t<LEVEL, HINT>::average_full() const
 }
 
 template <int LEVEL, typename HINT>
-void bucket_array_t<LEVEL, HINT>::log_this_update(
-    update_t const update MAYBE_UNUSED, uint64_t const offset MAYBE_UNUSED,
-    uint64_t const bucket_number MAYBE_UNUSED,
-    where_am_I & w MAYBE_UNUSED) const
+void bucket_array_t<LEVEL, HINT>::log_this_update(update_t const update
+                                                  MAYBE_UNUSED,
+                                                  uint64_t const bucket_number
+                                                  MAYBE_UNUSED,
+                                                  where_am_I & w
+                                                  MAYBE_UNUSED) const
 {
 #if defined(TRACE_K)
     size_t const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
@@ -321,18 +262,18 @@ void bucket_array_t<LEVEL, HINT>::log_this_update(
     WHERE_AM_I_UPDATE(w, N, N);
 
     if (trace_on_spot_Nx(w->N, w->x)) {
-        verbose_output_print(
+        verbose_fmt_print(
             TRACE_CHANNEL, 0,
-            "# Pushed hit at location (x=%u, side %d), from factor base entry "
-            "(slice_index=%u, slice_offset=%u, p=%" FBPRIME_FORMAT "), "
-            "to BA<%d>[%u]\n",
+            "# Pushed hit at location (x={}, side {}), from factor base entry "
+            "(slice_index={}, slice_offset={}, p={}), "
+            "to BA<{}>[{}]\n",
             (unsigned int)w->x, w->side, (unsigned int)w->i, (unsigned int)w->h,
             w->p, LEVEL, (unsigned int)w->N);
         if (std::is_same<HINT, longhint_t>::value) {
-            verbose_output_print(TRACE_CHANNEL, 0,
-                                 "# Warning: did not check divisibility during "
-                                 "downsorting p=%" FBPRIME_FORMAT "\n",
-                                 w->p);
+            verbose_fmt_print(TRACE_CHANNEL, 0,
+                              "# Warning: did not check divisibility"
+                              " during downsorting p={}\n",
+                              w->p);
         } else {
             ASSERT_ALWAYS(test_divisible(w));
         }
@@ -361,10 +302,11 @@ template <int LEVEL, typename HINT> void bucket_single<LEVEL, HINT>::sort()
 //  qsort (start, write - start, sizeof (bucket_update_t<1, longhint_t> ),
 //	 (int(*)(const void *, const void *)) &bucket_cmp_x);
 #define islt(a, b) ((a)->x < (b)->x)
-    QSORT(update_t, start, write - start, islt);
+    QSORT(update_t, start.get(), size(), islt);
 #undef islt
 }
 
+/*
 void bucket_primes_t::purge(bucket_array_t<1, shorthint_t> const & BA,
                             int const i, fb_factorbase::slicing const & fb,
                             unsigned char const * S)
@@ -378,7 +320,22 @@ void bucket_primes_t::purge(bucket_array_t<1, shorthint_t> const & BA,
             }
         }
     }
+    // read the projective updates, and put the surviving ones to the
+    // main array.
+    for (auto const & ru: BA.row_updates[i]) {
+        fbprime_t p = fb[ru.slice_index].get_prime(ru.hint);
+        // longhint_t h(0, ru.hint, ru.slice_index);
+        // have to walk the updates to see the ones that match
+        bucket_update_t<1, shorthint_t> u = ru;
+        for (int nx = ru.n + 1; nx--;) {
+            if (UNLIKELY(S[u.x] != 255)) {
+                push_update(bucket_update_t<1, primehint_t>(u.x, p, 0, 0));
+            }
+            u.x += ru.inc;
+        }
+    }
 }
+*/
 
 /*
 template <typename HINT>
@@ -390,8 +347,7 @@ static inline bucket_update_t<1, longhint_t>
 to_longhint(bucket_update_t<1, shorthint_t> const & update,
             slice_index_t const slice_index)
 {
-    return bucket_update_t<1, longhint_t>(update.x, 0, update.hint,
-                                          slice_index);
+    return { update.x, 0, update.hint, slice_index };
 }
 
 static inline bucket_update_t<1, longhint_t>
@@ -413,6 +369,19 @@ void bucket_array_complete::purge(bucket_array_t<1, HINT> const & BA,
             }
         }
     }
+    if ((uint32_t)i < BA.n_bucket) {
+        for (auto const & ru: BA.row_updates[i]) {
+            // longhint_t h(0, ru.hint, ru.slice_index);
+            /* have to walk the updates to see the ones that match */
+            bucket_update_t<1, HINT> u = ru;
+            for (int nx = ru.n + 1; nx--;) {
+                if (UNLIKELY(S[u.x] != 255)) {
+                    push_update(to_longhint(u, ru.slice_index));
+                }
+                u.x += ru.inc;
+            }
+        }
+    }
 }
 
 template void bucket_array_complete::purge<shorthint_t>(
@@ -423,7 +392,7 @@ template void bucket_array_complete::purge<longhint_t>(
     bucket_array_t<1, longhint_t> const & BA, int const i,
     unsigned char const * S);
 
-#if defined(HAVE_SSE2) && defined(SMALLSET_PURGE)
+#if defined(HAVE_SSE2)
 
 template <typename HINT, int SIZE>
 void bucket_array_complete::purge_1(
@@ -495,10 +464,18 @@ void downsort(fb_factorbase::slicing const & fbs MAYBE_UNUSED,
               const bucket_array_t<INPUT_LEVEL, shorthint_t> & BA_in,
               uint32_t bucket_number, where_am_I & w)
 {
+    BA_out.add_slice_index(0);
+
     /* Time recording for this function is done by the caller
      * (downsort_wrapper)
      */
     /* Rather similar to purging, except it doesn't purge */
+    int logB = LOG_BUCKET_REGIONS[INPUT_LEVEL - 1];
+    using BA_out_t = bucket_array_t<INPUT_LEVEL - 1, longhint_t>;
+    using lower_update_t = BA_out_t::update_t;
+    using lower_row_update_t = BA_out_t::row_update_t;
+    decltype(lower_update_t::x) maskB = (1 << logB) - 1;
+
     for (slice_index_t i_slice = 0; i_slice < BA_in.get_nr_slices();
          i_slice++) {
         slice_index_t const slice_index = BA_in.get_slice_index(i_slice);
@@ -506,13 +483,53 @@ void downsort(fb_factorbase::slicing const & fbs MAYBE_UNUSED,
         for (auto const & it: BA_in.slice_range(bucket_number, i_slice)) {
             WHERE_AM_I_UPDATE(w, p, fbs[slice_index].get_prime(it.hint));
             WHERE_AM_I_UPDATE(w, h, it.hint);
-            BA_out.push_update(it.x, 0, it.hint, slice_index, w);
+            longhint_t h(0, it.hint, slice_index);
+            lower_update_t u_low(it.x & maskB, h);
+            BA_out.push_update(it.x >> logB, u_low, w);
         }
+    }
+
+    for (auto const & ru: BA_in.row_updates[bucket_number]) {
+        WHERE_AM_I_UPDATE(w, i, ru.slice_index);
+        WHERE_AM_I_UPDATE(w, p, fbs[ru.slice_index].get_prime(ru.hint));
+        WHERE_AM_I_UPDATE(w, h, ru.hint);
+        /* XXX
+         * we have a problem here when
+         * logB[INPUT_LEVEL] >= logI > logB[INPUT_LEVEL-1]
+         * ru.n corresponds to a full line, but that doesn't fit in one
+         * region at level INPUT_LEVEL-1.
+         */
+
+        /* This assumes that we push separate row updates for each
+         * lowest-level bucket.
+         */
+        ASSERT(((ru.x + ru.n * ru.inc) >> logB) == (ru.x >> logB));
+        longhint_t h(0, ru.hint, ru.slice_index);
+        lower_update_t u_low(ru.x & maskB, h);
+        lower_row_update_t ru_low(u_low, ru.slice_index, ru.inc, ru.n);
+        BA_out.row_updates[ru.x >> logB].push_back(ru_low);
+
+        /* I think that the approach below would work as well, but it's
+         * not tested. It would also be more costly.
+         */
+#if 0
+        auto x0 = ru.x;
+        for(int nx = ru.n + 1 ; nx ; ) {
+            auto x = x0;
+            int n;
+            for(n = 0 ; (x & maskB) == (x0 & maskB) ; x += ru.inc, nx--, n++);
+            /* we can fit n updates in this sub-bucket */
+            lower_update_t u_low(x0 & maskB, h);
+            lower_row_update_t ru_low(u_low, ru.slice_index, ru.inc, ru.n);
+            BA_out.row_updates[x0 >> logB].push_back(ru_low);
+            x0 = x;
+        }
+#endif
     }
 }
 
 template <int INPUT_LEVEL>
-void downsort(fb_factorbase::slicing const & /* unused */,
+void downsort(fb_factorbase::slicing const & fbs MAYBE_UNUSED /* unused */,
               bucket_array_t<INPUT_LEVEL - 1, longhint_t> & BA_out,
               bucket_array_t<INPUT_LEVEL, longhint_t> const & BA_in,
               uint32_t bucket_number, where_am_I & w)
@@ -520,9 +537,25 @@ void downsort(fb_factorbase::slicing const & /* unused */,
     /* longhint updates don't write slice end pointers, so there must be
        exactly 1 slice per bucket */
     ASSERT_ALWAYS(BA_in.get_nr_slices() == 1);
+    ASSERT(BA_in.get_slice_index(0) == 0);
+
+    int logB = LOG_BUCKET_REGIONS[INPUT_LEVEL - 1];
+    using BA_out_t = bucket_array_t<INPUT_LEVEL - 1, longhint_t>;
+    using lower_update_t = BA_out_t::update_t;
+    using lower_row_update_t = BA_out_t::row_update_t;
+    decltype(lower_update_t::x) maskB = (1 << logB) - 1;
 
     for (auto const & it: BA_in.slice_range(bucket_number, 0)) {
-        BA_out.push_update(it.x, 0, it.hint, it.index, w);
+        BA_out.push_update(it.x >> logB, lower_update_t(it.x & maskB, it), w);
+    }
+
+    for (auto const & ru: BA_in.row_updates[bucket_number]) {
+        WHERE_AM_I_UPDATE(w, i, ru.slice_index);
+        WHERE_AM_I_UPDATE(w, p, fbs[ru.slice_index].get_prime(ru.hint));
+        WHERE_AM_I_UPDATE(w, h, ru.hint);
+        lower_update_t u_low(ru.x & maskB, ru);
+        lower_row_update_t ru_low(u_low, ru.slice_index, ru.inc, ru.n);
+        BA_out.row_updates[ru.x >> logB].push_back(ru_low);
     }
 }
 
@@ -532,79 +565,133 @@ void downsort(fb_factorbase::slicing const & fbs,
               bucket_array_t<INPUT_LEVEL, emptyhint_t> const & BA_in,
               uint32_t bucket_number, where_am_I & w)
 {
+    BA_out.add_slice_index(0);
+
     /* Time recording for this function is done by the caller
      * (downsort_wrapper)
      */
+
+    int logB = LOG_BUCKET_REGIONS[INPUT_LEVEL - 1];
+    using BA_out_t = bucket_array_t<INPUT_LEVEL - 1, logphint_t>;
+    using lower_update_t = BA_out_t::update_t;
+    using lower_row_update_t = BA_out_t::row_update_t;
+    decltype(lower_update_t::x) maskB = (1 << logB) - 1;
+
     /* Rather similar to purging, except it doesn't purge */
     for (slice_index_t i_slice = 0; i_slice < BA_in.get_nr_slices();
          i_slice++) {
         slice_index_t const slice_index = BA_in.get_slice_index(i_slice);
         // WHERE_AM_I_UPDATE(w, i, slice_index);
         for (auto const & it: BA_in.slice_range(bucket_number, i_slice)) {
-            logphint_t const h = fbs[slice_index].get_logp();
-            BA_out.push_update(it.x, h, w);
+            logphint_t h = fbs[slice_index].get_logp();
+            lower_update_t u_low(it.x & maskB, h);
+            BA_out.push_update(it.x >> logB, u_low, w);
         }
+    }
+    for (auto const & ru: BA_in.row_updates[bucket_number]) {
+        WHERE_AM_I_UPDATE(w, i, ru.slice_index);
+        // we have no slice offset here, so no p.
+        // WHERE_AM_I_UPDATE(w, p, fbs[ru.slice_index].get_prime(ru.hint));
+        // WHERE_AM_I_UPDATE(w, h, ru);
+        logphint_t h = fbs[ru.slice_index].get_logp();
+        lower_update_t u_low(ru.x & maskB, h);
+        lower_row_update_t ru_low(u_low, ru.slice_index, ru.inc, ru.n);
+        BA_out.row_updates[ru.x >> logB].push_back(ru_low);
     }
 }
 
 template <int INPUT_LEVEL>
-void downsort(fb_factorbase::slicing const & /* unused */,
+void downsort(fb_factorbase::slicing const & fbs MAYBE_UNUSED /* unused */,
               bucket_array_t<INPUT_LEVEL - 1, logphint_t> & BA_out,
               bucket_array_t<INPUT_LEVEL, logphint_t> const & BA_in,
               uint32_t bucket_number, where_am_I & w)
 {
-    /* longhint updates don't write slice end pointers, so there must be
+    int logB = LOG_BUCKET_REGIONS[INPUT_LEVEL - 1];
+    using BA_out_t = bucket_array_t<INPUT_LEVEL - 1, logphint_t>;
+    using lower_update_t = BA_out_t::update_t;
+    using lower_row_update_t = BA_out_t::row_update_t;
+    decltype(lower_update_t::x) maskB = (1 << logB) - 1;
+
+    /* logphint updates don't write slice end pointers, so there must be
        exactly 1 slice per bucket */
     ASSERT_ALWAYS(BA_in.get_nr_slices() == 1);
+    ASSERT(BA_in.get_slice_index(0) == 0);
+
     for (auto const & it: BA_in.slice_range(bucket_number, 0)) {
-        BA_out.push_update(it.x, it, w);
+        BA_out.push_update(it.x >> logB, lower_update_t(it.x & maskB, it), w);
+    }
+    for (auto const & ru: BA_in.row_updates[bucket_number]) {
+        WHERE_AM_I_UPDATE(w, i, ru.slice_index);
+        // no slice_offset in logphint either
+        // WHERE_AM_I_UPDATE(w, p, fbs[ru.slice_index].get_prime(ru.hint));
+        // WHERE_AM_I_UPDATE(w, h, ru);
+        lower_update_t u_low(ru.x & maskB, ru);
+        lower_row_update_t ru_low(u_low, ru.slice_index, ru.inc, ru.n);
+        BA_out.row_updates[ru.x >> logB].push_back(ru_low);
     }
 }
 
 /* Explicitly instantiate the versions of downsort() that we'll need:
    downsorting shorthint from level 3 and level 2, and downsorting
-   longhint from level 2. */
+   longhint from level 2.
+   (for the moment we have no way to expose the level-3 case, so unless
+   we find one, let's just drop this code)
+ */
+
+#if MAX_TOPLEVEL >= 2
 template void downsort<2>(fb_factorbase::slicing const &,
                           bucket_array_t<1, longhint_t> & BA_out,
                           bucket_array_t<2, shorthint_t> const & BA_in,
-                          uint32_t bucket_number, where_am_I & w);
-
-template void downsort<3>(fb_factorbase::slicing const &,
-                          bucket_array_t<2, longhint_t> & BA_out,
-                          bucket_array_t<3, shorthint_t> const & BA_in,
-                          uint32_t bucket_number, where_am_I & wr);
-
-template void downsort<2>(fb_factorbase::slicing const &,
-                          bucket_array_t<1, longhint_t> & BA_out,
-                          bucket_array_t<2, longhint_t> const & BA_in,
                           uint32_t bucket_number, where_am_I & w);
 
 template void downsort<2>(fb_factorbase::slicing const &,
                           bucket_array_t<1, logphint_t> & BA_out,
                           bucket_array_t<2, emptyhint_t> const & BA_in,
                           uint32_t bucket_number, where_am_I & w);
+#endif
+
+#if MAX_TOPLEVEL >= 3
+template void downsort<3>(fb_factorbase::slicing const &,
+                          bucket_array_t<2, longhint_t> & BA_out,
+                          bucket_array_t<3, shorthint_t> const & BA_in,
+                          uint32_t bucket_number, where_am_I & wr);
 
 template void downsort<3>(fb_factorbase::slicing const &,
                           bucket_array_t<2, logphint_t> & BA_out,
                           bucket_array_t<3, emptyhint_t> const & BA_in,
                           uint32_t bucket_number, where_am_I & wr);
-
 template void downsort<2>(fb_factorbase::slicing const &,
                           bucket_array_t<1, logphint_t> & BA_out,
                           bucket_array_t<2, logphint_t> const & BA_in,
                           uint32_t bucket_number, where_am_I & w);
 
+template void downsort<2>(fb_factorbase::slicing const &,
+                          bucket_array_t<1, longhint_t> & BA_out,
+                          bucket_array_t<2, longhint_t> const & BA_in,
+                          uint32_t bucket_number, where_am_I & w);
+
+#endif
+static_assert(MAX_TOPLEVEL == 3);
+
 /* Instantiate concrete classes that we need or some methods do not get
    compiled and cause "undefined reference" errors during linking. */
 template class bucket_single<1, primehint_t>;
 template class bucket_single<1, longhint_t>;
+
 template class bucket_array_t<1, shorthint_t>;
-template class bucket_array_t<2, shorthint_t>;
-template class bucket_array_t<3, shorthint_t>;
-template class bucket_array_t<1, longhint_t>;
-template class bucket_array_t<2, longhint_t>;
 template class bucket_array_t<1, emptyhint_t>;
+
+#if MAX_TOPLEVEL >= 2
+template class bucket_array_t<2, shorthint_t>;
 template class bucket_array_t<2, emptyhint_t>;
-template class bucket_array_t<3, emptyhint_t>;
+template class bucket_array_t<1, longhint_t>;
 template class bucket_array_t<1, logphint_t>;
+#endif
+
+#if MAX_TOPLEVEL >= 3
+template class bucket_array_t<3, shorthint_t>;
+template class bucket_array_t<3, emptyhint_t>;
+template class bucket_array_t<2, longhint_t>;
 template class bucket_array_t<2, logphint_t>;
+#endif
+static_assert(MAX_TOPLEVEL == 3);

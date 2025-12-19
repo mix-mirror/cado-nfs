@@ -17,6 +17,7 @@
 #include "macros.h"
 #ifdef __cplusplus
 #include "cxx_mpz.hpp"
+#include "prime_power_factorization.hpp"
 #endif
 #include "mpz_poly.h" // TODO: modify this.
 
@@ -68,6 +69,8 @@ extern int param_list_read_file(param_list_ptr pl, const char * name);
 extern int param_list_update_cmdline(param_list_ptr pl,
         int * p_argc, char const *** p_argv) ATTRIBUTE_NONNULL((2,3));
 
+extern void param_list_generic_failure(param_list_srcptr pl, const char *missing);
+
 #ifdef __cplusplus
 }
 #endif
@@ -84,6 +87,17 @@ param_list_parse(param_list_ptr pl, std::string const & key)
 {
     T r;
     param_list_parse<T>(pl, key, r);
+    return r;
+}
+
+template<typename T>
+T
+param_list_parse_mandatory(param_list_ptr pl, std::string const & key)
+{
+    T r;
+    if (!param_list_parse<T>(pl, key, r))
+        param_list_generic_failure(pl, key.c_str());
+
     return r;
 }
 
@@ -123,6 +137,7 @@ extern template int param_list_parse<std::vector<unsigned int>>(param_list_ptr p
 extern template int param_list_parse<std::vector<std::string>>(param_list_ptr pl, std::string const & key, std::vector<std::string> & r);
 extern template int param_list_parse<cxx_mpz>(param_list_ptr pl, std::string const & key, cxx_mpz & r);
 extern template int param_list_parse<cxx_mpz_poly>(param_list_ptr pl, std::string const & key, cxx_mpz_poly & r);
+extern template int param_list_parse<cado::prime_power_factorization>(param_list_ptr pl, std::string const & key, cado::prime_power_factorization & r);
 #endif
 
 
@@ -219,8 +234,6 @@ extern int param_list_save_parameter(param_list_ptr, enum parameter_origin o,
 // param lists, which remember their oldest argv, argc pair.
 extern void param_list_print_command_line(FILE * stream, param_list_srcptr);
 
-extern void param_list_generic_failure(param_list_srcptr pl, const char *missing);
-
 extern int param_list_parse_uint_args_per_side(param_list_ptr pl, const char * key, unsigned int * lpb_arg, int n, enum args_per_side_policy_t policy);
 extern int param_list_parse_int_args_per_side(param_list_ptr pl, const char * key, int * lpb_arg, int n, enum args_per_side_policy_t policy);
 
@@ -304,7 +317,6 @@ struct cxx_param_list {
         param_list_set(x, o.x);
         return *this;
     }
-#if __cplusplus >= 201103L
     cxx_param_list(cxx_param_list && o) noexcept {
         param_list_init(x);
         param_list_swap(x, o.x);
@@ -313,7 +325,6 @@ struct cxx_param_list {
         param_list_swap(x, o.x);
         return *this;
     }
-#endif
     operator param_list_ptr() { return x; }
     operator param_list_srcptr() const { return x; }
     param_list_ptr operator->() { return x; }

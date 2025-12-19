@@ -3,11 +3,13 @@
 
 #include <memory>
 #include <string>
+#include <ostream>
 
+#include "fmt/base.h"
 #include "fmt/format.h"
 
 #include "numbertheory/numbertheory_fwd_types.hpp"
-#include "numbertheory/fmt_helpers.hpp"
+#include "fmt_helper_sagemath.hpp"
 #include "cxx_mpz.hpp"
 #include "mpz_poly.h"
 #include "mpz_mat.h"
@@ -19,11 +21,17 @@ class number_field {
     cxx_mpz_poly f_hat;
     mutable std::unique_ptr<number_field_order> cached_maximal_order;
     mutable std::unique_ptr<cxx_mpq_mat> cached_trace_matrix;
+    mutable std::unique_ptr<std::pair<unsigned int, unsigned int>> cached_signature;
     public:
     std::string name, varname;
     explicit number_field(cxx_mpz_poly const& f);
     cxx_mpz_poly const& defining_polynomial() const { return f; }
     int degree() const { return defining_polynomial().degree(); }
+    std::pair<unsigned int, unsigned int> signature() const;
+    unsigned int unit_rank() const {
+        auto rs = signature();
+        return rs.first + rs.second - 1;
+    }
     number_field_element gen() const;
     number_field_element operator()(cxx_mpz_poly const &, cxx_mpz const & =1) const;
     number_field_element operator()(cxx_mpz_mat const &, cxx_mpz const & =1) const;
@@ -43,19 +51,20 @@ class number_field {
     /* convert an element of an order to the equivalent element as an
      * element of the number field */
     number_field_element operator()(number_field_order_element const &) const;
+
+    cxx_mpq_mat basis_matrix_from_f_to_monic(cxx_mpq_mat const & B) const;
+    cxx_mpq_mat basis_matrix_from_monic_to_f(cxx_mpq_mat const & B) const;
 };
 
 namespace fmt {
     template <>
     struct formatter<number_field>
-        : formatter<string_view>
-        , fmt_helper_sagemath<number_field>
+        : fmt_helper_sagemath<number_field>
     {
-        using fmt_helper_sagemath::parse;
         static constexpr const decltype(custom_format) custom_format_default = TEXT;
         auto format(number_field const & K, format_context& ctx) const -> format_context::iterator;
     };
-}
+} /* namespace fmt */
 inline std::ostream& operator<<(std::ostream& os, number_field const & K) { return os << fmt::format("{}", K); }
 
 

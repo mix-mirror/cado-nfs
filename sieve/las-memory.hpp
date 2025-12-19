@@ -1,14 +1,18 @@
 #ifndef CADO_LAS_MEMORY_HPP
 #define CADO_LAS_MEMORY_HPP
 
-#include <stddef.h>                    // for size_t
-#include <list>                        // for list
-#include <map>                         // for map
-#include <set>                         // for set
-#include <stack>                       // for stack
-#include "macros.h"                    // for ATTR_ASSUME_ALIGNED
-#include "las-config.h"                // for BUCKET_REGION, MEMSET_MIN
-#include "lock_guarded_container.hpp"  // for lock_guarded_container
+#include <cstddef>
+
+#include <list>
+#include <map>
+#include <set>
+#include <stack>
+#include <memory>
+
+#include "macros.h"
+#include "las-config.hpp"
+#include "lock_guarded_container.hpp"
+#include "memory.h"
 
 
 /* This structure is shared by threads that have the same memory binding.
@@ -20,7 +24,7 @@
 
 class las_memory_accessor {
     lock_guarded_container<std::map<size_t, std::stack<void *>>> frequent_regions_pool;
-    std::list<void*> large_pages_for_pool;
+    std::list<unique_aligned_array<char>> large_pages_for_pool;
 
     /* large memory chunks follow the same logic as in utils/memory.c,
      * but we reimplement it here so as to stick to one memory binding
@@ -59,10 +63,49 @@ class las_memory_accessor {
     void * physical_alloc(size_t, bool = false) ATTR_ASSUME_ALIGNED(256);
     void physical_free(void*, size_t);
 
+    struct unique_frequent_array_deleter {
+        size_t size = 0;
+        las_memory_accessor * a = nullptr;
+        template<typename T>
+        void operator()(T * p) const {
+            a->free_frequent_size(p, size * sizeof(T));
+        }
+    };
+    template<typename T>
+        using unique_frequent_array = std::unique_ptr<T, unique_frequent_array_deleter>;
+
+    template<typename T>
+    unique_frequent_array<T> make_unique_frequent_array(size_t size)
+    {
+        return { static_cast<T *>(alloc_frequent_size(size * sizeof(T))),
+                 { size, this } };
+    }
+
+    struct unique_physical_array_deleter {
+        size_t size = 0;
+        las_memory_accessor * a = nullptr;
+        template<typename T>
+        void operator()(T * p) const {
+            a->physical_free(p, size * sizeof(T));
+        }
+    };
+    template<typename T>
+        using unique_physical_array = std::unique_ptr<T, unique_physical_array_deleter>;
+
+    template<typename T>
+    unique_physical_array<T> make_unique_physical_array(size_t size, bool affect = false)
+    {
+        return { static_cast<T *>(physical_alloc(size * sizeof(T), affect)),
+                 { size, this } };
+    }
+
+
     las_memory_accessor() = default;
     las_memory_accessor(las_memory_accessor const &) = delete;
     las_memory_accessor(las_memory_accessor&&) = default;
-    ~las_memory_accessor();
+    las_memory_accessor& operator=(las_memory_accessor const &) = delete;
+    las_memory_accessor& operator=(las_memory_accessor&&) = default;
+    ~las_memory_accessor() = default;
 };
 
 #endif	/* CADO_LAS_MEMORY_HPP */

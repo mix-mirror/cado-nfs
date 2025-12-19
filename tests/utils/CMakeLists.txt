@@ -2,11 +2,11 @@ cado_define_test(test_strlcat.c LIBRARIES utils)
 cado_define_test(test_strlcpy.c LIBRARIES utils)
 cado_define_test(test_double_poly.c LIBRARIES utils tests)
 cado_define_test(test_polynomial.cpp LIBRARIES utils tests)
+cado_define_test(test_number_literal.cpp LIBRARIES utils)
+if(HAVE_MPFR)
+    target_link_libraries(test_polynomial mpfr)
+endif()
 cado_define_test(test_cado_expression_parser.cpp LIBRARIES utils tests)
-cado_define_test(test_polyroots.c LIBRARIES utils
-    ARGUMENTS 1 2 3 4 5 6 7 8
-    EXPECT_SHA1 613d5c8214c34b349b93042f3e45a7d66e1f6586
-)
 cado_define_test(test_gmp_aux.c LIBRARIES utils tests)
 cado_define_test(test_gcd.c LIBRARIES utils tests)
 cado_define_test(test_getprime.c LIBRARIES utils)
@@ -20,6 +20,7 @@ cado_define_test(test_memusage.c LIBRARIES utils)
 cado_define_test(test_roots_mod.c LIBRARIES utils ARGUMENTS 100 1050)
 cado_define_test(test_omega.c LIBRARIES utils)
 cado_define_test(test_timing.c LIBRARIES utils)
+cado_define_test(test_trial_division.cpp LIBRARIES utils tests ARGUMENTS -q)
 cado_define_test(test_rootfinder.c LIBRARIES utils tests)
 
 add_subdirectory(arith)
@@ -34,6 +35,13 @@ cado_define_test(test_mpz_poly.cpp
     TIMEOUT 60)
 cado_define_test(test_mpz_poly_parsing.cpp LIBRARIES utils tests)
 cado_define_test(test_json_parsing.cpp LIBRARIES utils tests)
+if(HAVE_MPFR)
+cado_define_test(test_cxx_mpfr.cpp LIBRARIES utils tests)
+endif()
+if(HAVE_MPC)
+cado_define_test(test_cxx_mpc.cpp LIBRARIES utils tests)
+endif()
+cado_define_test(test_cado_math_aux.cpp LIBRARIES utils tests)
 cado_define_test(test_cxx_mpz_mat.cpp LIBRARIES utils tests)
 cado_define_test(test_cxx_mpz_poly.cpp LIBRARIES utils tests)
 cado_define_test(test_cado_poly.cpp LIBRARIES utils tests)
@@ -53,7 +61,7 @@ cado_define_test(test_threadpool.cpp LIBRARIES utils tests)
 # note: these tests used to be disabled...
 cado_define_test(test_verbose.c LIBRARIES utils tests) # Should be run under Helgrind or other thread checkers
 cado_define_test(test_mpz_vector.c LIBRARIES utils)
-cado_define_test(test_mpz_poly_bivariate.cpp LIBRARIES utils tests TIMEOUT 60)
+cado_define_test(test_mpz_poly_bivariate.cpp ARGUMENTS -iter 100 LIBRARIES utils tests TIMEOUT 60)
 cado_define_test(test_smallset.cpp LIBRARIES)
 cado_define_test(test_mpz_mat.c LIBRARIES utils)
 cado_define_test(test_gpf.c LIBRARIES utils)
@@ -61,7 +69,6 @@ cado_define_test(test-sort.cpp ARGUMENTS --log-bigsize 14 --max-span 128
     LIBRARIES utils)
 cado_define_test(test_u64arith.cpp LIBRARIES utils tests)
 cado_define_test(test_multityped_array.cpp LIBRARIES utils)
-cado_define_test(test_istream_matcher.cpp LIBRARIES utils tests)
 cado_define_test(test_mmappable_vector.cpp LIBRARIES utils
     PROVIDE_TEMPORARY_WDIR
     TIMEOUT 60
@@ -102,6 +109,19 @@ cado_define_test(
 
 cado_define_test(test_subdivide_primes_interval.cpp LIBRARIES utils)
 cado_define_test(test_galois_action.cpp LIBRARIES utils tests)
+cado_define_test(test_imaginary_quadratic_class_groups.cpp LIBRARIES utils tests)
+
+cado_define_test(test_cachesize
+    PROGRAM
+    ${CADO_NFS_BINARY_DIR}/utils/cachesize
+    TARGET_DEPENDENCIES cachesize
+    # only make sure that the code reaches the end. This code is
+    # certainly not robust enough to have a requirement on its output.I
+    # wish the situation were a bit better.
+    SHA1_ON_REGEXP_LINES "^#define L1_CACHE_SIZE [0-9]*$"
+    EXPECT_SHA1 835f61ab6ba177ef4091c3231b0f30eaaad021b4
+    SHA1_ON_SED_OUTPUT "s/^\\(#define L1_CACHE_SIZE\\).*/\\1/"
+)
 
 add_subdirectory(numbertheory)
 

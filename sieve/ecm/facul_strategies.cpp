@@ -2,23 +2,22 @@
 
 #include <cctype>
 #include <climits>
-#include <cmath>        // ldexp, sqrt
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
-#include <algorithm>    // for std::next_permutation
-#include <array>
+#include <algorithm>
 #include <map>
-#include <numeric>      // for std::iota
-#include <regex>        // for std::basic_regex, std::regex_iterator
-#include <sstream>      // for std::ostringstream
+#include <numeric>
+#include <regex>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include <regex.h>      // for regmatch_t, regcomp, regexec, regfree, REG_EX...
+#include <regex.h>
 
 #include "fmt/format.h"
 #include "fmt/ranges.h"
@@ -26,8 +25,8 @@
 #include "facul_strategies.hpp"
 #include "facul_ecm.h"
 #include "facul_method.hpp"
-#include "pm1.h"        // for pm1_plan_t, pm1_clear_plan, pm1_make_plan
-#include "pp1.h"        // for pp1_plan_t, pp1_clear_plan, pp1_make_plan
+#include "pm1.h"
+#include "pp1.h"
 #include "macros.h"
 #include "verbose.h"
 
@@ -221,13 +220,13 @@ static const char * parameterization_name(ec_parameterization_t p)
 }
 
 struct strategy_file_parser {/*{{{*/
-    typedef std::vector<unsigned int> key_type;
-    typedef std::vector<facul_method::parameters_with_side> value_type;
+    using key_type = std::vector<unsigned int>;
+    using value_type = std::vector<facul_method::parameters_with_side>;
 private:
     class regexp_define_t {/*{{{*/
         regex_t re;
         public:
-        typedef std::string T;
+        using T = std::string;
         regexp_define_t() {
             const char * re_txt =
                 "^[[:space:]]*"
@@ -254,7 +253,7 @@ private:
     class regexp_use_t {/*{{{*/
         regex_t re;
         public:
-        typedef std::string T;
+        using T = std::string;
         regexp_use_t() {
             const char * re_txt =
                 "^[[:space:]]*"
@@ -292,7 +291,7 @@ private:
         }
 
         public:
-        typedef std::vector<unsigned int> T;
+        using T = std::vector<unsigned int>;
         regexp_index_t(size_t n) : re{build_regex(n)} {
         }
         bool operator()(T & index, const char * & str) const {
@@ -347,7 +346,7 @@ private:
     class regexp_fm_t {/*{{{*/
         regex_t preg_fm;
         public:
-        typedef facul_method::parameters_with_side T;
+        using T = facul_method::parameters_with_side;
         regexp_fm_t() {
             // regular expression for the strategy
             const char *str_preg_fm =
@@ -490,7 +489,7 @@ class parameter_sequence_tracker {/*{{{*/
 facul_strategies::strategy_file
 strategy_file_parser::operator()(std::vector<unsigned int> const & mfb, FILE * file)
 {
-    verbose_output_print(0, 2, "# Read the cofactorization strategy file\n");
+    verbose_fmt_print(0, 2, "# Read the cofactorization strategy file\n");
     // first, read linearly.
     std::vector<std::pair<key_type, value_type>> pre_parse;
     std::map<std::string, value_type> macros;
@@ -560,10 +559,10 @@ strategy_file_parser::operator()(std::vector<unsigned int> const & mfb, FILE * f
     for(auto & c : pre_parse) {
         key_type index_st = c.first;
 
-        /* std::equal use the std:less_equal for comparisons so what it is
+        /* std::ranges::equal use the std:less_equal for comparisons so what it is
          * really doing is checking if index_st[i] <= mfb[i] for all i
          */
-        if(!std::equal(index_st.begin(), index_st.end(), mfb.begin(),
+        if(!std::ranges::equal(index_st, mfb,
                        std::less_equal<unsigned int>{}))
             continue; /* it exists i such that index_st[i] > mfb[i] */
         if (c.second.empty())
@@ -798,7 +797,7 @@ std::vector<facul_method_side> const & facul_strategies::operator()(std::vector<
         else { /* more than two sides */
             std::vector<unsigned int> index(v.size());
             std::iota(index.begin(), index.end(), 0);
-            std::sort(index.begin(), index.end(),
+            std::ranges::sort(index,
                       [&](const unsigned int& i, const unsigned int& j) {
                           return (v[i] < v[j]);
                       });
@@ -983,15 +982,14 @@ facul_strategies::facul_strategies (
     for(int side = 0 ; side < nsides ; side++) {
         if (ncurves[side] < 0)
             ncurves[side] = nb_curves_with_fbb (B[side], lpb[side], mfb[side]);
-        if (ncurves[side] > max_ncurves)
-            max_ncurves = ncurves[side];
+        max_ncurves = std::max(max_ncurves, ncurves[side]);
     }
 
-    verbose_output_print(0, 2, "# Using default strategy for the cofactorization:");
+    verbose_fmt_print(0, 2, "# Using default strategy for the cofactorization:");
     for (unsigned int i = 0; i < ncurves.size(); i++) {
-        verbose_output_print(0, 2, " ncurves%u=%d", i, ncurves[i]);
+        verbose_fmt_print(0, 2, " ncurves{}={}", i, ncurves[i]);
     }
-    verbose_output_print(0, 2, "\n");
+    verbose_fmt_print(0, 2, "\n");
 
     /* prepare the chain of methods that we want to use in order to
      * factor a number, irrespective of its side.

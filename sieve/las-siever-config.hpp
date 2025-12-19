@@ -13,8 +13,10 @@
 #include "params.h"
 #include "las-side-config.hpp"
 
-struct las_todo_entry; // IWYU pragma: keep
+#include "las-special-q-task-tree.hpp"
+#include "las-special-q-task-simple.hpp"
 
+struct special_q; // IWYU pragma: keep
 
 /* siever_config */
  
@@ -31,6 +33,8 @@ struct siever_config {
 
     int logA;
     int logI;   /* see below. logI is initialized late in the game */
+
+    int adjust_strategy = 0;
 
     /* This does not really belong here. I'd rather have it at the
      * las_info level. However for obscure reasons,
@@ -63,7 +67,14 @@ struct siever_config {
      * and ws.sides[side].fbK.{td_thresh, skipped}
      */
     unsigned long bucket_thresh = 0;  // bucket sieve primes >= bucket_thresh
+#if MAX_TOPLEVEL >= 2
     unsigned long bucket_thresh1 = 0; // primes above are 2-level bucket-sieved
+#endif
+#if MAX_TOPLEVEL >= 3
+    unsigned long bucket_thresh2 = 0; // primes above are 3-level bucket-sieved
+#endif
+    static_assert(MAX_TOPLEVEL == 3);
+
     unsigned int td_thresh = 1024;
     unsigned int skipped = 1;         // don't sieve below this
 
@@ -232,6 +243,16 @@ struct siever_config_pool {
     typedef std::map<key_type, descent_hint> hint_table_t;
     hint_table_t hints;
 
+    static constexpr int max_increase_lpb_default = 0;
+    static constexpr int max_increase_logA_default = 4;
+
+    int max_increase_lpb = max_increase_lpb_default;
+    int max_increase_logA = max_increase_logA_default;
+
+    int max_descent_attempts_allowed() const {
+        return (base.adjust_strategy != 2) + max_increase_logA + max_increase_lpb;
+    }
+
     descent_hint const * get_hint(int side, unsigned int bitsize) const {
         auto it = hints.find(key_type(side, bitsize));
         if (it == hints.end())
@@ -256,7 +277,7 @@ struct siever_config_pool {
     siever_config const * default_config_ptr = nullptr;
     siever_config base;
 
-    siever_config get_config_for_q(las_todo_entry const& doing) const;
+    siever_config get_config_for_q(special_q_task const & doing) const;
 
     siever_config_pool(cxx_param_list& pl, int nb_polys);
 

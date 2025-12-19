@@ -2,7 +2,7 @@
 
 #include <climits>
 #include <cstdlib>
-#include <cstring> // for memcpy, memset
+#include <cstring>
 
 #include <algorithm>
 
@@ -10,7 +10,7 @@
 
 #include "arith-hard.hpp"
 #include "gmp_aux.h"
-#include "lingen_matpoly_select.hpp" // for matpoly
+#include "lingen_matpoly_select.hpp"
 #include "lingen_polymat.hpp"
 #include "macros.h"
 
@@ -119,8 +119,8 @@ template <typename X> struct polymat_ur {
     size_t get_size() const { return size; }
     void set_size(size_t s) { size = s; }
 
-    typedef X * ptr;
-    typedef X const * srcptr;
+    using ptr = X *;
+    using srcptr = X const *;
 
     ptr x = nullptr;
 
@@ -892,7 +892,7 @@ void polymat::addmp(polymat const & a, polymat const & c) /*{{{*/
     polymat_mp_raw(*this, 0, a, 0, a.size, c, 0, c.size, 0, 1);
 } /*}}}*/
 
-void polymat::set_matpoly(matpoly const & src)
+void polymat::set_matpoly(matpoly<false> const & src)
 {
     *this = polymat(src.ab, src.m, src.n, src.get_size());
 

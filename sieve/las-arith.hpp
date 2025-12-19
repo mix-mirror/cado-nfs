@@ -3,16 +3,16 @@
 
 // #define LAS_ARITH_INVMOD_HISTOGRAM 1
 
-#include "cado_config.h"  // for HAVE_GCC_STYLE_AMD64_INLINE_ASM
-#include "las-config.h"   // for NOPROFILE_INLINE
+#include "cado_config.h"
+#include "las-config.hpp"
 
-#include <cstdint>        // for uint32_t, uint64_t, uint8_t, int64_t
-#include <cinttypes>      // for PRI* macros
+#include <cstdint>
+#include <cinttypes>
 
-#include "macros.h"       // for ASSERT, UNLIKELY, GNUC_VERSION_ATLEAST, MAY...
+#include "macros.h"
 #include "fb-types.hpp"
-#include "misc.h"          // cado_ctz
-#include "arith/mod_ul.h"        // for modul_clear, modul_clearmod, modul_get_ul
+#include "misc.h"
+#include "arith/mod_ul.h"
 #include "verbose.h"
 
 #ifdef LAS_ARITH_INVMOD_HISTOGRAM
@@ -413,8 +413,9 @@ batchinvredc_u32 (uint32_t *r, const uint32_t *a, const size_t n,
   for (size_t i = 0; i < n; i++) {
     uint32_t product = mulmodredc_u32<CARRYCHECK>(r[i], a[i], p, invp);
     if (product != 1) {
-      verbose_output_print(1, 0, "batchinv_u32: 1/%" PRIu32 " (mod %" PRIu32
-        ") wrong: %" PRIu32 "\n", a[i], p, r[i]);
+      verbose_fmt_print(1, 0,
+              "batchinv_u32: 1/{} (mod {}) wrong: {}\n",
+              a[i], p, r[i]);
       ASSERT(0);
     }
   }

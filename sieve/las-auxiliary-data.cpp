@@ -1,24 +1,27 @@
 #include "cado.h" // IWYU pragma: keep
 
-#include <iomanip>             // for operator<<, setprecision, fixed
-#include <map>                 // for map
-#include <ostream>             // for ostringstream, basic_ostream, basic_os...
-#include <string>              // for allocator, basic_string, string
-#include <cstdio>              // IWYU pragma: keep
-#include <cstdarg>             // IWYU pragma: keep
+#include <cstdio>
 
-#include <gmp.h>               // for gmp_vfprintf, mpz_srcptr, mpz_import
+#include <map>
+#include <string>
+#include <mutex>
+#include <ranges>
+#include <utility>
+
+#include <gmp.h>
 
 #include "cxx_mpz.hpp"
 #include "las-auxiliary-data.hpp"
 
-#include "macros.h"            // for ASSERT_ALWAYS_NOTHROW
+#include "macros.h"
 
-#include "las-info.hpp"        // for las_info
-#include "las-todo-entry.hpp"  // for las_todo_entry
-#include "tdict.hpp"           // for timetree_t, slot, global_enable, slot_...
-#include "arith/ularith.h"           // for ularith_addmod_ul_ul
+#include "las-config.hpp"
+#include "las-info.hpp"
+#include "tdict.hpp"
+#include "arith/ularith.h"
 #include "verbose.h"
+
+#include "fmt/ranges.h"
 
 void
 sieve_checksum::update(const unsigned int other)
@@ -66,20 +69,15 @@ nfs_aux::~nfs_aux()
     verbose_output_start_batch();
 
     if (tdict::global_enable >= 2) {
-        verbose_output_print (0, 1, "%s", rt.timer.display().c_str());
+        verbose_fmt_print (0, 1, "{}", rt.timer.display());
 
         timetree_t::timer_data_type t = 0;
         for(auto const &c : rt.timer.filter_by_category()) {
-            std::ostringstream os;
-            os << std::fixed << std::setprecision(2) << c.second;
-            verbose_output_print (0, 1, "# %s: %s\n",
-                    coarse_las_timers::explain(c.first).c_str(),
-                    os.str().c_str());
+            verbose_fmt_print (0, 1, "# {}: {:.2f}\n",
+                    coarse_las_timers::explain(c.first), c.second);
             t += c.second;
         }
-        std::ostringstream os;
-        os << std::fixed << std::setprecision(2) << t;
-        verbose_output_print (0, 1, "# total counted time: %s\n", os.str().c_str());
+        verbose_fmt_print (0, 1, "# total counted time: {:.2f}\n", t);
     }
 
     // we're in a dtor, exceptions can turn your computer into a coconut.
@@ -87,43 +85,37 @@ nfs_aux::~nfs_aux()
     // coverity[fun_call_w_exception]
     rt.rep.display_survivor_counters();
 
-    verbose_output_print(0, 2, "# Checksums over sieve region: after all "
-                               "sieving:");
-    for (auto ck: checksum_post_sieve) {
-        verbose_output_print(0, 2, " %u", ck.get_checksum());
-    }
-    verbose_output_print(0, 2, "\n");
+    auto p = [](auto const & ck) { return ck.get_checksum(); };
+    verbose_fmt_print(0, 2,
+            "# Checksums over sieve region: after all sieving: {}\n",
+            fmt::join(checksum_post_sieve | std::views::transform(p), " "));
 
-    verbose_output_vfprint(0, 1, gmp_vfprintf,
-            "# %lu %s\n",
-            rt.rep.reports,
-            las.batch ? "survivor(s) saved" : "relation(s)"
-            );
+    verbose_fmt_print(0, 1, "# {} {}\n",
+            rt.rep.reports, las.batch ? "survivor(s) saved" : "relation(s)");
 
     if (las.suppress_duplicates)
-        verbose_output_print(0, 1, "# number of eliminated duplicates: %lu\n", rt.rep.duplicates);
+        verbose_fmt_print(0, 1, "# number of eliminated duplicates: {}\n", rt.rep.duplicates);
 
     wct_qt0 = wct_seconds() - wct_qt0;
 
     if (rt.rep.survivors.after_sieve != rt.rep.survivors.not_both_even) {
-        verbose_output_print(0, 1, "# Warning: found %ld hits with i,j both even (not a bug, but should be very rare)\n", rt.rep.survivors.after_sieve - rt.rep.survivors.not_both_even);
+        verbose_fmt_print(0, 1, "# Warning: found {} hits with i,j both even (not a bug, but should be very rare)\n", rt.rep.survivors.after_sieve - rt.rep.survivors.not_both_even);
     }
 
     auto D = rt.timer.filter_by_category();
     timetree_t::timer_data_type const qtcpu = rt.timer.total_counted_time();
 
-    std::ostringstream os;
-    os << doing;
-    verbose_output_print (0, 1, "# Time for %s: (%.1f elapsed)", os.str().c_str(), wct_qt0);
+    verbose_fmt_print (0, 1, "# Time for {}: ({:.1f} elapsed)",
+            doing.sq(), wct_qt0);
     if (las_production_mode) {
-        verbose_output_print (0, 1, " [-production mode, no timings]");
+        verbose_fmt_print (0, 1, " [-production mode, no timings]");
     } else {
-        verbose_output_print (0, 1, " %1.2fs", qtcpu);
-        verbose_output_print (0, 2,
-                " [norm %1.2f+%1.1f, sieving %1.1f"
-                " (%1.1f+%1.1f + %1.1f),"
-                " factor %1.1f (%1.1f+%1.1f + %1.1f),"
-                " rest %1.1f]",
+        verbose_fmt_print (0, 1, " {:1.2f}s", qtcpu);
+        verbose_fmt_print (0, 2,
+                " [norm {:1.2f}+{:1.1f}, sieving {:1.1f}"
+                " ({:1.1f}+{:1.1f} + {:1.1f}),"
+                " factor {:1.1f} ({:1.1f}+{:1.1f} + {:1.1f}),"
+                " rest {:1.1f}]",
                 D[coarse_las_timers::norms(0)],
                 D[coarse_las_timers::norms(1)],
 
@@ -148,7 +140,7 @@ nfs_aux::~nfs_aux()
                 D[coarse_las_timers::bookkeeping()]
                     );
     }
-    verbose_output_print (0, 1, "\n");
+    verbose_fmt_print (0, 1, "\n");
 
     verbose_output_end_batch();
 

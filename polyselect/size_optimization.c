@@ -1,18 +1,22 @@
 #include "cado.h" // IWYU pragma: keep
+
 #include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>     // memset
+#include <string.h>
 #include <math.h>
 #include <float.h>
+
 #include <gmp.h>
+
 #include "auxiliary.h"
-#include "gcd.h"        // gcd_uint64
-#include "lll.h"        // mat_Z, LLL
+#include "gcd.h"
+#include "lll.h"
 #include "size_optimization.h"
 #include "double_poly.h"
 #include "polyselect_norms.h"
-#include "macros.h" // ASSERT_ALWAYS
+#include "macros.h"
+#include "mpz_poly.h"
 
 
 /******************************************************************************/
@@ -629,7 +633,7 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
 
   ASSERT_ALWAYS(deg_rotation <= SOPT_MAX_DEGREE_ROTATION);
 
-  logmu_opt = L2_skew_lognorm ((mpz_poly_ptr) f_raw, SKEWNESS_DEFAULT_PREC);
+  logmu_opt = L2_skew_lognorm ((mpz_poly_ptr) f_raw);
   mpz_init (tmp);
   mpz_poly_init (ftmp, f_raw->deg);
 
@@ -652,12 +656,12 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
     while (1)
     {
       mpz_poly_rotation (ftmp, f_raw, g_raw, k[i], i);
-      logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+      logmu = L2_skew_lognorm (ftmp);
       if (logmu > logmu_opt + SOPT_LOCAL_DESCENT_GUARD)
       {
         mpz_neg (tmp, k[i]);
         mpz_poly_rotation (ftmp, f_raw, g_raw, tmp, i);
-        logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+        logmu = L2_skew_lognorm (ftmp);
         if (logmu > logmu_opt + SOPT_LOCAL_DESCENT_GUARD)
           break;
       }
@@ -670,12 +674,12 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
   while (1)
   {
     mpz_poly_translation (ftmp, f_raw, kt);
-    logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+    logmu = L2_skew_lognorm (ftmp);
     if (logmu > logmu_opt + SOPT_LOCAL_DESCENT_GUARD)
     {
       mpz_neg (tmp, kt);
       mpz_poly_translation (ftmp, f_raw, tmp);
-      logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+      logmu = L2_skew_lognorm (ftmp);
       if (logmu > logmu_opt + SOPT_LOCAL_DESCENT_GUARD)
         break;
     }
@@ -698,7 +702,7 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
     {
       /* first try translation by kt */
       mpz_poly_translation (ftmp, f_opt, kt); /* f(x+kt) */
-      logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+      logmu = L2_skew_lognorm (ftmp);
       if (logmu < logmu_opt)
       {
         changedt = 1;
@@ -710,7 +714,7 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
       {
         mpz_neg (tmp, kt);
         mpz_poly_translation (ftmp, f_opt, tmp); /* f(x-kt) */
-        logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+        logmu = L2_skew_lognorm (ftmp);
         if (logmu < logmu_opt)
         {
           changedt = 1;
@@ -724,7 +728,7 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
     for (int i = 0; i <= deg_rotation; i++)
     {
       mpz_poly_rotation (ftmp, f_opt, g_opt, k[i], i); /* f + k[i]*x^i*g */
-      logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+      logmu = L2_skew_lognorm (ftmp);
       if (logmu < logmu_opt)
       {
         changed[i] = 1;
@@ -735,7 +739,7 @@ sopt_local_descent (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
       {
         mpz_neg (tmp, k[i]);
         mpz_poly_rotation (ftmp, f_opt, g_opt, tmp, i); /* f - k[i]*x^i*g */
-        logmu = L2_skew_lognorm (ftmp, SKEWNESS_DEFAULT_PREC);
+        logmu = L2_skew_lognorm (ftmp);
         if (logmu < logmu_opt)
         {
           changed[i] = 1;
@@ -963,12 +967,10 @@ size_optimization_aux (mpz_poly_ptr f_opt, mpz_poly_ptr g_opt,
   ASSERT_ALWAYS (g_raw->deg == 1);
   const int d = f_raw->deg;
   double best_lognorm =
-      L2_skew_lognorm ((mpz_poly_ptr) f_raw, SKEWNESS_DEFAULT_PREC);
+      L2_skew_lognorm ((mpz_poly_ptr) f_raw);
   gmp_randstate_t rstate;
   gmp_randinit_default(rstate);
-  best_lognorm += expected_rotation_gain ((mpz_poly_ptr) f_raw,
-					  (mpz_poly_ptr) g_raw);
-
+  best_lognorm += expected_rotation_gain (f_raw, g_raw);
 
   if (verbose > 1)
   {

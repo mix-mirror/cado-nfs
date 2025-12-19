@@ -1,7 +1,3 @@
-/* the macro above is for #include <cmath> -- however it must happen
- * first, because it may well be that one of the intermediary headers
- * pull stuff that is dependent on this flag.
- */
 #include "cado.h" // IWYU pragma: keep
 
 /* This compilation units reacts to TRACK_CODE_PATH and uses macros
@@ -11,88 +7,85 @@
  * The WHERE_AM_I_UPDATE macro itself is defined in las-where-am-i.hpp
  */
 
-#include <algorithm>                      // for min, max, max_element
-#include <array>                          // for array, array<>::value_type
-#include <climits>                        // for ULONG_MAX
-#include <cmath>                          // for log, pow, sqrt
-#include <condition_variable>             // for condition_variable
-#include <cstdarg>             // IWYU pragma: keep
-#include <cstdint>     /* AIX wants it first (it's a bug) */
-#include <cstdio>                         // for size_t, fprintf, stderr
-#include <cstdlib>                        // for exit, EXIT_FAILURE, EXIT_SU...
-#include <fstream>                        // for ifstream
-#include <functional>                     // for ref
-#include <iomanip>                        // for operator<<, setprecision
-#include <iostream>                       // for std::cerr
-#include <istream>                        // for operator>>
-#include <list>                           // for list, _List_iterator
-#include <map>                            // for map
-#include <memory>                         // for allocator, shared_ptr, make...
-#include <mutex>                          // for mutex, lock_guard, unique_lock
-#include <ostream>                        // for operator<<, ostringstream
-#include <string>                         // for string, basic_string, opera...
-#include <thread>                         // for thread
-#include <utility>                        // for move, pair
-#include <vector>                         // for vector<>::iterator, vector
+#include <climits>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+
+#include <algorithm>
+#include <array>
+#include <condition_variable>
+#include <fstream>
+#include <functional>
+#include <list>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <utility>
+#include <vector>
 
 #include <dirent.h>
 
-#include <gmp.h>                          // for mpz_srcptr, gmp_vfprintf
+#include <gmp.h>
 #include "fmt/base.h"
+#include "fmt/format.h"
 
-#include "bucket.hpp"                     // for bucket_slice_alloc_defaults
+#include "bucket.hpp"
 #include "cado-sighandlers.h"
 #include "cado_poly.h"
 #include "cxx_mpz.hpp"
-#include "ecm/batch.hpp"                      // for cofac_list, cofac_candidate
-#include "ecm/facul.hpp"                      // for facul_print_stats
+#include "ecm/batch.hpp"
 #include "ecm/facul_strategies_stats.hpp"
 #include "fb-types.hpp"
-#include "fb.hpp"                         // for fb_factorbase::key_type
+#include "fb.hpp"
+#include "gmp_aux.h"
 #include "json.hpp"
-#include "las-auxiliary-data.hpp"         // for report_and_timer, nfs_aux
-#include "las-bkmult.hpp"                 // for buckets_are_full, bkmult_sp...
-#include "las-choose-sieve-area.hpp"      // for choose_sieve_area, never_di...
-#include "las-cofactor.hpp"               // for cofactorization_statistics
-#include "las-config.h"                   // for LOG_BUCKET_REGIONS, BUCKET_...
-#include "las-descent-trees.hpp"          // descent_tree
-#include "las-descent.hpp"                // for postprocess_specialq_descent
-#include "las-divide-primes.hpp"          // for display_bucket_prime_stats
-#include "las-dlog-base.hpp"              // IWYU pragma: keep
+#include "las-auxiliary-data.hpp"
+#include "las-bkmult.hpp"
+#include "las-choose-sieve-area.hpp"
+#include "las-cofactor.hpp"
+#include "las-config.hpp"
+#include "las-divide-primes.hpp"
+#include "las-dlog-base.hpp"
 #include "las-duplicate.hpp"
-#include "las-fill-in-buckets.hpp"        // for downsort_tree, fill_in_buck...
-#include "las-globals.hpp"                // for main_output, base_memory
-#include "las-info.hpp"                   // for las_info, las_info::batch_p...
-#include "las-multiobj-globals.hpp"       // for dlp_descent
-#include "las-norms.hpp"                  // for lognorm_smart, ADJUST_STRAT...
-#include "las-output.hpp"                 // for las_output
-#include "las-parallel.hpp"               // for las_parallel_desc, las_para...
-#include "las-plattice.hpp"               // for plattice_enumerator
-#include "las-process-bucket-region.hpp"  // for process_bucket_region_spawn
-#include "las-qlattice.hpp"               // for qlattice_basis, operator<<
-#include "las-report-stats.hpp"           // for las_report, coarse_las_timers
-#include "las-siever-config.hpp"          // for siever_config::side_config
-#include "las-smallsieve.hpp"             // for small_sieve_activate_many_s...
-#include "las-threads-work-data.hpp"      // for nfs_work, nfs_work::side_data
-#include "las-todo-entry.hpp"             // for las_todo_entry
-#include "las-todo-list.hpp"              // for las_todo_list
-#include "las-where-am-i-proxy.hpp"            // for where_am_I
-#include "las-where-am-i.hpp"             // for where_am_I, WHERE_AM_I_UPDATE
-#include "lock_guarded_container.hpp"     // for lock_guarded_container
-#include "macros.h"                       // for ASSERT_ALWAYS, MAX, iceildiv
-#include "memusage.h"   // PeakMemusage
-#include "misc.h"          // size_disp
+#include "las-fill-in-buckets.hpp"
+#include "las-globals.hpp"
+#include "las-info.hpp"
+#include "las-multiobj-globals.hpp"
+#include "las-norms.hpp"
+#include "las-output.hpp"
+#include "las-parallel.hpp"
+#include "las-plattice.hpp"
+#include "las-process-bucket-region.hpp"
+#include "las-qlattice.hpp"
+#include "las-report-stats.hpp"
+#include "las-side-config.hpp"
+#include "las-sieve-shared-data.hpp"
+#include "las-siever-config.hpp"
+#include "las-smallsieve.hpp"
+#include "las-special-q-task-collection.hpp"
+#include "las-special-q-task.hpp"
+#include "las-threads-work-data.hpp"
+#include "las-todo-list.hpp"
+#include "las-where-am-i-proxy.hpp"
+#include "las-where-am-i.hpp"
+#include "macros.h"
+#include "memusage.h"
+#include "misc.h"
 #include "mpz_poly.h"
-#include "multityped_array.hpp"           // for multityped_array
+#include "multityped_array.hpp"
 #include "params.h"
-#include "relation.hpp"                   // for relation, operator<<
-#include "tdict.hpp"                      // for timetree_t, slot, SIBLING_T...
-#include "threadpool.hpp"                 // for thread_pool, thread_pool::s...
-#include "timing.h"             // for seconds
+#include "relation.hpp"
+#include "special-q.hpp"
+#include "tdict.hpp"
+#include "threadpool.hpp"
+#include "timing.h"
 #include "utils_cxx.hpp"
 #include "verbose.h"
-
-
 
 /*************************** main program ************************************/
 
@@ -100,6 +93,7 @@ static void configure_aliases(cxx_param_list & pl)
 {
     las_info::configure_aliases(pl);
     param_list_configure_alias(pl, "log-bucket-region", "B");
+    param_list_configure_alias(pl, "log-bucket-region-step", "Bi");
     las_output::configure_aliases(pl);
     tdict::configure_aliases(pl);
 }
@@ -116,6 +110,7 @@ static void configure_switches(cxx_param_list & pl)
 
     param_list_configure_switch(pl, "-prepend-relation-time", &prepend_relation_time);
     param_list_configure_switch(pl, "-sync", &sync_at_special_q);
+    param_list_configure_switch(pl, "-sync-thread-pool", &sync_thread_pool);
     param_list_configure_switch(pl, "-never-discard", &never_discard);
     param_list_configure_switch(pl, "-production", &las_production_mode);
 }
@@ -143,6 +138,7 @@ static void declare_usage(cxx_param_list & pl)/*{{{*/
     param_list_decl_usage(pl, "sublat", "modulus for sublattice sieving");
 
     param_list_decl_usage(pl, "log-bucket-region", "set bucket region to 2^x");
+    param_list_decl_usage(pl, "log-bucket-region-step", "set the number of level-(n-1) buckets inside a level-n bucket to 2^x");
 
     siever_config::declare_usage(pl);
 
@@ -150,6 +146,7 @@ static void declare_usage(cxx_param_list & pl)/*{{{*/
     param_list_decl_usage(pl, "file-cofact", "provide file with strategies for the cofactorization step");
     param_list_decl_usage(pl, "prepend-relation-time", "prefix all relation produced with time offset since beginning of special-q processing");
     param_list_decl_usage(pl, "sync", "synchronize all threads at each special-q");
+    param_list_decl_usage(pl, "sync-thread-pool", "synchronize the thread pool (implies -t 1 !!)");
     where_am_I::decl_usage(pl);
     if (dlp_descent) {
         param_list_decl_usage(pl, "recursive-descent", "descend primes recursively");
@@ -164,6 +161,28 @@ static void declare_usage(cxx_param_list & pl)/*{{{*/
     param_list_decl_usage(pl, "production", "Sort of an opposite to -v. Disable all diagnostics except the cheap or critical ones. See #21688 and #21825.");
     verbose_decl_usage(pl);
 }/*}}}*/
+
+struct round_me {
+    slice_index_t initial = 1;
+    slice_index_t increase = 1;
+    template<typename T>
+    static
+    round_me from(T const &)
+    {
+        return { .initial = T::initial, .increase = T::increase };
+    }
+    /*
+    round_me() = default;
+    round_me(round_me const &) = default;
+    round_me& operator=(round_me const &) = default;
+    round_me(round_me &&) = default;
+    round_me& operator=(round_me &&) = default;
+    ~round_me() = default;
+    */
+    slice_index_t operator()(slice_index_t y) const {
+        return std::max(initial, increase * iceildiv(y, increase));
+    }
+};
 
 /* Our fetching of the siever_config fields is definitely wrong here. We
  * should only use logA, logI, and the siever thresholds.
@@ -234,9 +253,9 @@ static size_t expected_memory_usage_per_binding_zone(siever_config const & sc,/*
          */
         more += sizeof(fbroot_t) * nideals;
 
-        verbose_output_print(0, 3 + hush,
-                "# side %d, lim=%lu, %zu fb primes"
-                " (d=%d, %f roots per p if G=S_d): %zuMB\n",
+        verbose_fmt_print(0, 3 + hush,
+                "# side {}, lim={}, {} fb primes"
+                " (d={}, {} roots per p if G=S_d): {}\n",
                 side,
                 sc.sides[side].lim,
                 nideals,
@@ -254,7 +273,6 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
         int nthreads,
         int print)
 {
-    char buf[20];
     int const hush = print ? 0 : 3;
     bkmult_specifier const bkmult = las.get_bk_multiplier();
 
@@ -280,13 +298,14 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
      * 64MB is actually transiently 128MB, then 64MB.
      */
     if (0) {
-        verbose_output_print(0, 3 + hush, "# %d threads: %zuMB\n",
+        verbose_fmt_print(0, 3 + hush, "# {} threads: {}\n",
                 nthreads,
                 (more = nthreads * 0x4801000) >> 20);
         memory += more;
     }
 #endif
 
+    /*
     // toplevel is computed by fb_factorbase::slicing::slicing, based on
     // thresholds in fbK
     int toplevel = -1;
@@ -298,102 +317,161 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
 
     if (toplevel == 0) toplevel++;
 
-    ASSERT_ALWAYS(toplevel == 1 || toplevel == 2);
-
-    /* the code path is radically different depending on toplevel. */
+    ASSERT_ALWAYS(1 <= toplevel && toplevel <= MAX_TOPLEVEL);
+    */
 
     int const nba = NUMBER_OF_BAS_FOR_THREADS(nthreads);
 
-    double m1s, m1l, m2s;
-    size_t s1s, s1l, s2s;
+    std::array<double, MAX_TOPLEVEL + 1> ms, ss;
+    std::array<round_me, MAX_TOPLEVEL + 1> rs;
+    std::array<double, MAX_TOPLEVEL> ml, sl;
+    std::array<round_me, MAX_TOPLEVEL> rl;
 
-    struct round_me {
-        slice_index_t initial;
-        slice_index_t increase;
-        slice_index_t operator()(slice_index_t y) const {
-            return std::max(initial, increase * iceildiv(y, increase));
-        }
-    };
+#if 0
+    double m1s, s1s;
+    round_me round1s;
 
-    round_me round1s, round2s, round1l;
+#if MAX_TOPLEVEL >= 2
+    double m2s, s2s;
+    double m1l, s1l;
+    round_me round2s, round1l;
+#endif
+#if MAX_TOPLEVEL >= 3
+    double m3s, s3s;
+    double m2l, s2l;
+    round_me round3s, round2l;
+#endif
+    static_assert(MAX_TOPLEVEL == 3);
+#endif
+
+
 
     if (do_resieve) {
-        typedef bucket_update_t<1, shorthint_t> T1s;
-        typedef bucket_update_t<2, shorthint_t> T2s;
-        typedef bucket_update_t<1, longhint_t> T1l;
-        typedef bucket_slice_alloc_defaults<1, shorthint_t> W1s;
-        typedef bucket_slice_alloc_defaults<2, shorthint_t> W2s;
-        typedef bucket_slice_alloc_defaults<1, longhint_t> W1l;
-        s2s=sizeof(T2s); m2s=bkmult.get<T2s>();
-        s1s=sizeof(T1s); m1s=bkmult.get<T1s>();
-        s1l=sizeof(T1l); m1l=bkmult.get<T1l>();
-        round1s = round_me { W1s::initial, W1s::increase };
-        round2s = round_me { W2s::initial, W2s::increase };
-        round1l = round_me { W1l::initial, W1l::increase };
+        using T1s = bucket_update_t<1, shorthint_t>;
+        ss[1] = sizeof(T1s);
+        ms[1] = bkmult.get<T1s>();
+        rs[1] = round_me::from(bucket_slice_alloc_defaults<1, shorthint_t>());
+
+#if MAX_TOPLEVEL >= 2
+        using T2s = bucket_update_t<2, shorthint_t>;
+        using T1l = bucket_update_t<1, longhint_t>;
+        ss[2] = sizeof(T2s);
+        ms[2] = bkmult.get<T2s>();
+        rs[2] = round_me::from(bucket_slice_alloc_defaults<2, shorthint_t>());
+        sl[1] = sizeof(T1l);
+        ml[1] = bkmult.get<T1l>();
+        rl[1] = round_me::from(bucket_slice_alloc_defaults<1, longhint_t>());
+#endif
+#if MAX_TOPLEVEL >= 3
+        using T3s = bucket_update_t<3, shorthint_t>;
+        using T2l = bucket_update_t<2, longhint_t>;
+        ss[3] = sizeof(T3s);
+        ms[3] = bkmult.get<T3s>();
+        rs[3] = round_me::from(bucket_slice_alloc_defaults<3, shorthint_t>());
+        sl[2] = sizeof(T2l);
+        ml[2] = bkmult.get<T2l>();
+        rl[2] = round_me::from(bucket_slice_alloc_defaults<2, longhint_t>());
+#endif
+        static_assert(MAX_TOPLEVEL == 3);
     } else {
-        typedef bucket_update_t<1, emptyhint_t> T1s;
-        typedef bucket_update_t<2, emptyhint_t> T2s;
-        typedef bucket_update_t<1, logphint_t> T1l;
-        typedef bucket_slice_alloc_defaults<1, emptyhint_t> W1s;
-        typedef bucket_slice_alloc_defaults<2, emptyhint_t> W2s;
-        typedef bucket_slice_alloc_defaults<1, logphint_t> W1l;
-        s2s=sizeof(T2s); m2s=bkmult.get<T2s>();
-        s1s=sizeof(T1s); m1s=bkmult.get<T1s>();
-        s1l=sizeof(T1l); m1l=bkmult.get<T1l>();
-        round1s = round_me { W1s::initial, W1s::increase };
-        round2s = round_me { W2s::initial, W2s::increase };
-        round1l = round_me { W1l::initial, W1l::increase };
+        using T1s = bucket_update_t<1, emptyhint_t>;
+        ss[1] = sizeof(T1s);
+        ms[1] = bkmult.get<T1s>();
+        rs[1] = round_me::from(bucket_slice_alloc_defaults<1, emptyhint_t>());
+#if MAX_TOPLEVEL >= 2
+        using T2s = bucket_update_t<2, emptyhint_t>;
+        using T1l = bucket_update_t<1, logphint_t>;
+        ss[2] = sizeof(T2s);
+        ms[2] = bkmult.get<T2s>();
+        rs[2] = round_me::from(bucket_slice_alloc_defaults<2, emptyhint_t>());
+        sl[1] = sizeof(T1l);
+        ml[1] = bkmult.get<T1l>();
+        rl[1] = round_me::from(bucket_slice_alloc_defaults<1, logphint_t>());
+#endif      
+#if MAX_TOPLEVEL >= 3
+        using T3s = bucket_update_t<3, emptyhint_t>;
+        using T2l = bucket_update_t<2, logphint_t>;
+        ss[3] = sizeof(T3s);
+        ms[3] = bkmult.get<T3s>();
+        rs[3] = round_me::from(bucket_slice_alloc_defaults<3, emptyhint_t>());
+        sl[2] = sizeof(T2l);
+        ml[2] = bkmult.get<T2l>();
+        rl[2] = round_me::from(bucket_slice_alloc_defaults<2, logphint_t>());
+#endif
     }
 
-    if (toplevel == 2) {
-        // very large factor base primes, between bkthresh1 and lim = we
-        // compute all bucket updates in one go. --> those updates are
-        // bucket_update_t<2, shorthint_t>, that is, an XSIZE2 position
-        // (should be 24 bits, is actually 32) and a short hint.
-        //
-        // For each big bucket region (level-2), we then transform these
-        // updates into updates for the lower-level buckets. We thus
-        // create bucket_update_t<1, longhint_t>'s with the downsort<>
-        // function. The long hint is because we have the full fb_slice
-        // index. the position in such a bucket update is shorter, only
-        // XSIZE1.
+    // very large factor base primes, between bkthresh1 and lim = we
+    // compute all bucket updates in one go. --> those updates are
+    // bucket_update_t<2, shorthint_t>, that is, an XSIZE2 position
+    // (should be 24 bits, is actually 32) and a short hint.
+    //
+    // For each big bucket region (level-2), we then transform these
+    // updates into updates for the lower-level buckets. We thus
+    // create bucket_update_t<1, longhint_t>'s with the downsort<>
+    // function. The long hint is because we have the full fb_slice
+    // index. the position in such a bucket update is shorter, only
+    // XSIZE1.
 
-        // For moderately large factor base primes (between bkthresh and
-        // bkthresh1), we precompute the FK lattices (at some cost), and we
-        // fill the buckets locally with short hints (and short positions:
-        // bucket_update_t<1, shorthint_t>)
+    // For moderately large factor base primes (between bkthresh and
+    // bkthresh1), we precompute the FK lattices (at some cost), and we
+    // fill the buckets locally with short hints (and short positions:
+    // bucket_update_t<1, shorthint_t>)
 
-        for(int side = 0 ; side < las.cpoly->nb_polys ; side++) {
-            if (!sc.sides[side].lim) continue;
-            /* In truth, I sort of know it isn't valid. We've built most
-             * of the stuff on the idea that there's a global "toplevel"
-             * notion, but that barely applies when one of the factor
-             * bases happens to be much smaller than the other one */
-            ASSERT_ALWAYS(K[side].thresholds[2] == sc.sides[side].lim);
-            double const p1 = K[side].thresholds[2];
-            double p0 = K[side].thresholds[1];
-            p0 = std::min(p1, p0);
+
+    for(int side = 0 ; side < las.cpoly->nb_polys ; side++) {
+        if (!sc.sides[side].lim) continue;
+
+        int toplevel = INT_MAX;
+
+        /* Iterate through the factor base, looking for the level at
+         * which a given set of primes is processed by a fill_in_buckets
+         * call, as opposed to a downsort<> call.
+         */
+        for(int fib_level = MAX_TOPLEVEL ; fib_level >= 1 ; fib_level--) {
+            if (K[side].thresholds[fib_level - 1] >= sc.sides[side].lim)
+                continue;
+
+            bool use_precomputed_lattices = false;
+
+            if (toplevel == INT_MAX) {
+                toplevel = fib_level;
+            } else {
+                use_precomputed_lattices = true;
+            }
+
+            double const p1 = K[side].thresholds[fib_level];
+            double const p0 = K[side].thresholds[fib_level - 1];
+            ASSERT_ALWAYS(p0 <= p1);
+
             size_t const nprimes = nprimes_interval(p0, p1);
             double const w = (std::log(std::log(p1)) - std::log(std::log(p0)));
 
             /* we duplicate code that is found in allocate_memory. TODO:
              * refactor that */
-            size_t const nreg = 1UL << (sc.logA - LOG_BUCKET_REGIONS[2]);
-            size_t nup_per_reg = 0.25 * w * BUCKET_REGIONS[2] / nba;
-            /* assume LOG_BUCKET_REGIONS[2] > logI */
+            size_t const nreg = (fib_level == toplevel) ?
+                (1UL << (sc.logA - LOG_BUCKET_REGIONS[fib_level]))
+                : (1 << (LOG_BUCKET_REGIONS[fib_level + 1] - LOG_BUCKET_REGIONS[fib_level]));
+            size_t nup_per_reg = 0.25 * w * BUCKET_REGIONS[fib_level] / nba;
+            /* assume LOG_BUCKET_REGIONS[fib_level] > logI */
             nup_per_reg *= 3;
             nup_per_reg += NB_DEVIATIONS_BUCKET_REGIONS * sqrt(nup_per_reg);
             size_t const nupdates = nup_per_reg * nreg * nba;
             {
-                verbose_output_print(0, 3 + hush,
-                        "# level 2, side %d:"
-                        " %zu primes,"
-                        " room for %zu 2-updates [2s] in %d arrays:"
-                        " %s\n",
-                        side, nprimes, nupdates,
+                verbose_fmt_print(0, 3 + hush,
+                        "# level {}, side {}:"
+                        " {} primes, room for {} {}-updates [{}s] in {} arrays: {}\n",
+                        fib_level, side, nprimes, nupdates,
+                        fib_level, fib_level,
                         nba,
-                        size_disp(more = m2s * nupdates * s2s, buf));
+                        size_disp(more = ms[fib_level] * nupdates * ss[fib_level]));
                 memory += more;
+            }
+            if (use_precomputed_lattices) {
+                verbose_fmt_print(0, 3 + hush,
+                        "# level {}, side {}: {} primes => precomp_plattices: {}\n",
+                        fib_level,
+                        side, nprimes,
+                        size_disp(more = nprimes * sizeof(plattice_enumerator)));
             }
             {
                 /* Count the slice_start pointers as well. We need to know
@@ -401,163 +479,68 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
                  * array. A rough rule of thumb probably works.
                  */
                 size_t const nslices_estim = iceildiv(nprimes >> 16, nba);
-                size_t const nslices_alloc = round2s(nslices_estim);
-                std::ostringstream os;
+                size_t const nslices_alloc = rs[fib_level](nslices_estim);
+                std::string comment;
                 size_t const waste = (nslices_alloc - nslices_estim) * nba * nreg * sizeof(void*);
                 if (waste > (100<<20))
-                    os << " [note: using coarse-grain value of " << nslices_alloc << " slices instead; " << 100.0*(nslices_alloc-nslices_estim)/nslices_alloc << "% waste ("<<(waste>>20)<<" MB) !]";
-                verbose_output_print(0, 3 + hush,
-                        "# level 2, side %d:"
-                        " expect %zu slices per array,"
-                        " %zu pointers each, in %d arrays:"
-                        " %s%s\n",
+                    comment = fmt::format(" [note: using coarse-grain value of "
+                            "{} slices instead; {}% waste ({} MB) !]",
+                            nslices_alloc,
+                            100.0*double_ratio(nslices_alloc-nslices_estim, nslices_alloc),
+                            (waste>>20));
+                verbose_fmt_print(0, 3 + hush,
+                        "# level {}, side {}:"
+                        " expect {} slices per array,"
+                        " {} pointers each, in {} arrays:"
+                        " {}{}\n",
+                        fib_level,
                         side,
                         nslices_estim,
                         nreg,
                         nba,
-                        size_disp(more = nba * nreg * MAX(nslices_estim, nslices_alloc) * sizeof(void*), buf),
-                        os.str().c_str());
+                        size_disp(more = nba * nreg * MAX(nslices_estim, nslices_alloc) * sizeof(void*)),
+                        comment);
                 memory += more;
             }
-            {
-                // how many downsorted updates are alive at a given point in
-                // time ?
-                size_t const nupdates_D = nupdates >> 8;
-                verbose_output_print(0, 3 + hush,
-                        "# level 1, side %d:"
-                        " %zu downsorted 1-updates [1l]: %s\n",
-                        side, nupdates_D,
-                        size_disp(more = m1l * nupdates_D * s1l, buf));
-                memory += more;
-            }
-            {
-                size_t const nslices_estim = 1;
-                size_t const nslices_alloc = round1l(nslices_estim);
-                size_t const nreg = 1 << (LOG_BUCKET_REGIONS[2] - LOG_BUCKET_REGIONS[1]);
-                std::ostringstream os;
-                size_t const waste = (nslices_alloc - nslices_estim) * nba * nreg * sizeof(void*);
-                if (waste > (100<<20))
-                    os << " [note: using coarse-grain value of " << nslices_alloc << " slices instead; " << 100.0*(nslices_alloc-nslices_estim)/nslices_alloc << "% waste ("<<(waste>>20)<<" MB) !]";
-                verbose_output_print(0, 3 + hush,
-                        "# level 1, side %d:"
-                        " expect %zu slices per array,"
-                        " %zu pointers each, in %d arrays: %s%s\n",
-                        side,
-                        nslices_estim,
-                        nreg,
-                        nba,
-                        size_disp(more = nba * nreg * MAX(nslices_estim, nslices_alloc) * sizeof(void*), buf),
-                        os.str().c_str());
-                memory += more;
-            }
-        }
-
-        for(int side = 0 ; side < las.cpoly->nb_polys ; side++) {
-            if (!sc.sides[side].lim) continue;
-            double const p1 = K[side].thresholds[1];
-            double const p0 = K[side].thresholds[0];
-            size_t const nprimes = nprimes_interval(p0, p1);
-            double const w = (std::log(std::log(p1)) - std::log(std::log(p0)));
-
-            size_t const nreg = 1 << (LOG_BUCKET_REGIONS[2] - LOG_BUCKET_REGIONS[1]);
-            size_t nup_per_reg = 0.25 * w * BUCKET_REGIONS[1] / nba;
-            /* assume LOG_BUCKET_REGIONS[1] > logI -- if it's not the
-             * case, the count will not be too wrong anyway. */
-            nup_per_reg *= 3;
-            nup_per_reg += NB_DEVIATIONS_BUCKET_REGIONS * sqrt(nup_per_reg);
-            size_t const nupdates = nup_per_reg * nreg * nba;
-            verbose_output_print(0, 3 + hush,
-                    "# level 1, side %d:"
-                    " %zu primes,"
-                    " %zu 1-updates [1s] in %d arrays:"
-                    " %s\n",
-                    side, nprimes, nupdates, nba,
-                    size_disp(more = m1s * nupdates * s1s, buf));
-            memory += more;
-            verbose_output_print(0, 3 + hush,
-                    "# level 1, side %d:"
-                    " %zu primes => precomp_plattices: %s\n",
-                    side, nprimes,
-                    size_disp(more = nprimes * sizeof(plattice_enumerator), buf));
-            memory += more;
-
-            {
-                /* Count the slice_start pointers as well. We need to know
-                 * how many slices will be processed in each bucket
-                 * array. A rough rule of thumb probably works.
-                 */
-                size_t const nslices_estim = iceildiv(nprimes >> 16, nba);
-                size_t const nslices_alloc = round1s(nslices_estim);
-                std::ostringstream os;
-                size_t const waste = (nslices_alloc - nslices_estim) * nba * nreg * sizeof(void*);
-                if (waste > (100<<20))
-                    os << " [note: using coarse-grain value of " << nslices_alloc << " slices instead; " << 100.0*(nslices_alloc-nslices_estim)/nslices_alloc << "% waste ("<<(waste>>20)<<" MB) !]";
-                verbose_output_print(0, 3 + hush,
-                        "# level 1, side %d:"
-                        " expect %zu slices per array,"
-                        " %zu pointers each, in %d arrays:"
-                        " %s%s\n",
-                        side,
-                        nslices_estim,
-                        nreg,
-                        nba,
-                        size_disp(more = nba * nreg * MAX(nslices_estim, nslices_alloc) * sizeof(void*), buf),
-                        os.str().c_str());
-                memory += more;
-            }
-        }
-    } else if (toplevel == 1) {
-        // *ALL* bucket updates are computed in one go as
-        // bucket_update_t<1, shorthint_t>
-        for(int side = 0 ; side < las.cpoly->nb_polys ; side++) {
-            if (!sc.sides[side].lim) continue;
-            ASSERT_ALWAYS(K[side].thresholds[1] == sc.sides[side].lim);
-            double const p1 = K[side].thresholds[1];
-            double const p0 = K[side].thresholds[0];
-            size_t const nprimes = nprimes_interval(p0, p1);
-            double const w = (std::log(std::log(p1)) - std::log(std::log(p0)));
-
-            /* we duplicate code that is found in allocate_memory. TODO:
-             * refactor that */
-            size_t const nreg = 1UL << (sc.logA - LOG_BUCKET_REGIONS[1]);
-            size_t nup_per_reg = 0.25 * w * BUCKET_REGIONS[1] / nba;
-            /* assume LOG_BUCKET_REGIONS[1] > logI -- if it's not the
-             * case, the count will not be too wrong anyway. */
-            nup_per_reg *= 3;
-            nup_per_reg += NB_DEVIATIONS_BUCKET_REGIONS * sqrt(nup_per_reg);
-            size_t nupdates = nup_per_reg * nreg * nba;
-            nupdates += NB_DEVIATIONS_BUCKET_REGIONS * sqrt(nupdates);
-            verbose_output_print(0, 3 + hush,
-                    "# level 1, side %d:"
-                    " %zu primes,"
-                    " %zu 1-updates [1s] in %d arrays:"
-                    " %s\n",
-                    side, nprimes, nupdates, nba,
-                    size_disp(more = m1s * nupdates * s1s, buf));
-            memory += more;
-            {
-                /* Count the slice_start pointers as well. We need to know
-                 * how many slices will be processed in each bucket
-                 * array. A rough rule of thumb probably works.
-                 */
-                size_t const nslices_estim = iceildiv(nprimes >> 16, nba);
-                size_t const nslices_alloc = round1s(nslices_estim);
-                std::ostringstream os;
-                size_t const waste = (nslices_alloc - nslices_estim) * nba * nreg * sizeof(void*);
-                if (waste > (100<<20))
-                    os << " [note: using coarse-grain value of " << nslices_alloc << " slices instead; " << 100.0*(nslices_alloc-nslices_estim)/nslices_alloc << "% waste ("<<(waste>>20)<<" MB) !]";
-                verbose_output_print(0, 3 + hush,
-                        "# level 1, side %d:"
-                        " expect %zu slices per array,"
-                        " %zu pointers each, in %d arrays:"
-                        " %s%s\n",
-                        side,
-                        nslices_estim,
-                        nreg,
-                        nba,
-                        size_disp(more = nba * nreg * MAX(nslices_estim, nslices_alloc) * sizeof(void*), buf),
-                        os.str().c_str());
-                memory += more;
+            for(int level = fib_level - 1 ; level >= 1 ; level--) {
+                {
+                    // how many downsorted updates are alive at a given point in
+                    // time ?
+                    size_t const nupdates_D = nupdates >> 8;
+                    verbose_fmt_print(0, 3 + hush,
+                            "# level {}, side {}:"
+                            " {} downsorted {}-updates [{}l]: {}\n",
+                            level,
+                            side, nupdates_D,
+                            level, level,
+                            size_disp(more = ml[level] * nupdates_D * sl[level]));
+                    memory += more;
+                }
+                {
+                    size_t const nslices_estim = 1;
+                    size_t const nslices_alloc = rl[level](nslices_estim);
+                    size_t const nreg = 1 << (LOG_BUCKET_REGIONS[level + 1] - LOG_BUCKET_REGIONS[level]);
+                    std::string comment;
+                    size_t const waste = (nslices_alloc - nslices_estim) * nba * nreg * sizeof(void*);
+                    if (waste > (100<<20))
+                        comment = fmt::format(" [note: using coarse-grain value of "
+                                "{} slices instead; {}% waste ({} MB) !]",
+                                nslices_alloc,
+                                100.0*double_ratio(nslices_alloc-nslices_estim, nslices_alloc),
+                                (waste>>20));
+                    verbose_fmt_print(0, 3 + hush,
+                            "# level {}, side {}:"
+                            " expect {} slices per array,"
+                            " {} pointers each, in {} arrays: {}{}\n",
+                            level,
+                            side,
+                            nslices_estim,
+                            nreg,
+                            nba,
+                            size_disp(more = nba * nreg * MAX(nslices_estim, nslices_alloc) * sizeof(void*)),
+                            comment);
+                    memory += more;
+                }
             }
         }
     }
@@ -571,14 +554,13 @@ static size_t expected_memory_usage_per_subjob_worst_logI(siever_config const & 
      * the las_info structure is set.
      */
     int const hush = print ? 0 : 3;
-    char buf[20];
     /* do the estimate based on the typical config stuff provided.
      * This is most often going to give a reasonable rough idea anyway.
      */
     siever_config sc = sc0;
     /* See for which I we'll have the most expensive setting */
     int logImin, logImax;
-    if (las.adjust_strategy == 2) {
+    if (sc0.adjust_strategy == 2) {
         logImin = (1+sc.logA)/2 - ADJUST_STRATEGY2_MAX_SQUEEZE;
         logImax = (1+sc.logA)/2 - ADJUST_STRATEGY2_MIN_SQUEEZE;
     } else {
@@ -588,15 +570,15 @@ static size_t expected_memory_usage_per_subjob_worst_logI(siever_config const & 
     int logI_max_memory = 0;
     for(int logI = logImin ; logI <= logImax ; logI++) {
         sc.logI = logI;
-        verbose_output_print(0, 3 + hush,
-                "# Expected memory usage per subjob for logI=%d [%d threads]:\n",
+        verbose_fmt_print(0, 3 + hush,
+                "# Expected memory usage per subjob for logI={} [{} threads]:\n",
                 sc.logI, nthreads);
 
         size_t const memory = expected_memory_usage_per_subjob(sc, las, nthreads, print);
 
-        verbose_output_print(0, 2 + hush,
-                "# Expected memory usage per subjob for logI=%d: %s\n",
-                sc.logI, size_disp(memory, buf));
+        verbose_fmt_print(0, 2 + hush,
+                "# Expected memory usage per subjob for logI={}: {}\n",
+                sc.logI, size_disp(memory));
 
         if (memory > max_memory) {
             logI_max_memory = sc.logI;
@@ -604,10 +586,10 @@ static size_t expected_memory_usage_per_subjob_worst_logI(siever_config const & 
         }
     }
     if (logImin != logImax || main_output->verbose < 2 + hush)
-        verbose_output_print(0, 0 + hush,
-                "# Expected memory use per subjob (max reached for logI=%d):"
-                " %s\n",
-                logI_max_memory, size_disp(max_memory, buf));
+        verbose_fmt_print(0, 0 + hush,
+                "# Expected memory use per subjob (max reached for logI={}):"
+                " {}\n",
+                logI_max_memory, size_disp(max_memory));
     return max_memory;
 }/*}}}*/
 
@@ -621,12 +603,11 @@ static size_t expected_memory_usage(siever_config const & sc,/*{{{*/
      * assume that this parallel setting is now complete.
      */
     int const hush = print ? 0 : 3;
-    char buf[20];
 
     size_t const fb_memory = expected_memory_usage_per_binding_zone(sc, las, print);
-    verbose_output_print(0, 0 + hush,
-            "# Expected memory usage per binding zone for the factor base: %s\n",
-            size_disp(fb_memory, buf));
+    verbose_fmt_print(0, 0 + hush,
+            "# Expected memory usage per binding zone for the factor base: {}\n",
+            size_disp(fb_memory));
 
     size_t const subjob_memory = expected_memory_usage_per_subjob_worst_logI(sc, las, las.number_of_threads_per_subjob(), print);
 
@@ -637,65 +618,84 @@ static size_t expected_memory_usage(siever_config const & sc,/*{{{*/
     memory *= las.number_of_memory_binding_zones();
     memory += base_memory;
 
-    verbose_output_print(0, 0 + hush,
-            "# Expected memory use for %d binding zone(s) and %d %d-threaded jobs per zone, counting %zu MB of base footprint: %s\n",
+    verbose_fmt_print(0, 0 + hush,
+            "# Expected memory use for {} binding zone(s) and {} {}-threaded jobs per zone, counting {} MB of base footprint: {}\n",
             las.number_of_memory_binding_zones(),
             las.number_of_subjobs_per_memory_binding_zone(),
             las.number_of_threads_per_subjob(),     /* per subjob, always */
             base_memory >> 20,
-            size_disp(memory, buf));
+            size_disp(memory));
 
     return memory;
 
 }/*}}}*/
 
-static void check_whether_q_above_lare_prime_bound(siever_config const & conf, las_todo_entry const & doing)/*{{{*/
+static void check_whether_q_above_large_prime_bound(siever_config const & conf, special_q const & doing)/*{{{*/
 {
-    /* Check whether q is larger than the large prime bound.
+    /* Check whether q has a factor larger than the large prime bound.
      * This can create some problems, for instance in characters.
      * By default, this is not allowed, but the parameter
      * -allow-largesq is a by-pass to this test.
      */
     if (allow_largesq) return;
 
-    if (mpz_sizeinbase(doing.p, 2) > conf.sides[doing.side].lpb) {
-        fmt::print(stderr, "ERROR: The special q ({} bits) is larger than the "
-                "large prime bound on side {} ({} bits).\n",
-                (int) mpz_sizeinbase(doing.p, 2),
-                doing.side,
-                conf.sides[doing.side].lpb);
-        fmt::print(stderr, "       You can disable this check with "
-                "the -allow-largesq argument,\n");
-        fmt::print(stderr, "       It is for instance useful for the "
-                "descent.\n");
-        fmt::print(stderr, "       Use tasks.sieve.allow_largesq=true.\n");
-        exit(EXIT_FAILURE);
+    if (doing.is_prime()) {
+        /* Note: a prime special-q will have a 1-item prime_factors list,
+         * but this item will be zero if the special-q does not fit in
+         * 64 bits */
+        if (mpz_sizeinbase(doing.p, 2) > conf.sides[doing.side].lpb) {
+            fmt::print(stderr, "ERROR: The special q ({} bits) is larger than"
+                    " the large prime bound on side {} ({} bits).\n",
+                    (int) mpz_sizeinbase(doing.p, 2),
+                    doing.side,
+                    conf.sides[doing.side].lpb);
+            fmt::print(stderr, "       You can disable this check with "
+                    "the -allow-largesq argument,\n");
+            fmt::print(stderr, "       It is for instance useful for the "
+                    "descent.\n");
+            fmt::print(stderr, "       Use tasks.sieve.allow_largesq=true.\n");
+            exit(EXIT_FAILURE);
+        }
+    } else for (auto const & f: doing.prime_factors) {
+        if ((unsigned int) nbits(f) > conf.sides[doing.side].lpb) {
+            fmt::print(stderr, "ERROR: The special q ({} bits) has a factor {}"
+                    " ({} bits) which is larger than"
+                    " the large prime bound on side {} ({} bits).\n",
+                    (int) mpz_sizeinbase(doing.p, 2),
+                    f, nbits(f),
+                    doing.side,
+                    conf.sides[doing.side].lpb);
+            fmt::print(stderr, "       You can disable this check with "
+                    "the -allow-largesq argument,\n");
+            fmt::print(stderr, "       It is for instance useful for the "
+                    "descent.\n");
+            fmt::print(stderr, "       Use tasks.sieve.allow_largesq=true.\n");
+            exit(EXIT_FAILURE);
+        }
     }
 }
 /*}}}*/
 
-static void check_whether_special_q_is_root(cado_poly_srcptr cpoly, las_todo_entry const & doing)/*{{{*/
+static void check_whether_special_q_is_root(cado_poly_srcptr cpoly, special_q const & doing)/*{{{*/
 {
     cxx_mpz const & p(doing.p);
     cxx_mpz const & r(doing.r);
     ASSERT_ALWAYS(mpz_poly_is_root(cpoly->pols[doing.side], r, p));
 }
 /*}}}*/
-static void per_special_q_banner(las_todo_entry const & doing)
+static void per_special_q_banner(special_q const & doing)
 {
     // arrange so that we don't have the same header line as the one
     // which prints the q-lattice basis
-    verbose_output_print(0, 2, "#\n");
-    std::ostringstream os;
-    os << doing;
-    verbose_output_print(0, 1, "# Now sieving %s\n", os.str().c_str());
+    verbose_fmt_print(0, 2, "#\n");
+    verbose_fmt_print(0, 1, "# Now sieving {}\n", doing);
 }
 
 /* This is the core of the sieving routine. We do fill-in-buckets,
  * downsort, apply-buckets, lognorm computation, small sieve computation,
  * and survivor search and detection, all from here.
  */
-static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofac> wc_p, std::shared_ptr<nfs_aux> aux_p, thread_pool & pool)/*{{{*/
+static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofac> const & wc_p, std::shared_ptr<nfs_aux> const & aux_p, thread_pool & pool)/*{{{*/
 {
     int const nsides = ws.sides.size();
 
@@ -707,7 +707,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
     if (main_output->verbose >= 2) {
         verbose_output_start_batch();
         for (int side = 0; side < nsides; ++side) {
-            verbose_output_print (0, 1, "# f_%d'(x) = ", side);
+            verbose_fmt_print (0, 1, "# f_{}'(x) = ", side);
             mpz_poly_fprintf(main_output->output, ws.sides[side].lognorms.fij);
         }
         verbose_output_end_batch();
@@ -717,7 +717,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
     /* TODO: is there a way to share this in sublat mode ? */
 
-    multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS> precomp_plattice(nsides);
+    std::vector<cado::multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS - 1>> precomp_plattices(nsides);
 
     {
         {
@@ -731,9 +731,9 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             nfs_work::side_data  const& wss(ws.sides[side]);
             if (wss.no_fb()) continue;
 
-            fill_in_buckets_toplevel(ws, aux, pool, side, w);
+            fill_in_buckets_toplevel_multiplex(ws, aux, pool, side, w);
 
-            fill_in_buckets_prepare_plattices(ws, pool, side, precomp_plattice);
+            fill_in_buckets_prepare_plattices(ws, pool, side, precomp_plattices[side]);
 
         }
 
@@ -756,7 +756,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
                     nfs_work::side_data & wss(ws.sides[side]);
                     // if (wss.no_fb()) return;
 
-                    small_sieve_init(wss.ssd,
+                    wss.ssd->small_sieve_init(
                             wss.fbs->small_sieve_entries.resieved,
                             wss.fbs->small_sieve_entries.rest,
                             ws.conf.logI,
@@ -765,18 +765,18 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
                             ws.Q,
                             wss.lognorms.scale);
 
-                    small_sieve_info("small sieve", side, wss.ssd);
+                    wss.ssd->small_sieve_info("small sieve", side);
 
                     if (ws.toplevel == 1) {
                         /* when ws.toplevel > 1, this start_many call is done
                          * several times.
                          */
                         SIBLING_TIMER(timer, "small sieve start positions ");
-                        small_sieve_prepare_many_start_positions(wss.ssd,
+                        wss.ssd->small_sieve_prepare_many_start_positions(
                                 0,
                                 std::min(SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE, ws.nb_buckets[1]),
                                 ws.conf.logI, ws.Q.sublat);
-                        small_sieve_activate_many_start_positions(wss.ssd);
+                        wss.ssd->small_sieve_activate_many_start_positions();
                     }
             },0);
         }
@@ -785,11 +785,11 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 
         pool.drain_queue(0);
 
-        ws.check_buckets_max_full<shorthint_t>(ws.toplevel);
-        ws.check_buckets_max_full<emptyhint_t>(ws.toplevel);
+        ws.check_buckets_max_full_toplevel(ws.toplevel);
+
         auto exc = pool.get_exceptions<buckets_are_full>(0);
         if (!exc.empty())
-            throw *std::max_element(exc.begin(), exc.end());
+            throw *std::ranges::max_element(exc);
     }
 
     {
@@ -805,18 +805,30 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             // If toplevel = 1, then this is just processing all bucket
             // regions.
             size_t  const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
+            static_assert(MAX_TOPLEVEL == 3);
             for (int i = 0; i < ws.nb_buckets[ws.toplevel]; i++) {
+                /* Dividing by BRS[1] is actually correct if we want to
+                 * fill the first_region0_index parameter. Of course we
+                 * must make sure that for the recursive downsort, this
+                 * doesn't entail an extra multiplication (e.g. by
+                 * BRS[2]/BRS[1]. XXX we must check this!
+                 */
                 switch (ws.toplevel) {
+#if MAX_TOPLEVEL >= 2
                     case 2:
                         downsort_tree<1>(ws, wc_p, aux_p, pool,
                                 i, i*BRS[2]/BRS[1],
-                                precomp_plattice, w);
+                                precomp_plattices, w);
                         break;
+#endif
+
+#if MAX_TOPLEVEL >= 3
                     case 3:
                         downsort_tree<2>(ws, wc_p, aux_p, pool, i,
                                 i*BRS[3]/BRS[1],
-                                precomp_plattice, w);
+                                precomp_plattices, w);
                         break;
+#endif
                     default:
                         ASSERT_ALWAYS(0);
                 }
@@ -836,10 +848,14 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
 }/*}}}*/
 
 /* This returns false if the special-q was discarded */
-static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_aux> aux_p, thread_pool & pool)/*{{{*/
+static bool
+do_one_special_q(
+        las_info & las,
+        nfs_work & ws,
+        std::shared_ptr<nfs_aux> const & aux_p,
+        thread_pool & pool)/*{{{*/
 {
     nfs_aux & aux(*aux_p);
-    ws.Q.doing = aux.doing;     /* will be set by choose_sieve_area anyway */
 
     check_whether_special_q_is_root(las.cpoly, aux.doing);
 
@@ -852,16 +868,18 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
     TIMER_CATEGORY(timer_special_q, bookkeeping());
 
     /* By choosing the sieve area, we trigger the setup of most of the
-     * per-special-q fields.
+     * per-special-q fields: In particular, this sets ws.conf, ws.Q, and
+     * ws.J.
+     *
      */
     if (!choose_sieve_area(las, aux_p, aux.doing, ws.conf, ws.Q, ws.J))
         return false;
 
-    check_whether_q_above_lare_prime_bound(ws.conf, aux.doing);
+    check_whether_q_above_large_prime_bound(ws.conf, aux.doing);
 
     BOOKKEEPING_TIMER(timer_special_q);
 
-    ws.prepare_for_new_q(las);
+    ws.prepare_for_new_q(las, &aux.doing);
 
     /* the where_am_I structure is store in nfs_aux. We have a few
      * adjustments to make, and we want to make sure that the threads,
@@ -889,24 +907,21 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
         rep.total_logI += ws.conf.logI;
         rep.total_J += ws.J;
 
-        std::ostringstream extra;
-        if (ws.Q.doing.depth)
-            extra << " # within descent, currently at depth " << ws.Q.doing.depth;
+        std::string extra;
+        if (ws.task->depth())
+            extra = fmt::format(" # within descent, currently at depth ", ws.task->depth());
 
         /* should stay consistent with DUPECHECK line printed in
          * sq_finds_relation() */
-        std::ostringstream os;
-        os << ws.Q;
-        verbose_output_vfprint(0, 2, gmp_vfprintf,
-                "# "
-                "Sieving %s; I=%u; J=%u;%s\n",
-                os.str().c_str(),
-                1u << ws.conf.logI, ws.J, extra.str().c_str());
+        verbose_fmt_print(0, 2,
+                "# Sieving {}; I={}; J={};{}\n",
+                ws.Q,
+                1U << ws.conf.logI, ws.J, extra);
 
-        if (!las.allow_composite_q && !ws.Q.doing.is_prime()) {
-            verbose_output_vfprint(0, 1, gmp_vfprintf,
-                    "# Warning, q=%Zd is not prime\n",
-                    (mpz_srcptr) ws.Q.doing.p);
+        if (!las.allow_composite_q() && !ws.Q.doing.is_prime()) {
+            verbose_fmt_print(0, 1,
+                    "# Warning, q={} is not prime\n",
+                    ws.Q.doing.p);
         }
     }
 
@@ -921,7 +936,8 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
                     continue;
                 ws.Q.sublat.i0 = i_cong;
                 ws.Q.sublat.j0 = j_cong;
-                verbose_output_print(0, 1, "# Sublattice (i,j) == (%u, %u) mod %u\n",
+                verbose_fmt_print(0, 1,
+                        "# Sublattice (i,j) == ({}, {}) mod {}\n",
                         ws.Q.sublat.i0, ws.Q.sublat.j0, ws.Q.sublat.m);
             }
             do_one_special_q_sublat(ws, wc_p, aux_p, pool);
@@ -933,7 +949,7 @@ static bool do_one_special_q(las_info & las, nfs_work & ws, std::shared_ptr<nfs_
      */
     for(auto & wss : ws.sides) {
         wss.precomp_plattice_dense_clear();
-        small_sieve_clear(wss.ssd);
+        wss.ssd->small_sieve_clear();
     }
 
     return true;
@@ -958,65 +974,106 @@ static void prepare_timer_layout_for_multithreaded_tasks(timetree_t & timer,
 #endif
 }
 
-struct ps_params {
-    std::shared_ptr<cofac_list> M;
-    las_info & las;
-    ps_params(std::shared_ptr<cofac_list> M, las_info & las) : M(M), las(las) {}
-};
-
-void las_info::batch_print_survivors_t::doit()
+static void print_survivors_job(las_info & las)
 {
-    for(std::unique_lock<std::mutex> foo(mm);!todo.empty() || !done;) {
-        cv.wait(foo);
+    las_info::batch_print_survivors_t & B(las.batch_print_survivors);
+    std::unique_lock<std::mutex> foo(B.mm);
+    for (;;) {
+        decltype(las.survivors.L) Lloc;
 
-        /* This is both for spurious wakeups and for the finish condition */
-        for( ; !todo.empty() ; ) {
+        for( ; las.survivors.get_size() < B.filesize ; )
+            B.cv.wait(foo);
 
-            /* We have the lock held at this point */
-
-            std::string const f = std::string(filename) + "." + std::to_string(counter++);
-            std::string const f_part = f + ".part";
-
-            cofac_list const M = std::move(todo.front());
-
-            todo.pop_front();
-
-            /* Now we temporarily unlock foo. */
-            foo.unlock();
-
-            FILE * out = fopen(f_part.c_str(), "w");
-            las_todo_entry const * curr_sq = NULL;
-            for (auto const &s : M) {
-                if (s.doing_p != curr_sq) {
-                    curr_sq = s.doing_p;
-                    fmt::print(out,
-                            "# q = ({}, {}, {})\n",
-                            s.doing_p->p,
-                            s.doing_p->r,
-                            s.doing_p->side);
-                }
-                fmt::print(out, "{} {}", s.a, s.b);
-                for(auto const &c: s.cofactor)
-                    fmt::print(out, " {}", c);
-                fmt::print(out, "\n");
+        {
+            /* we want to pull as much as we can from las.survivors, and
+             * store it for local processing. We need the lock on
+             * las.survivors to do this. We don't technically need to
+             * keep the lock on B.mm, but it won't be of any use while we
+             * work, so we might as well keep it.
+             */
+            size_t locsize = 0;
+            const std::lock_guard<std::mutex> dummy(las.survivors.mm);
+            for( ; !las.survivors.L.empty() && locsize <= B.filesize ; ) {
+                /* See how many survivors I have in the front list, and
+                 * pull only as much as we need. Possibly all, but not
+                 * necessarily.
+                 */
+                auto & F = las.survivors.L.front();
+                auto it = F.second.begin();
+                for( ; locsize <= B.filesize && it != F.second.end() ; ++it)
+                    ++locsize;
+                decltype(F.second) M;
+                M.splice(M.end(), F.second, F.second.begin(), it);
+                Lloc.emplace_back(F.first, std::move(M));
+                if (F.second.empty())
+                    las.survivors.L.pop_front();
             }
-            fclose(out);
-            int const rc = rename(f_part.c_str(), f.c_str());
-            WARN_ERRNO_DIAG(rc != 0, "rename(%s, %s)", f_part.c_str(), f.c_str());
+            if (locsize == 0)
+                return;
 
-            foo.lock();
+            /* if las.survivors.size is SIZE_MAX, we're in drain mode and
+             * all printers are either waiting, or will check
+             * las.survivors.get_size() before going to wait. In the
+             * other (normal) case, it might make sense to wake up
+             * another printer thread while we're busy printing here.
+             */
+            if (las.survivors.size != SIZE_MAX) {
+                las.survivors.size -= locsize;
+                if (las.survivors.size)
+                    B.cv.notify_one();
+            }
         }
+
+        auto const f = fmt::format("{}.{}", B.filename, B.counter++);
+
+        /* Now we temporarily unlock foo. */
+        foo.unlock();
+        auto const f_part = f + ".part";
+        auto out = fopen_helper(f_part, "w");
+        for(auto const & m : Lloc) {
+            special_q const & doing(m.first);
+            fmt::print(out.get(), "# q = ({}, {}, {})\n",
+                    doing.p, doing.r, doing.side);
+            for(auto const & s : m.second) {
+                fmt::print(out.get(),
+                        "{} {} {}\n", s.a, s.b, join(s.cofactor, " "));
+            }
+        }
+        int const rc = rename(f_part.c_str(), f.c_str());
+        WARN_ERRNO_DIAG(rc != 0, "rename(%s, %s)", f_part.c_str(), f.c_str());
+        foo.lock();
     }
 }
 
-static void print_survivors_job(las_info & las)
+
+/* This is only used for batch, and also batch-print-survivors. We just
+ * collected some survivors in ws.cofac_candidates. We're going to move
+ * them to las.L, with the final outcome being either:
+ *  - batch cofactoring at the end of las
+ *  - printing, via one of the printing threads.
+ *
+ * So we're going to handle a pair (special q, list of (a,b)'s).
+ *
+ * ws.cofac_candidates is empty after this function.
+ */
+static void transfer_local_cofac_candidates_to_global(las_info & las, nfs_work & ws)
 {
-    las.batch_print_survivors.doit();
+    if (ws.cofac_candidates.empty())
+        return;
+
+    las.survivors.append(ws.Q.doing, std::move(ws.cofac_candidates));
+
+    if (!las.batch_print_survivors.filename)
+        return;
+
+    if (las.survivors.size >= las.batch_print_survivors.filesize) {
+        /* We need to print. Wake a thread to do it */
+        las.batch_print_survivors.cv.notify_one();
+    }
 }
 
 
-
-static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_and_timer & global_rt)/*{{{*/
+static void las_subjob(las_info & las, int subjob, report_and_timer & global_rt)/*{{{*/
 {
     where_am_I w MAYBE_UNUSED;
     WHERE_AM_I_UPDATE(w, plas, &las);
@@ -1035,8 +1092,8 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
          * queue 2: things that we join almost immediately, but are
          * multithreaded nevertheless: alloc buckets, ...
          */
-        thread_pool pool(las.number_of_threads_per_subjob(), cumulated_wait_time, 3);
-        nfs_work workspaces(las);
+        thread_pool pool(las.number_of_threads_per_subjob(), cumulated_wait_time, 3, sync_thread_pool);
+        nfs_work ws(las);
 
         /* {{{ Doc on todo list handling
          * The function las_todo_feed behaves in different
@@ -1054,43 +1111,14 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
          * only if the todo list is empty. }}} */
 
         for(;;) {
-            {
-                std::lock_guard<std::mutex> const foo(protect_global_exit_semaphore);
-                if (global_exit_semaphore)
-                    break;
-            }
+            if (global_exit_semaphore)
+                break;
+
             main_output->fflush();
-            las_todo_entry * doing_p = todo.feed_and_pop(las.rstate);
-            if (!doing_p) break;
-            las_todo_entry& doing(*doing_p);
 
-            if (dlp_descent) {
-                /* If the next special-q to try is a special marker, it means
-                 * that we're done with a special-q we started before, including
-                 * all its spawned sub-special-q's. Indeed, each time we start a
-                 * special-q from the todo list, we replace it by a special
-                 * marker. But newer special-q's may enver the todo list in turn
-                 * (pushed with las_todo_push_withdepth).
-                 */
-                if (todo.is_closing_brace(doing)) {
-                    las.tree.done_node();
-                    if (las.tree.depth() == 0) {
-                        if (recursive_descent) {
-                            /* BEGIN TREE / END TREE are for the python script */
-                            fmt::print(main_output->output, "# BEGIN TREE\n");
-                            las.tree.display_last_tree(main_output->output);
-                            fmt::print(main_output->output, "# END TREE\n");
-                        }
-                        las.tree.visited.clear();
-                    }
-                    continue;
-                }
+            auto * task = las.tree->pull();
 
-                /* pick a new entry from the stack, and do a few sanity checks */
-                todo.push_closing_brace(doing.depth);
-
-                las.tree.new_node(doing);
-            }
+            if (!task) break;
 
             /* maybe examine what we have here in the todo list, and
              * decide on the relevance of creating a new output object */
@@ -1127,7 +1155,7 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
                      * since it is an essential property ot the timer trees
                      * that the root of the trees must not have a nontrivial
                      * category */
-                    auto aux_p = std::make_shared<nfs_aux>(las, doing, rel_hash_p, las.number_of_threads_per_subjob());
+                    auto aux_p = std::make_shared<nfs_aux>(las, *task, rel_hash_p, las.number_of_threads_per_subjob());
                     nfs_aux & aux(*aux_p);
                     las_report & rep(aux.rt.rep);
                     timetree_t & timer_special_q(aux.rt.timer);
@@ -1138,7 +1166,7 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
 
                     prepare_timer_layout_for_multithreaded_tasks(timer_special_q, las.cpoly->nb_polys);
 
-                    bool const done = do_one_special_q(las, workspaces, aux_p, pool);
+                    bool const done = do_one_special_q(las, ws, aux_p, pool);
 
                     if (!done) {
                         /* Then we don't even keep track of the time, it's
@@ -1151,63 +1179,9 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
                     /* At this point we no longer risk an exception,
                      * therefore it is safe to tinker with the todo list
                      */
-                    if (dlp_descent)
-                        postprocess_specialq_descent(las, todo, doing, timer_special_q);
+                    las.tree->postprocess(task, las.config_pool.max_descent_attempts_allowed(), timer_special_q);
 
-                    if (!workspaces.cofac_candidates.empty()) {
-                        {
-                            std::lock_guard<std::mutex> const foo(las.L.mutex());
-#if 0
-                            las.L.reserve(las.L.size() +
-                                    workspaces.cofac_candidates.size());
-                            /* do we fear that this move could be
-                             * expensive ?  We're single-threaded at this
-                             * point, so many threads could be waiting
-                             * idly while we're moving pointers around.
-                             * Worse, we have a mutex on las.L, so other
-                             * subjobs might be waiting too. */
-                            for(auto & x : workspaces.cofac_candidates)
-                                las.L.emplace_back(std::move(x));
-                            /* we can release the mutex now */
-#else
-                            las.L.splice(las.L.end(), workspaces.cofac_candidates);
-                            if (las.batch_print_survivors.filename) {
-                                while (las.L.size() >= las.batch_print_survivors.filesize) {
-                                    // M is another list containing the
-                                    // elements that are going to be printed
-                                    // by another thread.
-                                    cofac_list M;
-                                    auto it = las.L.begin();
-                                    for (uint64_t i = 0; i < las.batch_print_survivors.filesize; ++i) {
-                                        ++it;
-                                    }
-                                    M.splice(M.end(), las.L, las.L.begin(), it);
-                                    {
-                                    std::lock_guard<std::mutex> const dummy(las.batch_print_survivors.mm);
-                                    las.batch_print_survivors.todo.push_back(std::move(M));
-                                    }
-                                    las.batch_print_survivors.cv.notify_one();
-
-#if 0
-                                    /* temporarily release the lock while
-                                     * we're doing print_survivors, and
-                                     * especially while we're waiting for
-                                     * the previous print_survivors to
-                                     * complete. */
-                                    struct bar {
-                                        std::mutex& m;
-                                        bar(std::mutex & m) : m(m) { m.unlock(); }
-                                        ~bar() { m.lock(); }
-                                    };
-                                    bar dummy2(las.L.mutex());
-                                    print_survivors(M, las);
-#endif
-                                }
-                            }
-#endif
-                        }
-                        workspaces.cofac_candidates.clear();
-                    }
+                    transfer_local_cofac_candidates_to_global(las, ws);
 
                     aux.complete = true;
                     aux.dest_rt = &global_rt;
@@ -1218,25 +1192,25 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
                     break;
                 } catch (buckets_are_full const & e) {
                     nwaste++;
-                    verbose_output_vfprint (2, 1, gmp_vfprintf,
-                            "# redoing q=%Zd, rho=%Zd because %s buckets are full\n"
-                            "# %s\n",
-                            (mpz_srcptr) doing.p, (mpz_srcptr) doing.r,
-                            bkmult_specifier::printkey(e.key).c_str(),
+                    verbose_fmt_print (2, 1,
+                            "# redoing {} because {} buckets are full\n"
+                            "# {}\n",
+                            task->sq(),
+                            bkmult_specifier::printkey(e.key),
                             e.what());
 
                     /* reason on the bk_multiplier that we used when we
                      * did the allocation ! It is set by
                      * prepare_for_new_q, called from do_one_special_q.
                      */
-                    double const old_value = workspaces.bk_multiplier.get(e.key);
-                    double ratio = (double) e.reached_size / e.theoretical_max_size * 1.05;
+                    double const old_value = ws.bk_multiplier.get(e.key);
+                    auto ratio = double_ratio(e.reached_size, e.theoretical_max_size) * 1.05;
                     double new_value = old_value * ratio;
                     double las_value;
                     if (!las.grow_bk_multiplier(e.key, ratio, new_value, las_value)) {
 
-                        verbose_output_print(0, 1, "# Global %s bucket multiplier has already grown to %.3f. Not updating, since this will cover %.3f*%d/%d*1.05=%.3f\n",
-                                bkmult_specifier::printkey(e.key).c_str(),
+                        verbose_fmt_print(0, 1, "# Global {} bucket multiplier has already grown to {:.3f}. Not updating, since this will cover {:.3f}*{}/{}*1.05={:.3f}\n",
+                                bkmult_specifier::printkey(e.key),
                                 las_value,
                                 old_value,
                                 e.reached_size,
@@ -1244,8 +1218,8 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
                                 new_value
                                 );
                     } else {
-                        verbose_output_print(0, 1, "# Updating %s bucket multiplier to %.3f*%d/%d*1.05, =%.3f\n",
-                                bkmult_specifier::printkey(e.key).c_str(),
+                        verbose_fmt_print(0, 1, "# Updating {} bucket multiplier to {:.3f}*{}/{}*1.05, ={:.3f}\n",
+                                bkmult_specifier::printkey(e.key),
                                 old_value,
                                 e.reached_size,
                                 e.theoretical_max_size,
@@ -1262,7 +1236,7 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
 
         } // end of loop over special q ideals.
 
-        /* we delete the "pool" and "workspaces" variables at this point. */
+        /* we delete the "pool" and "ws" variables at this point. */
         /* The dtor for "pool" is a synchronization point */
     }
 
@@ -1275,7 +1249,7 @@ static void las_subjob(las_info & las, int subjob, las_todo_list & todo, report_
         global_rt.rep.waste += botched.timer.total_counted_time();
     }
 
-    verbose_output_print(0, 1, "# subjob %d done (%d special-q's), now waiting for other jobs\n", subjob, nq);
+    verbose_fmt_print(0, 1, "# subjob {} done ({} special-q's), now waiting for other jobs\n", subjob, nq);
 }/*}}}*/
 
 static std::string relation_cache_subdir_name(std::vector<unsigned long> const & splits, std::vector<unsigned long> const & split_q)/*{{{*/
@@ -1294,8 +1268,8 @@ static std::string relation_cache_find_filepath_inner(std::string const & d, uns
 {
     std::string filepath;
     DIR * dir = opendir(d.c_str());
-    DIE_ERRNO_DIAG(dir == NULL, "opendir(%s)", d.c_str());
-    for(struct dirent * ent ; (ent = readdir(dir)) != NULL ; ) {
+    DIE_ERRNO_DIAG(dir == nullptr, "opendir(%s)", d.c_str());
+    for(struct dirent * ent ; (ent = readdir(dir)) != nullptr ; ) {
         unsigned long q0, q1;
         if (sscanf(ent->d_name, "%lu-%lu", &q0, &q1) != 2) continue;
         if (qq < q0 || qq >= q1) continue;
@@ -1348,7 +1322,7 @@ static std::string relation_cache_find_filepath(std::string const & cache_path, 
 }
 /*}}}*/
 
-static void quick_subjob_loop_using_cache(las_info & las, las_todo_list & todo)/*{{{*/
+static void quick_subjob_loop_using_cache(las_info & las)/*{{{*/
 {
     std::vector<unsigned long> splits;
 
@@ -1378,36 +1352,26 @@ static void quick_subjob_loop_using_cache(las_info & las, las_todo_list & todo)/
 
     for(;; nq++) {
         main_output->fflush();
-        las_todo_entry * doing_p = todo.feed_and_pop(las.rstate);
-        if (!doing_p) break;
+        auto * task = las.tree->pull();
+        if (!task) break;
+
+        auto const & doing(task->sq());
 
         nq++;
-
-        // auto rel_hash_p = std::make_shared<nfs_aux::rel_hash_t>();
-        // nfs_aux aux(las, *doing_p, rel_hash_p, 1);
-        struct { las_todo_entry doing; } aux;
-        aux.doing = *doing_p;
 
         siever_config conf;
         qlattice_basis Q;
         uint32_t J;
 
-        check_whether_special_q_is_root(las.cpoly, aux.doing);
-        per_special_q_banner(aux.doing);
-        if (!choose_sieve_area(las, aux.doing, conf, Q, J)) continue;
-        check_whether_q_above_lare_prime_bound(conf, aux.doing);
+        check_whether_special_q_is_root(las.cpoly, doing);
+        per_special_q_banner(doing);
+        if (!choose_sieve_area(las, *task, conf, Q, J)) continue;
+        check_whether_q_above_large_prime_bound(conf, doing);
 
-        {
-            std::ostringstream os;
-            os << Q;
-            verbose_output_vfprint(0, 2, gmp_vfprintf,
-                    "# "
-                    "Sieving %s; I=%u; J=%u;\n",
-                    os.str().c_str(),
-                    1u << conf.logI, J);
-        }
+        verbose_fmt_print(0, 2, "# Sieving {}; I={}; J={};\n",
+                Q, 1U << conf.logI, J);
 
-        std::string const filepath = relation_cache_find_filepath(las.relation_cache, splits, aux.doing.p);
+        std::string const filepath = relation_cache_find_filepath(las.relation_cache, splits, doing.p);
 
         std::ifstream rf(filepath);
         DIE_ERRNO_DIAG(!rf, "open(%s)", filepath.c_str());
@@ -1420,38 +1384,30 @@ static void quick_subjob_loop_using_cache(las_info & las, las_todo_list & todo)/
                 fmt::print(stderr, "# parse error in relation\n");
                 exit(EXIT_FAILURE);
             }
-            if (!sq_finds_relation(las, aux.doing, conf, Q, J, rel))
+            if (!sq_finds_relation(las, doing, conf, Q, J, rel))
                 continue;
-            std::ostringstream os;
 
+            std::string prefix;
             nreports++;
 
             if (las.suppress_duplicates) {
-                if (relation_is_duplicate(rel, aux.doing, las)) {
-                    os << "# DUPE ";
+                if (relation_is_duplicate(rel, doing, las)) {
+                    prefix = "# DUPE ";
                     nreports--;
                 }
             }
-            os << rel << "\n";
-
-            verbose_output_start_batch();     /* unlock I/O */
-            verbose_output_print(0, 1, "%s", os.str().c_str());
-            verbose_output_end_batch();     /* unlock I/O */
+            verbose_fmt_print(0, 1, "{}{}\n", prefix, rel);
         }
         
-        {
-            std::ostringstream os;
-            os << Q.doing;
-            verbose_output_print (0, 1, "# Time for %s: [not reported in relation-cache mode]\n", os.str().c_str());
-        }
+        verbose_fmt_print (0, 1, "# Time for {}: [not reported in relation-cache mode]\n", Q.doing);
     }
 
     ct0 = seconds() - ct0;
     wt0 = wct_seconds() - wt0;
-    verbose_output_print (2, 1, "# Total %lu reports [%1.3gs/r, %1.1fr/sq] in %1.3g elapsed s [%.1f%% CPU]\n",
+    verbose_fmt_print (2, 1, "# Total {} reports [{:1.3g}s/r, {:1.1f}r/sq] in {:1.3g} elapsed s [{:.1f}% CPU]\n",
             nreports,
-            nreports ? ct0 / nreports : -1,
-            (double) (nq ? nreports / nq: -1),
+            nreports ? double_ratio(ct0, nreports) : -1,
+            nq ? double_ratio(nreports, nq): -1,
             wt0,
             100.0 * ct0/wt0);
 
@@ -1464,8 +1420,8 @@ int main (int argc0, char const * argv0[])/*{{{*/
     int argc = argc0;
     char const **argv = argv0;
 
-    setbuf(stdout, nullptr);
-    setbuf(stderr, nullptr);
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
 
     cxx_param_list pl;
     cado_sighandlers_install();
@@ -1495,6 +1451,7 @@ int main (int argc0, char const * argv0[])/*{{{*/
     if (dlp_descent)
         param_list_parse_double(pl, "grace-time-ratio", &general_grace_time_ratio);
     param_list_parse_int(pl, "log-bucket-region", &LOG_BUCKET_REGION);
+    param_list_parse_int(pl, "log-bucket-region-step", &LOG_BUCKET_REGION_step);
     set_LOG_BUCKET_REGION();
 
     main_output = std::unique_ptr<las_output>(new las_output(pl));
@@ -1505,39 +1462,28 @@ int main (int argc0, char const * argv0[])/*{{{*/
 
     las_info las(pl);    /* side effects: prints cmdline and flags */
 #ifdef SAFE_BUCKET_ARRAYS
-      verbose_output_print(0, 0, "# WARNING: SAFE_BUCKET_ARRAYS is on !\n");
+      verbose_fmt_print(0, 0, "# WARNING: SAFE_BUCKET_ARRAYS is on !\n");
 #endif
 #ifdef SAFE_BUCKETS_SINGLE
-      verbose_output_print(0, 0, "# WARNING: SAFE_BUCKETS_SINGLE is on !\n");
+      verbose_fmt_print(0, 0, "# WARNING: SAFE_BUCKETS_SINGLE is on !\n");
 #endif
 
     if (las.cpoly->nb_polys > 2) {
-        std::cerr << "las is only working with poly files with 1 or 2 sides\n";
+        fmt::print(stderr, "las is only working with poly files with 1 or 2 sides\n");
         return EXIT_FAILURE;
     }
-
-    las_todo_list todo(las.cpoly, pl);
-
-    /* If qmin is not given, use lim on the special-q side by default.
-     * This makes sense only if the relevant fields have been filled from
-     * the command line.
-     *
-     * This is a kludge, really.
-     */
-    if (todo.sqside >= 0 && las.dupqmin[todo.sqside] == ULONG_MAX)
-        las.dupqmin[todo.sqside] = las.config_pool.base.sides[todo.sqside].lim;
 
     where_am_I::interpret_parameters(pl);
 
     base_memory = Memusage() << 10U;
 
-    if (todo.print_todo_list_flag) {
+    if (las.tree->todo.print_todo_list_flag) {
         /* printing the todo list takes only a very small amount of ram.
          * In all likelihood, nsubjobs will be total number of cores (or
          * the number of threads that were requested on command line)
          */
-        las.set_parallel(pl, double(base_memory) / (1U << 30U));
-        todo.print_todo_list(pl, las.rstate, las.number_of_threads_total());
+        las.set_parallel(pl, double_ratio(base_memory, 1U << 30U));
+        las.tree->todo.print_todo_list(pl, las.number_of_threads_total());
         return EXIT_SUCCESS;
 
     }
@@ -1559,7 +1505,7 @@ int main (int argc0, char const * argv0[])/*{{{*/
         las.set_parallel(pl);
     } catch (las_parallel_desc::needs_job_ram & e) {
         if (las.config_pool.default_config_ptr) {
-            verbose_output_print(0, 2, "# No --job-memory option given, relying on automatic memory estimate\n");
+            verbose_fmt_print(0, 2, "# No --job-memory option given, relying on automatic memory estimate\n");
             siever_config const & sc0(las.config_pool.base);
             const size_t ram0 = expected_memory_usage_per_binding_zone(sc0, las, false);
             for(int z = 1, s = 1 << 30, n = 1, spin=0 ; ; spin++) {
@@ -1577,7 +1523,7 @@ int main (int argc0, char const * argv0[])/*{{{*/
                     << " " << (double) jobram / (1 << 30);
                 fmt::print(stderr, "{}\n", os.str());
                 */
-                las.set_parallel(pl, (double) jobram / (1U << 30U));
+                las.set_parallel(pl, double_ratio(jobram, 1U << 30U));
                 const int nz = las.number_of_memory_binding_zones();
                 const int ns = las.number_of_subjobs_per_memory_binding_zone();
                 const int nn = las.number_of_threads_per_subjob();
@@ -1586,12 +1532,12 @@ int main (int argc0, char const * argv0[])/*{{{*/
                 z = nz; s = ns; n = nn;
             }
         } else {
-            verbose_output_print(0, 0, "# No --job-memory option given. Job placement needs either an explicit placement with -t, a complete siever config with a factor base to allow automatic ram estimates, or a --job-memory option\n");
+            verbose_fmt_print(0, 0, "# No --job-memory option given. Job placement needs either an explicit placement with -t, a complete siever config with a factor base to allow automatic ram estimates, or a --job-memory option\n");
             exit(EXIT_FAILURE);
         }
     } catch (las_parallel_desc::bad_specification & e) {
-        verbose_output_print(0, 0, "# Error reported by the cpu binding layer: %s\n", e.what());
-        verbose_output_print(0, 0, "# The parallelism specification for this job and/or the specifics of the hardware make it difficult for us to decide on what to do on an automatic basis with respect to CPU binding. Please stick to simple \"-t <number of threads>\". More advanced specifications like \"-t auto\" cannot be supported for this hardware.\n");
+        verbose_fmt_print(0, 0, "# Error reported by the cpu binding layer: {}\n", e.what());
+        verbose_fmt_print(0, 0, "# The parallelism specification for this job and/or the specifics of the hardware make it difficult for us to decide on what to do on an automatic basis with respect to CPU binding. Please stick to simple \"-t <number of threads>\". More advanced specifications like \"-t auto\" cannot be supported for this hardware.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -1614,7 +1560,7 @@ int main (int argc0, char const * argv0[])/*{{{*/
      * factor in cached relations processing.
      */
     if (!las.relation_cache.empty()) {
-        quick_subjob_loop_using_cache(las, todo);
+        quick_subjob_loop_using_cache(las);
         return EXIT_SUCCESS;
     }
 
@@ -1650,7 +1596,7 @@ int main (int argc0, char const * argv0[])/*{{{*/
          * course, but how we should proceed with the todo list, our brace
          * mechanism, and the descent tree thing is altogether not obvious
          */
-        const int nsubjobs = dlp_descent ? 1 : las.number_of_subjobs_total();
+        const int nsubjobs = /* dlp_descent ? 1 : */ las.number_of_subjobs_total();
         subjobs.reserve(nsubjobs);
         for(int subjob = 0 ; subjob < nsubjobs ; ++subjob) {
             /* when references are passed through variadic template arguments
@@ -1661,24 +1607,17 @@ int main (int argc0, char const * argv0[])/*{{{*/
                     las_subjob,
                         std::ref(las),
                         subjob,
-                        std::ref(todo),
                         std::ref(global_rt)
                     );
         }
         for(auto & t : subjobs) t.join();
 
-        if (dlp_descent && recursive_descent) {
-            verbose_output_print(0, 1, "# Now displaying again the results of all descents\n");
-            las.tree.display_all_trees(main_output->output);
-        }
+        las.tree->display_summary(0, 0);
 
         las.set_loose_binding();
 
         if (las.batch_print_survivors.filename) {
-            las.batch_print_survivors.mm.lock();
-            las.batch_print_survivors.done = true;
-            las.batch_print_survivors.todo.push_back(std::move(las.L));
-            las.batch_print_survivors.mm.unlock();
+            las.survivors.mark_drain();
             las.batch_print_survivors.cv.notify_all();
             for(auto & x : las.batch_print_survivors.printer_threads)
                 x.join();
@@ -1724,7 +1663,7 @@ int main (int argc0, char const * argv0[])/*{{{*/
              * cpu binding. At least I presume that it does nothing before
              * the first pragma omp statement.)
              */
-            find_smooth (las.L,
+            find_smooth (las.survivors.L,
                     batchP, batchlpb, lpb, batchmfb,
                     main_output->output,
                     las.number_of_threads_loose(),
@@ -1747,35 +1686,42 @@ int main (int argc0, char const * argv0[])/*{{{*/
             if (ncurves <= 0)
                 ncurves = 50; // use the same default as finishbatch
 
-            std::list<relation> const rels = factor (las.L,
+            std::list<std::pair<special_q, std::list<relation>>> rels;
+
+            for(auto const & x : las.survivors.L) {
+                rels.emplace_back(x.first, factor (x.second,
                     las.cpoly,
+                    x.first,
                     batchlpb,
                     lpb,
                     ncurves,
                     main_output->output,
                     las.number_of_threads_loose(),
                     extra_time,
-                    1);
-            verbose_output_print (0, 1, "# batch reported time for additional threads: %.2f\n", extra_time);
+                    1));
+            }
+            verbose_fmt_print (0, 1, "# batch reported time for additional threads: {:.2f}\n", extra_time);
             batch_timer.add_foreign_time(extra_time);
 
             verbose_output_start_batch();
             nfs_aux::rel_hash_t rel_hash;
             size_t nondup = 0;
-            for(auto const & rel : rels) {
-                std::ostringstream os;
-                nfs_aux::abpair_t const ab(rel.a, rel.b);
-                bool const is_new_rel = rel_hash.insert(ab).second;
-                if (!is_new_rel) {
-                    /* we had this (a,b) pair twice, probably because of a
-                     * failed attempt, that was aborted because of an
-                     * exception. (occurs only with 2-level sieving) */
-                    os << "# DUP ";
-                } else {
-                    nondup++;
+            for(auto const & rq : rels) {
+                verbose_fmt_print(0, 1, "# {} relations for {}\n",
+                        rq.second.size(),
+                        rq.first);
+                for(auto const & rel : rq.second) {
+                    nfs_aux::abpair_t const ab(rel.a, rel.b);
+                    bool const is_new_rel = rel_hash.insert(ab).second;
+                    /* if !is_new_rel, it means that we had this (a,b)
+                     * pair twice, probably because of a failed attempt,
+                     * that was aborted because of an exception. (occurs
+                     * only with 2-level sieving)
+                     */
+                    nondup += is_new_rel;
+                    verbose_fmt_print(0, 1, "{}{}\n",
+                            is_new_rel ? "" : "# DUP ", rel);
                 }
-                os << rel;
-                verbose_output_print(0, 1, "%s\n", os.str().c_str());
             }
             verbose_output_end_batch();
             global_rt.rep.reports = nondup;
@@ -1783,41 +1729,43 @@ int main (int argc0, char const * argv0[])/*{{{*/
             tcof_batch = seconds () - tcof_batch;
           }
     } catch (std::exception const & e) {
-        verbose_output_print(0, 0, "\n\n# Program aborted on fatal error\n%s\n", e.what());
-        verbose_output_print(1, 0, "\n\n# Program aborted on fatal error\n%s\n", e.what());
+        verbose_fmt_print(0, 0, "\n\n# Program aborted on fatal error\n{}\n", e.what());
+        verbose_fmt_print(1, 0, "\n\n# Program aborted on fatal error\n{}\n", e.what());
         return EXIT_FAILURE;
     }
 
     t0 = seconds () - t0;
     wct = wct_seconds() - wct;
 
-    if (las.adjust_strategy < 2) {
-        verbose_output_print (2, 1, "# Average J=%1.0f for %lu special-q's, max bucket fill -bkmult %s\n",
-                global_rt.rep.total_J / (double) global_rt.rep.nr_sq_processed, global_rt.rep.nr_sq_processed, las.get_bk_multiplier().print_all().c_str());
+    if (las.config_pool.base.adjust_strategy < 2) {
+        verbose_fmt_print (2, 1,
+                "# Average J={:1.0f} for {} special-q's, max bucket fill -bkmult {}\n",
+                double_ratio(global_rt.rep.total_J, global_rt.rep.nr_sq_processed),
+                global_rt.rep.nr_sq_processed,
+                las.get_bk_multiplier().print_all());
     } else {
-        verbose_output_print (2, 1, "# Average logI=%1.1f for %lu special-q's, max bucket fill -bkmult %s\n",
-                global_rt.rep.total_logI / (double) global_rt.rep.nr_sq_processed, global_rt.rep.nr_sq_processed, las.get_bk_multiplier().print_all().c_str());
+        verbose_fmt_print (2, 1,
+                "# Average logI={:1.1f} for {} special-q's, max bucket fill -bkmult {}\n",
+                double_ratio(global_rt.rep.total_logI, global_rt.rep.nr_sq_processed),
+                global_rt.rep.nr_sq_processed,
+                las.get_bk_multiplier().print_all());
     }
-    verbose_output_print (2, 1, "# Discarded %lu special-q's out of %u pushed\n",
-            global_rt.rep.nr_sq_discarded, todo.nq_pushed);
+    verbose_fmt_print (2, 1, "# Discarded {} special-q's out of {} pushed\n",
+            global_rt.rep.nr_sq_discarded, las.tree->todo.created);
 
     auto D = global_rt.timer.filter_by_category();
     timetree_t::timer_data_type const tcpu = global_rt.timer.total_counted_time();
 
     if (tdict::global_enable >= 2) {
-        verbose_output_print (0, 1, "#\n# Hierarchical timings:\n%s", global_rt.timer.display().c_str());
+        verbose_fmt_print (0, 1, "#\n# Hierarchical timings:\n{}",
+                global_rt.timer.display());
 
-        std::ostringstream os;
-        os << std::fixed << std::setprecision(2) << tcpu;
-        verbose_output_print (0, 1, "#\n# Categorized timings (total counted time %s):\n", os.str().c_str());
+        verbose_fmt_print (0, 1, "#\n# Categorized timings (total counted time {:.2f}):\n", tcpu);
         for(auto const &c : D) {
-            std::ostringstream xos;
-            xos << std::fixed << std::setprecision(2) << c.second;
-            verbose_output_print (0, 1, "# %s: %s\n", 
-                    coarse_las_timers::explain(c.first).c_str(),
-                    xos.str().c_str());
+            verbose_fmt_print (0, 1, "# {}: {:.2f}\n", 
+                    coarse_las_timers::explain(c.first), c.second);
         }
-        verbose_output_print (0, 1, "# total counted time: %s\n#\n", os.str().c_str());
+        verbose_fmt_print (0, 1, "# total counted time: {:.2f}\n#\n", tcpu);
     }
     global_rt.rep.display_survivor_counters();
 
@@ -1829,14 +1777,14 @@ int main (int argc0, char const * argv0[])/*{{{*/
     display_bucket_prime_stats();
 
     if (las_production_mode) {
-        verbose_output_print (2, 1, "# Total cpu time %1.2fs [remove -production flag for timings]\n", t0);
+        verbose_fmt_print (2, 1, "# Total cpu time {:1.2f}s [remove -production flag for timings]\n", t0);
     } else {
-        verbose_output_print (2, 1, "# Wasted cpu time due to %d bkmult adjustments: %1.2f\n", global_rt.rep.nwaste, global_rt.rep.waste);
-        verbose_output_print(0, 1, "# Cumulated wait time over all threads %.2f\n", global_rt.rep.cumulated_wait_time);
-        verbose_output_print (2, 1, "# Total cpu time %1.2fs, useful %1.2fs [norm %1.2f+%1.1f, sieving %1.1f"
-            " (%1.1f+%1.1f + %1.1f),"
-            " factor %1.1f (%1.1f+%1.1f + %1.1f),"
-            " rest %1.1f], wasted+waited %1.2fs, rest %1.2fs\n",
+        verbose_fmt_print (2, 1, "# Wasted cpu time due to {} bkmult adjustments: {:1.2f}\n", global_rt.rep.nwaste, global_rt.rep.waste);
+        verbose_fmt_print(0, 1, "# Cumulated wait time over all threads {:.2f}\n", global_rt.rep.cumulated_wait_time);
+        verbose_fmt_print (2, 1, "# Total cpu time {:1.2f}s, useful {:1.2f}s [norm {:1.2f}+{:1.1f}, sieving {:1.1f}"
+            " ({:1.1f}+{:1.1f} + {:1.1f}),"
+            " factor {:1.1f} ({:1.1f}+{:1.1f} + {:1.1f}),"
+            " rest {:1.1f}], wasted+waited {:1.2f}s, rest {:1.2f}s\n",
             t0,
             tcpu,
             D[coarse_las_timers::norms(0)],
@@ -1866,25 +1814,27 @@ int main (int argc0, char const * argv0[])/*{{{*/
             );
     }
 
-    verbose_output_print (2, 1, "# Total elapsed time %1.2fs, per special-q %gs, per relation %gs\n",
-                 wct, wct / (double) global_rt.rep.nr_sq_processed, wct / (double) global_rt.rep.reports);
+    verbose_fmt_print (2, 1, "# Total elapsed time {:1.2f}s, per special-q {:g}, per relation {:g}\n",
+                 wct,
+                 double_ratio(wct, global_rt.rep.nr_sq_processed),
+                 double_ratio(wct, global_rt.rep.reports));
 
     /* memory usage */
     if (main_output->verbose >= 1 && las.config_pool.default_config_ptr) {
         expected_memory_usage(las.config_pool.base, las, true, base_memory);
     }
-    const long peakmem = PeakMemusage();
+    const size_t peakmem = PeakMemusage();
     if (peakmem > 0)
-        verbose_output_print (2, 1, "# PeakMemusage (MB) = %ld \n",
+        verbose_fmt_print (2, 1, "# PeakMemusage (MB) = {}\n",
                 peakmem >> 10);
     if (las.suppress_duplicates) {
-        verbose_output_print(2, 1, "# Total number of eliminated duplicates: %lu\n", global_rt.rep.duplicates);
+        verbose_fmt_print(2, 1, "# Total number of eliminated duplicates: {}\n", global_rt.rep.duplicates);
     }
-    verbose_output_print (2, 1, "# Total %lu reports [%1.3gs/r, %1.1fr/sq] in %1.3g elapsed s [%.1f%% CPU]\n",
-            global_rt.rep.reports, t0 / (double) global_rt.rep.reports,
-            (double) global_rt.rep.reports / (double) global_rt.rep.nr_sq_processed,
-            wct,
-            100*t0/wct);
+    verbose_fmt_print (2, 1, "# Total {} reports [{:1.3g}s/r, {:1.1f}r/sq] in {:1.3g} elapsed s [{:.1f}% CPU]\n",
+            global_rt.rep.reports,
+            double_ratio(t0, global_rt.rep.reports),
+            double_ratio(global_rt.rep.reports, global_rt.rep.nr_sq_processed),
+            wct, 100*t0/wct);
 
 
     /*}}}*/

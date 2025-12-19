@@ -16,14 +16,16 @@
 
 #include "fb.hpp"
 #include "fb-types.hpp"
-#include "las-config.h"
+#include "las-config.hpp"
 #include "las-multiobj-globals.hpp"
 #include "las-siever-config.hpp"
 #include "las-side-config.hpp"
-#include "las-todo-entry.hpp"
+#include "las-special-q-task.hpp"
+#include "las-special-q-task-tree.hpp"
 #include "macros.h"
 #include "params.h"
 #include "verbose.h"
+#include "utils_cxx.hpp"
 
 /* siever_config stuff */
 
@@ -37,9 +39,16 @@ void siever_config::declare_usage(cxx_param_list & pl)
     param_list_decl_usage(pl, "tdthresh", "trial-divide primes p/r <= ththresh (r=number of roots)");
     param_list_decl_usage(pl, "skipped", "primes below this bound are not sieved at all");
     param_list_decl_usage(pl, "bkthresh", "bucket-sieve primes p >= bkthresh (default 2^I)");
+#if MAX_TOPLEVEL >= 2
     param_list_decl_usage(pl, "bkthresh1", "2-level bucket-sieve primes in [bkthresh1,lim] (default=lim, meaning inactive)");
+#endif
+#if MAX_TOPLEVEL >= 3
+    param_list_decl_usage(pl, "bkthresh2", "3-level bucket-sieve primes in [bkthresh2,lim] (default=lim, meaning inactive)");
+#endif
+    static_assert(MAX_TOPLEVEL == 3);
     param_list_decl_usage(pl, "bkmult", "multiplier to use for taking margin in the bucket allocation\n");
     param_list_decl_usage(pl, "unsievethresh", "Unsieve all p > unsievethresh where p|gcd(a,b)");
+    param_list_decl_usage(pl, "adjust-strategy", "strategy used to adapt the sieving range to the q-lattice basis (0 = logI constant, J so that boundary is capped; 1 = logI constant, (a,b) plane norm capped; 2 = logI dynamic, skewed basis; 3 = combine 2 and then 0) ; default=0");
 }
 
 /* {{{ Parse default siever config (fill all possible fields). Return
@@ -81,7 +90,8 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
         int I;
         complete &= param_list_parse_int  (pl, "I", &I);
         sc.logA = 2 * I - 1;
-        verbose_output_print(0, 1, "# Interpreting -I %d as meaning -A %d\n", I, sc.logA);
+        verbose_fmt_print(0, 1, "# Interpreting -I {} as meaning -A {}\n",
+                I, sc.logA);
     } else {
         complete = false;
     }
@@ -97,7 +107,7 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
 #endif
 
     if (!complete) {
-        verbose_output_print(0, 1, "# default siever configuration is incomplete ; required parameters are I, lim[01], lpb[01], mfb[01]\n");
+        verbose_fmt_print(0, 1, "# default siever configuration is incomplete ; required parameters are I, lim[01], lpb[01], mfb[01]\n");
 
     }
 
@@ -110,7 +120,7 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
     param_list_parse_uint(pl, "skipped", &(sc.skipped));
 
     if (param_list_parse_uint(pl, "unsievethresh", &(sc.unsieve_thresh))) {
-        verbose_output_print(0, 1, "# Un-sieving primes > %u\n",
+        verbose_fmt_print(0, 1, "# Un-sieving primes > {}\n",
                 sc.unsieve_thresh);
     }
 
@@ -126,7 +136,13 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
     // base.
     /* overrides default only if parameter is given */
     param_list_parse_ulong(pl, "bkthresh", &(sc.bucket_thresh));
+#if MAX_TOPLEVEL >= 2
     param_list_parse_ulong(pl, "bkthresh1", &(sc.bucket_thresh1));
+#endif
+#if MAX_TOPLEVEL >= 3
+    param_list_parse_ulong(pl, "bkthresh2", &(sc.bucket_thresh2));
+#endif
+    static_assert(MAX_TOPLEVEL == 3);
 
     if (sc.bucket_thresh) {
         for (auto & s : sc.sides) {
@@ -137,12 +153,13 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
              * fb_factorbase::fb_factorbase
              */
             /*
-               verbose_output_print(0, 2,
-               "# Using default value of %lu for -%s\n",
+               verbose_fmt_print(0, 2,
+               "# Using default value of {} for -{}\n",
                sc.sides[side].powlim, powlim_params[side]);
                */
         }
     }
+    param_list_parse_int(pl, "adjust-strategy", &sc.adjust_strategy);
 
     return complete;
 }
@@ -161,34 +178,52 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
  */
 fb_factorbase::key_type siever_config::instantiate_thresholds(int side) const
 {
-    fbprime_t fbb = sides[side].lim;
-    fbprime_t bucket_thresh = this->bucket_thresh;
-    fbprime_t bucket_thresh1 = this->bucket_thresh1;
+    const fbprime_t fbb = sides[side].lim;
+    decltype(fb_factorbase::key_type::thresholds) ret;
 
-    if (bucket_thresh == 0)
-        bucket_thresh = 1UL << logI;
-    if (bucket_thresh < (1UL << logI)) {
-        verbose_output_print(0, 1, "# Warning: with logI = %d,"
-                " we can't have %lu as the bucket threshold. Using %lu\n",
-                logI,
-                (unsigned long) bucket_thresh,
-                1UL << logI);
-        bucket_thresh = 1UL << logI;
+    ret.fill(fbb);
+
+    {
+        fbprime_t bucket_thresh = this->bucket_thresh;
+
+        if (bucket_thresh == 0)
+            bucket_thresh = 1UL << logI;
+        if (bucket_thresh < (1UL << logI)) {
+            verbose_fmt_print(0, 1, "# Warning: with logI = {},"
+                    " we can't have {} as the bucket threshold. Using {}\n",
+                    logI,
+                    bucket_thresh,
+                    1UL << logI);
+            bucket_thresh = 1UL << logI;
+        }
+        ret[0] = std::min(bucket_thresh, fbb);
     }
 
-    bucket_thresh = std::min(bucket_thresh, fbb);
-    if (bucket_thresh1 == 0 || bucket_thresh1 > fbb) bucket_thresh1 = fbb;
-    bucket_thresh1 = std::max(bucket_thresh1, bucket_thresh);
+#if MAX_TOPLEVEL >= 2
+    {
+        fbprime_t bucket_thresh1 = this->bucket_thresh1;
+        if (bucket_thresh1 == 0 || bucket_thresh1 > fbb) bucket_thresh1 = fbb;
+        ret[1] = std::max(bucket_thresh1, ret[0]);
+    }
+#endif
 
-    return fb_factorbase::key_type {
-        {{bucket_thresh, bucket_thresh1, fbb, fbb}},
-            td_thresh,
-            skipped,
-            0,
-            0
+#if MAX_TOPLEVEL >= 3
+    {
+        fbprime_t bucket_thresh2 = this->bucket_thresh2;
+        if (bucket_thresh2 == 0 || bucket_thresh2 > fbb) bucket_thresh2 = fbb;
+        ret[2] = std::max(bucket_thresh2, ret[1]);
+    }
+#endif
+    static_assert(MAX_TOPLEVEL == 3);
+
+    return {
+         .thresholds = ret,
+         .td_thresh = td_thresh,
+         .skipped = skipped
     };
 }
-siever_config siever_config_pool::get_config_for_q(las_todo_entry const & doing) const /*{{{*/
+
+siever_config siever_config_pool::get_config_for_q(special_q_task const & doing) const /*{{{*/
 {
     siever_config config = base;
     unsigned int const bitsize = mpz_sizeinbase(doing.p, 2);
@@ -199,43 +234,59 @@ siever_config siever_config_pool::get_config_for_q(las_todo_entry const & doing)
     siever_config const * adapted = get_hint(side, bitsize);
     if (adapted) {
         config = *adapted;
-        verbose_output_print(0, 1, "# Using parameters from hint list for q~2^%d on side %d [%d@%d]\n", bitsize, side, bitsize, side);
+        verbose_fmt_print(0, 1, "# Using parameters from hint list for q~2^{} on side {} [{}]\n", bitsize, side, doing.shortname());
     }
 
-    if (doing.iteration) {
-        verbose_output_print(0, 1, "#\n# NOTE:"
+    auto const * tt = dynamic_cast<special_q_task_tree const *>(&doing);
+
+    if (tt != nullptr && tt->try_again) {
+        verbose_fmt_print(0, 1, "#\n# NOTE:"
                 " we are re-playing this special-q because of"
-                " %d previous failed attempt(s)\n", doing.iteration);
+                " {} previous failed attempt(s)\n", tt->try_again);
 
         std::string parameters_info;
 
-        if (doing.iteration <= 2) {
-            /* The first two retries simply sieve more, but with the
-             * exact same bounds. This is being overly cautious, but we
-             * don't like the idea of letting the lpb grow too eagerly in
-             * these situations, as this has the potential to introduce
-             * loops in the descent.
-             */
-            config.logA += doing.iteration;
+        int c = tt->try_again;
+
+        if (base.adjust_strategy != 2) {
+            config.adjust_strategy = 2;
+            parameters_info += fmt::format(" adjust_strategy={}", config.adjust_strategy);
+            c--;
+        }
+
+        const int dA = std::min(c, max_increase_logA);
+        if (dA) {
+            config.logA += dA;
             parameters_info += fmt::format(" A={}", config.logA);
-        } else {
+            c -= dA;
+        }
+
+        const int dlpb = std::min(c, max_increase_lpb);
+        if (dlpb) {
             for(size_t side = 0 ; side < config.sides.size() ; side++) {
                 auto & s = config.sides[side];
-                const double lambda = double(s.mfb) / double(s.lpb);
-                s.lpb += doing.iteration-2;
-                s.mfb = lround(lambda * double(s.lpb));
+                const double lambda = double_ratio(s.mfb, s.lpb);
+                s.lpb += dlpb;
+                s.mfb = lround(lambda * s.lpb);
                 parameters_info += fmt::format(" lpb{}={} mfb{}={}",
                         side, s.lpb, side, s.mfb);
             }
+            c -= dlpb;
+
+            /* Now if at this point c is still >0, we want to abort. How
+             * do we do this and let the task collection know that we
+             * want to abort?
+             */
         }
 
-        verbose_output_print(0, 1,
-                "# NOTE: modified parameters are: %s\n#\n", 
-                parameters_info.c_str());
+        verbose_fmt_print(0, 1,
+                "# NOTE: modified parameters are: {}\n#\n", 
+                parameters_info);
     }
 
     return config;
-}/*}}}*/
+}
+/* }}} */
 
 void 
 siever_config_pool::declare_usage(cxx_param_list & pl)/*{{{*/
@@ -243,6 +294,9 @@ siever_config_pool::declare_usage(cxx_param_list & pl)/*{{{*/
     param_list_decl_usage(pl, "hint-table", "filename with per-special q sieving data");
     if (dlp_descent)
         param_list_decl_usage(pl, "descent-hint-table", "Alias to hint-table");
+    param_list_decl_usage(pl, "fuzzy-descent", "Allow descent steps to start over with fuzzier and fuzzier parameters, with no limit");
+    param_list_decl_usage(pl, "descent-max-increase-A", "When retrying steps in the descent, limit the increase of A to this value"); //  (default %d)", max_increase_logA_default);
+    param_list_decl_usage(pl, "descent-max-increase-lpb", "When retrying steps in the descent, limit the increase of lpb to this value"); //  (default %d)", max_increase_lpb_default);
 }
 /*}}}*/
 
@@ -384,6 +438,15 @@ siever_config_pool::siever_config_pool(cxx_param_list & pl, int nb_polys)/*{{{*/
             return;
         }
     }
+    param_list_parse(pl, "descent-max-increase-A", max_increase_logA);
+    param_list_parse(pl, "descent-max-increase-lpb", max_increase_lpb);
+
+    if (param_list_lookup_string(pl, "fuzzy-descent")) {
+        /* well, we do set limits, still */
+        max_increase_logA = 16;
+        max_increase_lpb = 64;
+    }
+
 
     parse_hints_file(filename);
 

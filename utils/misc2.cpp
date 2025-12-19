@@ -142,13 +142,13 @@ std::vector<unsigned long> subdivide_primes_interval(unsigned long p0, unsigned 
 void subdivide_primes_interval_proxy(unsigned long * r, unsigned long p0, unsigned long p1, size_t n)
 {
     auto v = subdivide_primes_interval(p0, p1, n);
-    std::copy(v.begin(), v.end(), r);
+    std::ranges::copy(v, r);
 }
 
 struct mpz_parser_traits {
     static constexpr const int accept_literals = 0;
-    typedef cxx_mpz type;
-    typedef cxx_mpz number_type;
+    using type = cxx_mpz;
+    using number_type = cxx_mpz;
     static void add(cxx_mpz & c, cxx_mpz const & a, cxx_mpz const & b) {
         mpz_add(c, a, b);
     }
@@ -161,7 +161,7 @@ struct mpz_parser_traits {
     static void mul(cxx_mpz & c, cxx_mpz const & a, cxx_mpz const & b) {
         mpz_mul(c, a, b);
     }
-    static void pow_ui(cxx_mpz & c, cxx_mpz const & a, unsigned long e) {
+    static void pow(cxx_mpz & c, cxx_mpz const & a, unsigned long e) {
         mpz_pow_ui(c, a, e);
     }
     static void swap(cxx_mpz & a, cxx_mpz & b) {
@@ -176,7 +176,7 @@ struct mpz_parser_traits {
     }
 };
 
-typedef cado_expression_parser<mpz_parser_traits> integer_parser;
+using integer_parser = cado_expression_parser<mpz_parser_traits>;
 
 cxx_mpz mpz_from_expression(const char * value)
 {
@@ -216,16 +216,25 @@ std::vector<std::pair<cxx_mpz, int> > trial_division(cxx_mpz const& n0, unsigned
      */
     unsigned long bound_shift = (mpz_sizeinbase(n, 2) + 1) / 2;
     for (unsigned long p = 2; p < B; p = getprime_mt (pinf)) {
-        if (bound_shift < ULONG_BITS && p >> bound_shift)
+        if (bound_shift < ULONG_BITS && p >> bound_shift) {
+            if (mpz_cmpabs_ui(n, 1U) > 0 && mpz_cmpabs_ui(n, B) < 0) {
+                res.emplace_back(n, 1);
+                n = 1U;
+                if (mpz_sgn(n0) < 0) {
+                    mpz_neg(res.back().first, res.back().first);
+                    mpz_neg(n, n);
+                }
+            }
             break;
+        }
         if (!mpz_divisible_ui_p(n, p)) continue;
         int k = 0;
         for( ; mpz_divisible_ui_p(n, p) ; mpz_fdiv_q_ui(n, n, p), k++);
         bound_shift = (mpz_sizeinbase(n, 2) + 1) / 2;
         res.emplace_back(p, k);
     }
-    // cout << "remaining discriminant " << n << "\n";
     cofactor = n;
+
     prime_info_clear (pinf); /* free the tables */
     return res;
 }

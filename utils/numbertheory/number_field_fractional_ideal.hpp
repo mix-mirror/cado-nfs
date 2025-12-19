@@ -1,11 +1,20 @@
 #ifndef CADO_UTILS_NUMBERTHEORY_NUMBER_FIELD_FRACTIONAL_IDEAL_HPP
 #define CADO_UTILS_NUMBERTHEORY_NUMBER_FIELD_FRACTIONAL_IDEAL_HPP
 
+#include <memory>
 #include <utility>
+#include <vector>
+#include <ostream>
+#include <compare>
+
+#include <gmp.h>
+#include "fmt/base.h"
 #include "fmt/format.h"
+
 #include "numbertheory/numbertheory_fwd_types.hpp"
 #include "numbertheory/number_field_order.hpp"
 #include "cxx_mpz.hpp"
+#include "macros.h"
 #include "mpz_mat.h"
 
 
@@ -27,11 +36,11 @@ class number_field_fractional_ideal {
     private:
     mutable std::unique_ptr<two_element> cached_two_element;
     number_field_fractional_ideal(number_field_order const & O,
-            cxx_mpz_mat const& I,
-            cxx_mpz const & d = 1)
+            cxx_mpz_mat I,
+            cxx_mpz d = 1)
         : O(O)
-        , ideal_basis_matrix(I)
-        , denominator(d)
+        , ideal_basis_matrix(std::move(I))
+        , denominator(std::move(d))
     {}
     public:
 
@@ -39,10 +48,12 @@ class number_field_fractional_ideal {
      * of. Note that the actual endomorphism ring of the ideal may of
      * course be bigger!
      */
-    inline number_field_order const & order() const { return O; }
+    number_field_order const & order() const { return O; }
 
     /* return the parent number field */
-    inline class number_field const & number_field() const { return O.number_field(); }
+    class number_field const & number_field() const { return O.number_field(); }
+
+    bool is_integral() const { return denominator == 1; }
 
     // unimplemented (for now)
     // operator two_element() const;
@@ -61,17 +72,19 @@ class number_field_fractional_ideal {
         , denominator(a.denominator)
     {}
 
-    number_field_fractional_ideal(number_field_fractional_ideal && a)
+    number_field_fractional_ideal(number_field_fractional_ideal && a) noexcept
         : O(a.O)
-        , ideal_basis_matrix(a.ideal_basis_matrix)
-        , denominator(a.denominator)
+        , ideal_basis_matrix(std::move(a.ideal_basis_matrix))
+        , denominator(std::move(a.denominator))
     {}
 
     number_field_fractional_ideal& operator=(number_field_fractional_ideal const & a)
     {
         ASSERT_ALWAYS(&O == &a.O);
-        ideal_basis_matrix = a.ideal_basis_matrix;
-        denominator = a.denominator;
+        if (this != &a) {
+            ideal_basis_matrix = a.ideal_basis_matrix;
+            denominator = a.denominator;
+        }
         return *this;
     }
     number_field_fractional_ideal& operator=(number_field_fractional_ideal && a)
@@ -81,10 +94,23 @@ class number_field_fractional_ideal {
         denominator = std::move(a.denominator);
         return *this;
     }
+
+    std::strong_ordering operator<=>(number_field_fractional_ideal const & I) const {
+        if (auto r = denominator <=> I.denominator ; r != 0) return r;
+
+        /* XXX this is only correct if we assume that both basis matrices
+         * are in HNF. Otherwise we would have to check 
+         * equivalence modulo SL_n !
+         */
+        return mpz_mat_cmp(ideal_basis_matrix, I.ideal_basis_matrix) <=> 0;
+    }
+    bool operator==(number_field_fractional_ideal const & I) const {
+        return operator<=>(I) == 0;
+    }
 };
 
 namespace fmt {
-    template <> struct formatter<number_field_fractional_ideal> : formatter<string_view>{
+    template <> struct formatter<number_field_fractional_ideal> : formatter<string_view> {
         auto format(number_field_fractional_ideal const & e, format_context& ctx) const -> format_context::iterator;
     };
 }

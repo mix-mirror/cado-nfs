@@ -77,6 +77,13 @@ class GeneralClass(object):
                             help="Default large prime bound on side 1",
                             required=True,
                             type=int)
+        parser.add_argument("--memory-margin",
+                            help="Keep this amount of RAM free for"
+                            " the rest of the world (see -t help)"
+                            " (in gigabytes, floating point values allowed)",
+                            type=int)
+        parser.add_argument("--descent-max-increase-A", type=int, default=4)
+        parser.add_argument("--descent-max-increase-lpb", type=int, default=0)
 
     def __init__(self, args):
         self._conn = None
@@ -299,6 +306,8 @@ class GeneralClass(object):
              "--adjust-strategy", 2,  # avoids shrinking.
              "--fb1", self.fb1(),
              "--poly", self.poly(),
+             "--descent-max-increase-A", self.args.descent_max_increase_A,
+             "--descent-max-increase-lpb", self.args.descent_max_increase_lpb,
              ]
         if not self.args.no_logs:
             s += ["--renumber", self.renumber()]

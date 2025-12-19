@@ -30,7 +30,7 @@
 #include "cxx_mpz.hpp"
 #include "gzip.h"
 #include "indexed_relation.hpp"
-#include "las-todo-entry.hpp"
+#include "special-q.hpp"
 #include "macros.h"
 #include "misc.h"
 #include "params.h"
@@ -39,6 +39,7 @@
 #include "timing.h"
 #include "typedefs.h"
 #include "verbose.h"
+#include "utils_cxx.hpp"
 
 static int verbose = 0; /* verbosity level */
 
@@ -121,14 +122,7 @@ struct indexrange {
     }
 
     size_t pos_from_p(p_r_values_t p) const {
-        return std::lower_bound(prime.begin(), prime.end(), p) - prime.begin();
-    }
-
-    /* XXX unused ! */
-    std::vector<index_t>::const_iterator iterator_from_index(index_t z) const {
-        std::vector<index_t>::const_iterator it;
-        it = std::lower_bound(ind.begin(), ind.end(), z);
-        return it;
+        return std::ranges::lower_bound(prime, p) - prime.begin();
     }
 
     std::vector<index_t> all_composites(
@@ -169,12 +163,10 @@ static std::vector<indexrange> prepare_indexrange(renumber_t const & ren_tab,
     return Ind;
 }
 
-static void remove_special_q(relation & rel, las_todo_entry const & Q)
+static void remove_special_q(relation & rel, special_q const & Q)
 {
-    typedef std::vector<relation::pr> V_t;
-    V_t & V = rel.sides[Q.side];
-    typedef V_t::iterator it_t;
-    it_t nn = V.begin();
+    auto & V = rel.sides[Q.side];
+    auto nn = V.begin();
     for(auto const & pr : V) {
         if (!Q.is_coprime_to(mpz_get_ui(pr.p)))
             continue;
@@ -191,8 +183,7 @@ struct model_relation : public indexed_relation_byside {
     {}
     model_relation perturb(std::vector<indexrange> const & Ind, gmp_randstate_t buf) const
     {
-        auto R = [buf]() { return u64_random(buf); };
-        relation_ab const ab(R(), R());
+        relation_ab const ab(i64_random(buf), u64_random(buf));
         model_relation rel(ab);
 
         rel.set_active_sides(get_active_sides());
@@ -205,7 +196,7 @@ struct model_relation : public indexed_relation_byside {
     }
 };
 
-// static std::map<las_todo_entry, std::vector<model_relation> >
+// static std::map<special_q, std::vector<model_relation> >
 static std::pair<std::vector<size_t>, std::vector<model_relation>>
 read_sample_file(int sqside, const char *filename, renumber_t & ren_tab)
 {
@@ -213,15 +204,15 @@ read_sample_file(int sqside, const char *filename, renumber_t & ren_tab)
 
     ASSERT_ALWAYS (in);
 
-    std::set<las_todo_entry> current;
-    std::map<las_todo_entry, std::vector<model_relation> > sample;
+    std::set<special_q> current;
+    std::map<special_q, std::vector<model_relation> > sample;
 
     int nbegin = 0, nend = 0, maxdepth = 0;
 
     for(std::string line ; std::getline(in, line) ; ) {
         if (line.rfind("# Now sieving side-", 0) != std::string::npos) {
             std::istringstream is(line.c_str() + 14);
-            las_todo_entry Q;
+            special_q Q;
             is >> Q;
             if (!is)
                 throw std::runtime_error(fmt::format("parse error at line: {}", line));
@@ -230,14 +221,13 @@ read_sample_file(int sqside, const char *filename, renumber_t & ren_tab)
             if (current.insert(Q).second) {
                 /* When we start over, there's a "second" beginning. */
                 nbegin++;
-                if (nbegin - nend > maxdepth) 
-                    maxdepth = nbegin - nend;
+                maxdepth = std::max(maxdepth, nbegin - nend);
             }
         } else if (line.rfind("# Time for side-", 0) != std::string::npos) {
             nend++;
             for(auto & x : line) if (x == ':') x = ' ';
             std::istringstream is(line.c_str() + 11);
-            las_todo_entry Q;
+            special_q Q;
             is >> Q;
             if (!is)
                 throw std::runtime_error(fmt::format("parse error at line: {}", line));
@@ -247,18 +237,16 @@ read_sample_file(int sqside, const char *filename, renumber_t & ren_tab)
         } else {
             relation rel;
             std::istringstream(line) >> rel;
-            if (current.size() == 1) {
-                las_todo_entry const & Q = *current.begin();
-                remove_special_q(rel, Q);
-                sample[Q].emplace_back(rel, ren_tab);
-            } else {
-                /* Then it's more difficult, as have to look up which Q
-                 * is the good one. There may even be more than one, but
-                 * we consider this unlikely here, since we don't expect
-                 * more than a few "active" special-Qs to choose from
-                 */
-                for(las_todo_entry const & Q : current) {
-                    /* do we have a-br = 0 mod p, with the usual
+            for(auto const & Q : current) {
+                if (current.size() > 1) {
+                    /* If current.size() > 1 it's more difficult, as have to
+                     * look up which Q is the good one. There may even be
+                     * more than one, but we consider this unlikely here,
+                     * since we don't expect more than a few "active"
+                     * special-Qs to choose from
+                     */
+
+                    /* So do we have a-br = 0 mod p, with the usual
                      * conventions ? Those are actually quite annoying
                      * conventions in general. r represents a point in
                      * P1(Z/p), and we want to check if a:b matches r.
@@ -279,16 +267,16 @@ read_sample_file(int sqside, const char *filename, renumber_t & ren_tab)
                     mpz_mod(z, z, Q.p);
                     if (mpz_sgn(z) != 0)
                         continue;
-                    remove_special_q(rel, Q);
-                    sample[Q].emplace_back(rel, ren_tab);
-                    break;
                 }
+                remove_special_q(rel, Q);
+                sample[Q].emplace_back(rel, ren_tab);
+                break;
             }
         }
     }
 
     for(auto & S : sample)
-        std::sort(S.second.begin(), S.second.end());
+        std::ranges::sort(S.second);
 
     if (nbegin == 0) {
         fmt::print(stderr, "# The sample file {} was apparently"
@@ -306,7 +294,7 @@ read_sample_file(int sqside, const char *filename, renumber_t & ren_tab)
         nq++;
         nr+=x.second.size();
         ret.first.push_back(x.second.size());
-        std::copy(x.second.begin(), x.second.end(), std::back_inserter(ret.second));
+        std::ranges::copy(x.second, std::back_inserter(ret.second));
     }
 
     fmt::print("# {}: {} special-q's, {} relations, max {} concurrent special-q's\b",
@@ -319,7 +307,7 @@ static unsigned long print_fake_rel_manyq(
         std::vector<index_t>::const_iterator qbegin,
         std::vector<index_t>::const_iterator qend,
         int nq,
-        // std::vector<std::pair<las_todo_entry, std::vector<model_relation> > > const & sample,
+        // std::vector<std::pair<special_q, std::vector<model_relation> > > const & sample,
         std::pair<std::vector<size_t>, std::vector<model_relation>> const & sample,
         std::vector<indexrange> const & Ind,
         int dl, double shrink_factor,
@@ -343,18 +331,18 @@ static unsigned long print_fake_rel_manyq(
             qpart.push_back(*it++);
 
         auto const & model_nrels = sample.first[R(sample.first.size())];
-        // las_todo_entry const & model_q = model.first;
+        // special_q const & model_q = model.first;
         // auto const & model_nrels = model.second.size();
 
         int nr;
         if (shrink_factor == 1) {
             nr = model_nrels;
         } else {
-            double const nr_dble = double(model_nrels) / double(shrink_factor);
+            double const nr_dble = double_ratio(model_nrels, shrink_factor);
             // Do probabilistic rounding, in case nr_dble is small (maybe < 1)
             double const trunc_part = trunc(nr_dble);
             double const frac_part = nr_dble - trunc_part;
-            double const rnd = double(u64_random(buf)) / double(UINT64_MAX);
+            double const rnd = double_ratio(u64_random(buf), UINT64_MAX);
             nr = int(trunc_part) + int(rnd < frac_part);
         }
 
@@ -372,7 +360,7 @@ static unsigned long print_fake_rel_manyq(
              *   conceivably, for the sides of all divisors of q !) would
              *   be a bit annoying here.
              */
-            std::copy(qpart.begin(), qpart.end(), std::back_inserter(rel.sides.back()));
+            std::ranges::copy(qpart, std::back_inserter(rel.sides.back()));
 
             if (shrink_factor > 1)
                 rel.shrink(shrink_factor);
@@ -462,7 +450,7 @@ std::vector<std::vector<index_t>> indexrange::all_composites(uint64_t q0, uint64
 
 static void worker(int tnum, int nt,
         std::vector<indexrange> const & Ind,
-        // std::vector<std::pair<las_todo_entry, std::vector<model_relation>>> const & sample,
+        // std::vector<std::pair<special_q, std::vector<model_relation>>> const & sample,
         std::pair<std::vector<size_t>, std::vector<model_relation>> const & sample,
         std::vector<std::vector<index_t>> const & qs,
         double shrink_factor, int dl, unsigned long seed)
@@ -538,7 +526,7 @@ int main(int argc, char const * argv[])
 
       /* Could also be a file */
       FILE *f;
-      if ((f = fopen(argv[0], "r")) != NULL) {
+      if ((f = fopen(argv[0], "r")) != nullptr) {
           param_list_read_stream(pl, f, 0);
           fclose(f);
           argv++,argc--;
@@ -553,7 +541,7 @@ int main(int argc, char const * argv[])
   param_list_print_command_line(stdout, pl);
 
   const char * filename;
-  if ((filename = param_list_lookup_string(pl, "poly")) == NULL) {
+  if ((filename = param_list_lookup_string(pl, "poly")) == nullptr) {
       fmt::print(stderr, "Error: parameter -poly is mandatory\n");
       param_list_print_usage(pl, argv0, stderr);
       exit(EXIT_FAILURE);
@@ -614,7 +602,7 @@ int main(int argc, char const * argv[])
   }
 
   const char * renumberfile;
-  if ((renumberfile = param_list_lookup_string(pl, "renumber")) == NULL) {
+  if ((renumberfile = param_list_lookup_string(pl, "renumber")) == nullptr) {
       fmt::print(stderr, "Error: parameter -renumber is mandatory\n");
       param_list_print_usage(pl, argv0, stderr);
       exit(EXIT_FAILURE);
@@ -635,7 +623,7 @@ int main(int argc, char const * argv[])
 
   // read sample file
   const char * samplefile;
-  if ((samplefile = param_list_lookup_string(pl, "sample")) == NULL) {
+  if ((samplefile = param_list_lookup_string(pl, "sample")) == nullptr) {
       fmt::print(stderr, "Error: parameter -sample is mandatory\n");
       param_list_print_usage(pl, argv0, stderr);
       exit(EXIT_FAILURE);
@@ -647,7 +635,7 @@ int main(int argc, char const * argv[])
   std::pair<std::vector<size_t>, std::vector<model_relation>> const sample = read_sample_file(sqside, samplefile, ren_table);
 
   /*
-  std::vector<std::pair<las_todo_entry, std::vector<model_relation>>>
+  std::vector<std::pair<special_q, std::vector<model_relation>>>
       sample;
   for(auto& x : read_sample_file(sqside, samplefile, ren_table))
       sample.emplace_back(std::move(x));
@@ -722,9 +710,9 @@ int main(int argc, char const * argv[])
   /* print statistics */
 
   fmt::print ("# Output {} relations in {:.2f}s cpu ({:.0f} rels/s)\n",
-	  rels_printed, t0, (double) rels_printed / t0);
+	  rels_printed, t0, double_ratio(rels_printed, t0));
   fmt::print ("# Output {} relations in {:.2f}s wct ({:.0f} rels/s)\n",
-	  rels_printed, wct_t0, (double) rels_printed / wct_t0);
+	  rels_printed, wct_t0, double_ratio(rels_printed, wct_t0));
 
   return 0;
 }

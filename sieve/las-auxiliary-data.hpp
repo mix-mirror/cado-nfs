@@ -1,25 +1,24 @@
 #ifndef CADO_LAS_AUXILIARY_DATA_HPP
 #define CADO_LAS_AUXILIARY_DATA_HPP
 
-#include <cstddef>                     // for size_t
-#include <array>                       // for array
-#include <cstdint>                     // for int64_t, uint64_t
-#include <memory>                      // for shared_ptr, __shared_ptr_access
-#include <mutex>                       // for mutex
-#include <unordered_set>               // for unordered_set
-#include <utility>                     // for pair
-#include <vector>                      // for vector
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <unordered_set>
+#include <utility>
+#include <vector>
 
-#include "las-info.hpp"                // for las_info
-#include "las-report-stats.hpp"        // for las_report
-#include "las-where-am-i-proxy.hpp"         // for where_am_I
-#include "lock_guarded_container.hpp"  // for lock_guarded_container
-#include "threadpool.hpp"              // for worker_thread
-#include "tdict.hpp"             // for slot, timetree_t, UNIQUE_ID
-#include "timing.h"                 // for seconds, wct_seconds
+#include "las-info.hpp"
+#include "las-report-stats.hpp"
+#include "las-where-am-i-proxy.hpp"
+#include "lock_guarded_container.hpp"
+#include "threadpool.hpp"
+#include "tdict.hpp"
+#include "timing.h"
 
 struct las_output; // IWYU pragma: keep
-struct las_todo_entry; // IWYU pragma: keep
+struct special_q; // IWYU pragma: keep
 
 
 /* Compute a checksum over the bucket region.
@@ -41,13 +40,12 @@ struct report_and_timer {
 };
 
 class sieve_checksum {
-  static const unsigned int checksum_prime = 4294967291u; /* < 2^32 */
-  unsigned int checksum;
-  void update(const unsigned int);
+  static const unsigned int checksum_prime = 4294967291U; /* < 2^32 */
+  unsigned int checksum = 0;
+  void update(unsigned int);
 
   public:
-  sieve_checksum() : checksum(0) {}
-  unsigned int get_checksum() {return checksum;}
+  unsigned int get_checksum() const { return checksum; }
 
   /* Combine two checksums */ 
   void update(sieve_checksum const & other) {
@@ -82,8 +80,15 @@ class nfs_aux {/*{{{*/
      */
     las_info const & las;
     public:
-    las_todo_entry const & doing;
 
+    /* This lives somewhere in special_q_task_collection. We don't have
+     * ownership, as the special_q_task_collection is persistent anyway.
+     * Note that &doing might be dynamic_cast-able to
+     * special_q_task_simple or special_q_task_tree, and we do make use
+     * of this.
+     */
+    special_q_task & doing;
+    
     /* we rarely have ownership, if ever, of course. In the typical case,
      * there just one output file and that's it.
      * However in client-server file we may want several output files. In
@@ -93,15 +98,15 @@ class nfs_aux {/*{{{*/
      */
     std::shared_ptr<las_output> output_p;
 
-    typedef std::pair< int64_t, uint64_t> abpair_t;
+    using abpair_t = std::pair< int64_t, uint64_t>;
 
     struct abpair_hash_t {
-        inline unsigned long operator()(abpair_t const& o) const {
+        unsigned long operator()(abpair_t const& o) const {
             return 314159265358979323UL * o.first + 271828182845904523UL + o.second;
         }
     };
 
-    typedef lock_guarded_container<std::unordered_set<abpair_t, abpair_hash_t>> rel_hash_t;
+    using rel_hash_t = lock_guarded_container<std::unordered_set<abpair_t, abpair_hash_t>>;
 
     std::shared_ptr<rel_hash_t> rel_hash_p;
     rel_hash_t & get_rel_hash() { return * rel_hash_p ; }
@@ -156,19 +161,18 @@ class nfs_aux {/*{{{*/
     double wct_qt0;
 
     nfs_aux(las_info const & las,
-            las_todo_entry const & doing,
+            special_q_task & doing,
             std::shared_ptr<rel_hash_t> & rel_hash_p,
             int nthreads)
         : las(las)   /* shame... */
         , doing(doing)
         , rel_hash_p(rel_hash_p)
-        , dest_rt(nullptr)
         , checksum_post_sieve(las.cpoly->nb_polys)
         , th(nthreads)
           //, thread_data(*this))
+        , qt0(seconds())
+        , wct_qt0(wct_seconds())
     {
-        wct_qt0 = wct_seconds();
-        qt0 = seconds();
     }
 
 

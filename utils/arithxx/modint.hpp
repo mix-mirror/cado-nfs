@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <stdexcept>
-#include <type_traits>
+#include <compare>
 
 #include <gmp.h>
 #include "fmt/base.h"
@@ -21,7 +21,7 @@
 #include "gmp_aux.h"
 #include "gmp_auxx.hpp"
 #include "utils_cxx.hpp"
-#include "cado_math_aux.hpp"
+#include "cado_compile_time_hacks.hpp"
 
 /* see also mpn_compile_time.hpp for a similar purpose (but a different
  * interface)
@@ -62,8 +62,9 @@ public:
 private:
     Integer_base() : super {} {}
     explicit Integer_base(const uint64_t a) : super {a} {}
-    template<size_t N, typename XX = typename std::enable_if<N <= NN>::type>
+    template<size_t N>
     explicit Integer_base(std::array<uint64_t, N> const & s)
+    requires(N <= NN)
 #if GNUC_VERSION_ATMOST(8, 0, 0)
     /* It's probably a gcc bug. Definitely, the code below properly
      * initializes the std::array parent */
@@ -149,30 +150,20 @@ public:
     explicit operator uint32_t() const {return (uint32_t) (*this)[0];}
     explicit operator uint64_t() const {return (*this)[0];}
 
-#if __cplusplus >= 202002L
-    int operator<=>(const Integer_base & a) const { return std::lexicographical_compare_three_way(rbegin(), rend(), a.rbegin(), a.rend()); }
-    int operator<=>(const uint64_t a) const {return (*this > a) - (*this < a); }
-    int cmp(const Integer_base & a) const { return *this <=> a; }
-    int cmp(const uint64_t a) const { return *this <=> a; }
-#else
-    int cmp(const Integer_base & a) const {return (*this > a) - (*this < a);}
-    int cmp(const uint64_t a) const {return (*this > a) - (*this < a); }
-#endif
-    bool operator==(Integer_base const & a) const { return std::equal(begin(), end(), a.begin()); }
-    bool operator< (Integer_base const & a) const { return std::lexicographical_compare(rbegin(), rend(), a.rbegin(), a.rend()); }
-    bool operator!=(Integer_base const & a) const { return !operator==(a); }
-    bool operator> (Integer_base const & a) const { return a < *this; }
-    bool operator>=(Integer_base const & a) const { return !operator<(a); }
-    bool operator<=(Integer_base const & a) const { return !(a < *this); }
+    std::strong_ordering operator<=>(const Integer_base & a) const
+    {
+        return std::lexicographical_compare_three_way(rbegin(), rend(), a.rbegin(), a.rend());
+    }
+    std::strong_ordering operator<=>(const uint64_t a) const {
+        if (std::any_of(begin() + 1, end(), convert_bool()))
+            return std::strong_ordering::greater;
+        return (*this)[0] <=> a;
+    }
+    // int cmp(const Integer_base & a) const { return *this <=> a; }
+    // int cmp(const uint64_t a) const { return *this <=> a; }
 
+    bool operator==(Integer_base const & a) const { return std::ranges::equal(*this, a); }
     bool operator==(uint64_t const a) const { return (*this)[0] == a && std::none_of(begin() + 1, end(), convert_bool()); }
-    bool operator< (uint64_t const a) const { return (*this)[0] < a && std::none_of(begin() + 1, end(), convert_bool()); }
-    bool operator> (uint64_t const a) const { return std::any_of(begin() + 1, end(), convert_bool()) || (*this)[0] > a; }
-    bool operator!=(uint64_t const a) const { return !operator==(a); }
-    bool operator>=(uint64_t const a) const { return !operator<(a); }
-    bool operator<=(uint64_t const a) const { return !operator>(a); }
-
-
 
     T& operator|=(const T &a) { auto c = a.begin(); for(auto & v: *this) v |= *c++; return downcast(); }
     T& operator&=(const T &a) { auto c = a.begin(); for(auto & v: *this) v &= *c++; return downcast(); }
@@ -280,10 +271,14 @@ public:
             throw std::invalid_argument("input does not fit");
     }
 
-    template<size_t N, typename XX = typename std::enable_if<N <= super::max_size_in_words>::type>
-    explicit Integer64(std::array<uint64_t, N> const & s) : super(s) {}
-    template<size_t N, typename XX = typename std::enable_if<N <= super::max_size_in_words>::type>
-    Integer64& operator=(std::array<uint64_t, N> const & s) { set(s); return *this; }
+    template<size_t N>
+    explicit Integer64(std::array<uint64_t, N> const & s)
+    requires(N <= super::max_size_in_words)
+    : super(s) {}
+    template<size_t N>
+    Integer64& operator=(std::array<uint64_t, N> const & s)
+        requires(N <= super::max_size_in_words)
+    { set(s); return *this; }
     Integer64& operator=(const cxx_mpz & s) { s.get(data(), max_size_in_words); return *this; }
     Integer64& operator=(const uint64_t a) { set(&a, 1); return *this; }
 
@@ -339,10 +334,14 @@ public:
         if (!super::set(begin, n))
             throw std::invalid_argument("input does not fit");
     }
-    template<size_t N, typename XX = typename std::enable_if<N <= super::max_size_in_words>::type>
-    explicit Integer128(std::array<uint64_t, N> const & s) : super(s) {}
-    template<size_t N, typename XX = typename std::enable_if<N <= super::max_size_in_words>::type>
-    Integer128& operator=(std::array<uint64_t, N> const & s) { set(s); return *this; }
+    template<size_t N>
+    explicit Integer128(std::array<uint64_t, N> const & s)
+        requires(N <= super::max_size_in_words)
+        : super(s) {}
+    template<size_t N>
+    Integer128& operator=(std::array<uint64_t, N> const & s)
+        requires(N <= super::max_size_in_words)
+    { set(s); return *this; }
     Integer128& operator=(const cxx_mpz & s) { s.get(data(), max_size_in_words); return *this; }
     Integer128& operator=(const uint64_t a) { set(&a, 1); return *this; }
 
@@ -509,7 +508,7 @@ inline bool mpz_fits<Integer128> (mpz_srcptr v) {
     return mpz_sizeinbase(v, 2) <= 128;
 }
 
-}
+} /* namespace gmp_auxx */
 
 namespace Integer_details {
     /* When we divide by small constants, there's a point where we create an
@@ -530,8 +529,8 @@ namespace Integer_details {
         struct reduce_multiple_impl<Integer128, n, false> {
             template<typename ignore>
                 static Integer128 reduce(Integer128 const & t, ignore const &) {
-                    using namespace cado_math_aux;
-                    constexpr uint64_t c = invmod<n, uint64_t>::value();
+                    using cado_math_aux::invmod;
+                    constexpr uint64_t c = invmod<n, uint64_t>::value;
 
                     /* a = a1 * 2^w + a0, n|a
                      * Let a = a' * n * 2^w + a'', a'' < n * 2^w.
@@ -558,8 +557,8 @@ namespace Integer_details {
         struct reduce_multiple_impl<Integer128, n, true> {
             template<typename chooser_mul>
                 static Integer128 reduce(Integer128 & t, chooser_mul const & cm) {
-                    using namespace cado_math_aux;
-                    constexpr uint64_t c = invmod<n, uint64_t>::value();
+                    using cado_math_aux::invmod;
+                    constexpr uint64_t c = invmod<n, uint64_t>::value;
 
                     Integer128 r, t2;
 
@@ -589,8 +588,8 @@ namespace Integer_details {
         struct reduce_multiple_impl<Integer64, n, b> {
             template<typename ignore>
                 static Integer64 reduce(Integer64 & t, ignore const &) {
-                    using namespace cado_math_aux;
-                    constexpr uint64_t c = invmod<n, uint64_t>::value();
+                    using cado_math_aux::invmod;
+                    constexpr uint64_t c = invmod<n, uint64_t>::value;
                     return Integer64 { t[0] * c };
                 }
         };
@@ -600,7 +599,8 @@ namespace Integer_details {
     template<typename Integer, int n, size_t k>
         struct mod_n_impl {
             static uint64_t value(Integer const & r) {
-                constexpr uint64_t w_mod_n = cado_math_aux::pow2_mod<64, n>::value();
+                using cado_math_aux::pow2_mod;
+                constexpr uint64_t w_mod_n = pow2_mod<64, n>::value;
                 return (mod_n_impl<Integer, n, k-1>::value(r) * w_mod_n + r[Integer::max_size_in_words-k] % n) % n;
             }
         };
@@ -619,7 +619,6 @@ namespace Integer_details {
                 return 0;
             }
         };
-
-}
+} /* namespace Integer_details */
 
 #endif

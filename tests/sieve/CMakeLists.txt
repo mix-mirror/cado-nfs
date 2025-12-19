@@ -183,9 +183,9 @@ cado_define_test(F9
 
 cado_divert_test(F9 sieve
         APPEND_ENVIRONMENT
-            REL_COUNT=431
-            REFERENCE_SHA1=e04ae591795ff30af703a2235a4f9fd09d17b380
-            REFERENCE_REVISION=ede066464ba58b2d6127fa256cef01706282e0ed
+            REL_COUNT=432
+            REFERENCE_SHA1=ffe3f2036e7b80b2a7a56bc397f665506430f386
+            REFERENCE_REVISION=2c5ac2cff
         )
 
 cado_define_test(bogus_fbc_is_consistent
@@ -205,6 +205,15 @@ cado_divert_test(F9_sieve reuse_foreign_fbc
         TARGET_DEPENDENCIES
         copy_bogus_fbc
 )
+
+cado_divert_test(F9_sieve 2_levels APPEND_ARGUMENTS bkthresh1=600000)
+cado_divert_test(F9_sieve 3_levels APPEND_ARGUMENTS
+    bkthresh1=600000 bkthresh2=1100000 -Bi 5)
+
+if(HAVE_SSE2)
+    cado_divert_test(F9_sieve smallset_purge
+        APPEND_ARGUMENTS -smallset-purge)
+endif()
 
 # override all arguments for this one.
 cado_divert_test(F9 sieve_with_hints
@@ -293,6 +302,10 @@ cado_divert_test(F9 batch
         APPEND_ARGUMENTS -batch
         TIMEOUT 180
         )
+cado_divert_test(F9_batch 2_levels APPEND_ARGUMENTS bkthresh1=600000)
+cado_divert_test(F9_batch 3_levels APPEND_ARGUMENTS
+    bkthresh1=600000 bkthresh2=1100000 -Bi 5)
+
 cado_define_test(bogus_batch_is_consistent
     PROGRAM
     ${CADO_NFS_SOURCE_DIR}/sieve/inspect-batch-file.pl -batch
@@ -306,9 +319,9 @@ set_tests_properties(F9_batch_try_to_reuse_foreign PROPERTIES WILL_FAIL 1)
 cado_divert_test(F9 sublat
         APPEND_ENVIRONMENT
             las_I=10
-            REL_COUNT=245
-            REFERENCE_SHA1=11f0947fa83a200160ad934215c141917ca3074e
-            REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
+            REL_COUNT=246
+            REFERENCE_SHA1=f35a27aa4d96918a087cf8169071985c3992e659
+            REFERENCE_REVISION=2c5ac2cff
         APPEND_ARGUMENTS -sublat 3
         TIMEOUT 150
         )
@@ -399,7 +412,6 @@ set(c30_30012_base_env
         adjust_strategy=2
 )
 
-if(0)
 cado_define_test(c30_30012
     ENVIRONMENT
         ${c30_30012_base_env}
@@ -411,7 +423,7 @@ cado_define_test(c30_30012
 
 # This one doesn't test much. It only verifies that a projective root
 # gets bucket sieved. If this fails, it probably means that this
-# q-lattice ended up behaving differently, and not have I=256 as per
+# q-lattice ends up behaving differently, and does not have I=256 as per
 # adjust-strategy 2.
 cado_divert_test(c30_30012 1
     APPEND_ENVIRONMENT
@@ -439,22 +451,29 @@ cado_divert_test(c30_30012 2b
 # This is for the 2-level sieving case.
 # Normally, we should sieve the given prime within
 # fill_in_buckets_lowlevel (this works because we've restricted to very
-# small sieving regions with B=10
+# small sieving regions with B=10)
+#
+# About the timeout: TIMEOUT 20 is fine, but it seems that for this test
+# the valgrind penalty is slightly larger than usual. The typical
+# TIMEOUT_SCALE=10 that is used under valgrind leads to repeated timeouts
+# at 200 seconds for c30_30012_3. A bump of the timeout for this test
+# sounds fairly reasonable.
 cado_divert_test(c30_30012 3
     APPEND_ENVIRONMENT
         LAS_BINARY=${las_tracek_path}
         q0=50707 rho=50345
         las_A=23 las_I= las_B=10 bkthresh1=2048     # kill I explicitly
         traceij=1,1153 "TRACE_REGEX=Pushed.hit.*p=1153"
+    TIMEOUT 40
     TARGET_DEPENDENCIES las_tracek
 )
-endif()
 
 # Try the todo-list mode of las
 cado_divert_test(F9 todo
         APPEND_ENVIRONMENT
-            REFERENCE_SHA1=451406185eca205ee28990c7381f85a1c4942c5f
-            REFERENCE_REVISION=88ddb4f779defe692aed14a79ef8c952a4f68efa
+            REFERENCE_SHA1=39f6c2f198f1bbd7a65558c28f8ed696ebe2d1f1
+            REFERENCE_REVISION=2c5ac2cff
+            REL_COUNT=426
             CHECKSUM_FILE=
             todo=${CADO_NFS_SOURCE_DIR}/tests/sieve/F9.todo
         )
@@ -486,7 +505,7 @@ cado_define_test(F9_dupsup
             ncurves0=10 ncurves1=10
             CHECKSUM_FILE=
             DUPSUP_BINARY=${dupsup_path}
-            DUPE_COUNT=12
+            DUPE_COUNT=13
         PROVIDE_TEMPORARY_WDIR
         SCRIPT
             ${CMAKE_CURRENT_SOURCE_DIR}/F9.dupsup.sh
@@ -559,11 +578,13 @@ cado_define_test(test_logapprox.cpp
 # sure with the current code... */
 cado_define_test(test_init_norms.cpp
     ${PROJECT_SOURCE_DIR}/sieve/las-multiobj-globals.cpp
+    ${PROJECT_SOURCE_DIR}/sieve/las-config.cpp
     $<TARGET_OBJECTS:las_core_b0>
     $<TARGET_OBJECTS:las_core_a>
     $<TARGET_OBJECTS:las_core_0>
     NO_DEFAULT_RUN
     LIBRARIES utils tests
+    TIMEOUT 40
 )
 
 cado_divert_test(test_init_norms c120_basic
@@ -727,6 +748,27 @@ cado_define_test(test-inline-polynomials-and-expressions
     TARGET_DEPENDENCIES
         makefb
 )
+
+# test for las with galois
+set(galois_poly ${CMAKE_CURRENT_SOURCE_DIR}/galois.poly)
+set(galois_roots ${CMAKE_CURRENT_SOURCE_DIR}/galois.roots.gz)
+
+cado_define_test(galois_sieve_abnormal_orbits
+        ENVIRONMENT
+            las_I=10 poly=${galois_poly}
+            lim0=200 lpb0=9 mfb0=10 fb0=${galois_roots}
+            q0=101 q1=102 galois=_y
+            lim1=200 lpb1=9 mfb1=10
+            # Note: the last 3 args (lim1, lpb1 and mfb1) are not needed but
+            # sievetest.sh complains if they are not present
+            LAS_BINARY=${las_path}
+        REL_COUNT=71
+        PROVIDE_TEMPORARY_WDIR
+        SCRIPT
+            ${CMAKE_CURRENT_SOURCE_DIR}/sievetest.sh
+            -v -v
+        TARGET_DEPENDENCIES las
+        )
 
 # test for las with only one side
 set(d20_poly ${CMAKE_CURRENT_SOURCE_DIR}/d20.poly)

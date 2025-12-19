@@ -15,6 +15,8 @@
 
 #include "fmt/base.h"
 #include "fmt/ostream.h"
+
+#include "named_proxy.hpp"
 #endif
 
 #include "macros.h"    // for GNUC_VERSION_ATLEAST
@@ -56,6 +58,7 @@ void double_poly_set_xi(double_poly_ptr s, int i);
 void double_poly_cleandeg(double_poly_ptr f, int deg);
 
 int double_poly_cmp(double_poly_srcptr a, double_poly_srcptr b);
+double double_poly_lc(double_poly_srcptr f);
 
 double double_poly_eval (double_poly_srcptr, double);
 double double_poly_eval_homogeneous (double_poly_srcptr p, double x, double y);
@@ -78,14 +81,13 @@ unsigned int double_poly_compute_all_roots_with_bound(double *,
                                                       double_poly_srcptr,
                                                       double);
 unsigned int double_poly_compute_all_roots(double *, double_poly_srcptr);
-void double_poly_print (FILE *, double_poly_srcptr, char *variable_name);
-int double_poly_asprint (char **t, double_poly_srcptr p, char *variable_name);
+void double_poly_print (FILE *, double_poly_srcptr, const char *variable_name);
+int double_poly_asprint (char **t, double_poly_srcptr p, const char *variable_name);
 void double_poly_set_mpz_poly (double_poly_ptr p, mpz_poly_srcptr q);
 
-double double_poly_resultant(double_poly_srcptr p, double_poly_srcptr q);
 void double_poly_mul_double(double_poly_ptr f, double_poly_srcptr g,
     double mul);
-double double_poly_div_linear(double_poly_ptr q, double_poly_srcptr p, const double r);
+double double_poly_div_linear(double_poly_ptr q, double_poly_srcptr p, double r);
 void double_poly_set_string(double_poly_ptr poly, const char *str);
 
 #ifdef __cplusplus
@@ -105,6 +107,7 @@ void double_poly_set_string(double_poly_ptr poly, const char *str);
  */
 struct cxx_double_poly {
     double_poly x;
+    static constexpr int number_of_variables = 1;
     cxx_double_poly(int deg = -1) { double_poly_init(x, deg); }
     cxx_double_poly(double_poly_srcptr f) { double_poly_init(x, -1); double_poly_set(x, f); }
     ~cxx_double_poly() { double_poly_clear(x); }
@@ -116,7 +119,6 @@ struct cxx_double_poly {
         double_poly_set(x, o.x);
         return *this;
     }
-#if __cplusplus >= 201103L
     cxx_double_poly(cxx_double_poly && o) {
         double_poly_init(x, -1);
         double_poly_swap(x, o.x);
@@ -125,48 +127,25 @@ struct cxx_double_poly {
         double_poly_swap(x, o.x);
         return *this;
     }
-#endif
     operator double_poly_ptr() { return x; }
     operator double_poly_srcptr() const { return x; }
     double_poly_ptr operator->() { return x; }
     double_poly_srcptr operator->() const { return x; }
     std::string print_poly(std::string const& var) const;
 
-    template<typename T>
-    class named_proxy {
-        static_assert(std::is_reference<T>::value, "T must be a reference");
-        typedef typename std::remove_reference<T>::type V;
-        typedef typename std::remove_const<V>::type Vnc;
-        typedef named_proxy<Vnc &> nc;
-        static constexpr const bool is_c = std::is_const<V>::value;
-        public:
-        T c;
-        std::string x;
-        named_proxy(T c, std::string x)
-            : c(c), x(std::move(x))
-        {}
-        template<
-                typename U = T,
-                typename = typename std::enable_if<
-                    std::is_same<U, nc>::value
-                >::type
-            >
-        explicit named_proxy(U const & c) : c(c.c), x(c.x) {}
-    };
-
-    named_proxy<cxx_double_poly &> named(std::string const & x) {
+    cado::named_proxy<cxx_double_poly &> named(std::string const & x) {
         return { *this, x };
     }
-    named_proxy<cxx_double_poly const &> named(std::string const & x) const {
+    cado::named_proxy<cxx_double_poly const &> named(std::string const & x) const {
         return { *this, x };
     }
 
 };
 
 /* printing needs a way to specify the variables... */
-inline std::ostream& operator<<(std::ostream& o, cxx_double_poly::named_proxy<cxx_double_poly const &> const & f)
+inline std::ostream& operator<<(std::ostream& o, cado::named_proxy<cxx_double_poly const &> const & f)
 {
-    return o << f.c.print_poly(f.x);
+    return o << f.c.print_poly(f.x());
 }
 
 /* we do have a default behaviour, though */

@@ -1,34 +1,30 @@
-/*****************************************************************
- *                Functions for the factor base                  *
- *****************************************************************/
-
 #ifndef CADO_FB_HPP
 #define CADO_FB_HPP
 
-#include <cstddef> // for size_t
-#include <cstdio>  // for fprintf, FILE
+#include <cstddef>
+#include <cstdio>
 
-#include <algorithm>   // for sort, max
-#include <array>       // for array
-#include <iosfwd>      // for ostream
-#include <limits>      // for numeric_limits
-#include <list>        // for list
-#include <map>         // for map, operator!=, _Rb_tree_iter...
-#include <mutex>       // for lock_guard, mutex
-#include <type_traits> // for vector
-#include <utility>     // for pair
-#include <vector>      // for vector
+#include <algorithm>
+#include <array>
+#include <iosfwd>
+#include <limits>
+#include <list>
+#include <map>
+#include <mutex>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
-#include "cado_poly.h" // for MAX_DEGREE
-#include "macros.h"    // for ASSERT_ALWAYS, ASSERT, MAYBE_U...
-#include "mpz_poly.h"  // for cxx_mpz, cxx_mpz_poly
+#include "cado_poly.h"
+#include "macros.h"
+#include "mpz_poly.h"
 
 #include "fb-types.hpp"
-#include "las-config.h"               // for FB_MAX_PARTS
-#include "lock_guarded_container.hpp" // for lock_guarded_container
-#include "mmap_allocator.hpp"         // for mmap_allocator
+#include "las-config.hpp"
+#include "lock_guarded_container.hpp"
 #include "mmappable_vector.hpp"
-#include "multityped_array.hpp" // for multityped_array_foreach, mult...
+#include "multityped_array.hpp"
+
 struct qlattice_basis;
 struct cxx_param_list;
 
@@ -52,7 +48,7 @@ struct cxx_param_list;
 /* Forward declaration so fb_entry_general can use it in constructors */
 template <int Nr_roots> class fb_entry_x_roots;
 
-/* A root modulo a prime power q. q is specified externally */
+/* A root modulo a prime power q=p^k. q is specified externally */
 struct fb_general_root {
     /* exp and oldexp are maximal such that:
        If not projective and a == br (mod p^k), then p^exp | F(a,b)
@@ -92,6 +88,8 @@ struct fb_general_root {
                                           unsigned char nexp,
                                           unsigned char oldexp);
 
+  private:
+    friend class fb_entry_general;
     /* Constructor from the old format of storing projective roots, which has q
        added to the root if the root is projective */
     explicit fb_general_root(fb_root_p1 const R, unsigned char const nexp = 1,
@@ -117,21 +115,19 @@ struct fb_general_root {
     void fprint(FILE * out, fbprime_t const q) const
     {
         fprintf(out, "%llu", to_old_format(q));
-        if (oldexp != 0 || this->exp != 1)
-            fprintf(out, ":%hhu:%hhu", oldexp, this->exp);
+        if (oldexp != 0 || exp != 1)
+            fprintf(out, ":%hhu:%hhu", oldexp, exp);
     }
 
     void transform(fb_general_root & result, fbprime_t q,
                    redc_invp_t invq, qlattice_basis const & basis) const;
 };
-#if __cplusplus >= 201703L
 /* std::has_unique_object_representations should be almost what we want,
  * but unfortunately it does not seem to work as it should (tested on
  * g++13 and clang-{14,15,16})
  */
-static_assert(std::has_unique_object_representations<fb_general_root>::value,
+static_assert(std::has_unique_object_representations_v<fb_general_root>,
               "fb_general_root must have no padding");
-#endif
 static_assert(sizeof(fb_general_root) == 8,
               "fb_general_root must have no padding");
 
@@ -145,11 +141,11 @@ class fb_entry_general
     void read_roots(char const *, unsigned char, unsigned char, unsigned long);
 
   public:
-    typedef fb_entry_general transformed_entry_t;
-    fbprime_t q, p;   /* q = p^k */
-    redc_invp_t invq; /* invq = -1/q (mod 2^32), or (mod 2^64), depending on
+    using transformed_entry_t = fb_entry_general;
+    fbprime_t q = 0, p = 0;   /* q = p^k */
+    redc_invp_t invq = 0; /* invq = -1/q (mod 2^32), or (mod 2^64), depending on
                          the size of redc_invp_t */
-    unsigned char k, nr_roots;
+    unsigned char k = 0, nr_roots = 0;
 
   private:
     unsigned char dummy_padding_byte1 MAYBE_UNUSED_PRIVATE_DATA_MEMBER = 0;
@@ -170,6 +166,7 @@ class fb_entry_general
     fbroot_t get_r(size_t const i) const { return roots[i].r; };
     fbroot_t get_proj(size_t const i) const { return roots[i].proj; };
     void parse_line(char const * line, unsigned long linenr);
+    bool can_merge(fb_entry_general const &) const;
     void merge(fb_entry_general const &);
     void fprint(FILE * out) const;
     bool is_simple() const;
@@ -192,14 +189,12 @@ class fb_entry_general
         };
     };
 };
-#if __cplusplus >= 201703L
 /* std::has_unique_object_representations should be almost what we want,
  * but unfortunately it does not seem to work as it should (tested on
  * g++13 and clang-{14,15,16})
  */
-static_assert(std::has_unique_object_representations<fb_entry_general>::value,
+static_assert(std::has_unique_object_representations_v<fb_entry_general>,
               "fb_entry_general must have no padding");
-#endif
 static_assert(sizeof(fb_entry_general) == 4 * 4 + MAX_DEGREE * 8,
               "fb_entry_general must have no padding");
 
@@ -224,7 +219,7 @@ template <int Nr_roots> class fb_transformed_entry_x_roots
 template <int Nr_roots> class fb_entry_x_roots
 {
   public:
-    typedef fb_transformed_entry_x_roots<Nr_roots> transformed_entry_t;
+    using transformed_entry_t = fb_transformed_entry_x_roots<Nr_roots>;
     fbprime_t p;
     redc_invp_t invq; /* invq = -1/q (mod 2^32), or (mod 2^64), depending on
                          the size of redc_invp_t */
@@ -240,8 +235,7 @@ template <int Nr_roots> class fb_entry_x_roots
         : p(p)
         , invq(invq)
     {
-        for (int i = 0; i < Nr_roots; i++)
-            this->roots[i] = roots[i];
+        std::copy_n(roots, Nr_roots, this->roots.begin());
     }
     /* Allow assignment-construction from general entries */
     explicit fb_entry_x_roots(fb_entry_general const & e)
@@ -270,14 +264,12 @@ template <int Nr_roots> class fb_entry_x_roots
     void transform_roots(transformed_entry_t &, qlattice_basis const &) const;
 };
 
-#if __cplusplus >= 201703L
 static_assert(
-    std::has_unique_object_representations<fb_entry_x_roots<1>>::value,
+    std::has_unique_object_representations_v<fb_entry_x_roots<1>>,
     "fb_entry_x_roots<1> must not have padding");
 static_assert(
-    std::has_unique_object_representations<fb_entry_x_roots<2>>::value,
+    std::has_unique_object_representations_v<fb_entry_x_roots<2>>,
     "fb_entry_x_roots<2> must not have padding");
-#endif
 
 /* }}} */
 
@@ -303,7 +295,7 @@ template <typename FB_ENTRY_TYPE> class fb_slice_weight_estimator;
 template <typename FB_ENTRY_TYPE> class fb_slice : public fb_slice_interface
 {
     friend class fb_slice_weight_estimator<FB_ENTRY_TYPE>;
-    typedef mmappable_vector<FB_ENTRY_TYPE> fb_entry_vector;
+    using fb_entry_vector = mmappable_vector<FB_ENTRY_TYPE>;
     typename fb_entry_vector::const_iterator _begin, _end;
     unsigned char logp;
     slice_index_t index; /* global index across all fb parts */
@@ -328,7 +320,7 @@ template <typename FB_ENTRY_TYPE> class fb_slice : public fb_slice_interface
     }
 
   public:
-    typedef FB_ENTRY_TYPE entry_t;
+    using entry_t = FB_ENTRY_TYPE;
     typename fb_entry_vector::const_iterator begin() const
     {
         return _begin;
@@ -370,12 +362,11 @@ template <typename FB_ENTRY_TYPE> class fb_slice : public fb_slice_interface
  * */
 
 template <typename T> struct entries_and_cdf {
-    typedef mmappable_vector<T> container_type;
-    typedef mmappable_vector<double> weight_container_type;
+    using container_type = mmappable_vector<T>;
+    using weight_container_type = mmappable_vector<double>;
     struct type : public container_type {
-        typedef typename entries_and_cdf<T>::container_type container_type;
-        typedef typename entries_and_cdf<T>::weight_container_type
-            weight_container_type;
+        using container_type = entries_and_cdf<T>::container_type;
+        using weight_container_type = entries_and_cdf<T>::weight_container_type;
         /* cumulative distribution function. This is set up by
          * helper_functor_append. We use it to split into slices.
          * weight_cdf[i] is \sum_{j < i} super[j].weight
@@ -416,6 +407,8 @@ template <typename T> struct entries_and_cdf {
         }
     };
 };
+template <typename T>
+using entries_and_cdf_t = entries_and_cdf<T>::type;
 
 template <int n>
 struct works_with_mmappable_vector<fb_entry_x_roots<n>>
@@ -426,16 +419,19 @@ struct works_with_mmappable_vector<fb_entry_general> : public std::true_type {
 };
 
 template <int n> struct fb_entries_factory {
-    typedef typename entries_and_cdf<fb_entry_x_roots<n>>::type type;
+    using type = entries_and_cdf_t<fb_entry_x_roots<n>>;
 };
 template <> struct fb_entries_factory<-1> {
-    typedef typename entries_and_cdf<fb_entry_general>::type type;
+    using type = entries_and_cdf_t<fb_entry_general>;
 };
 template <int n> struct fb_slices_factory {
-    typedef std::vector<fb_slice<fb_entry_x_roots<n>>> type;
+    using type = std::vector<fb_slice<fb_entry_x_roots<n>>>;
 };
 template <> struct fb_slices_factory<-1> {
-    typedef std::vector<fb_slice<fb_entry_general>> type;
+    using type = std::vector<fb_slice<fb_entry_general>>;
+};
+template <typename T, typename U> struct std::common_type<fb_slice<T>, fb_slice<U>> {
+    using type = fb_slice_interface;
 };
 
 class fb_factorbase
@@ -446,19 +442,19 @@ class fb_factorbase
 
   private:
     cxx_mpz_poly f;
-    int side;
-    unsigned long lim;
-    unsigned long powlim;
+    int side = -1;
+    unsigned long lim = 0;
+    unsigned long powlim = 0;
 
   public:
     bool empty() const { return lim == 0; }
 
   private:
-    typedef multityped_array<fb_entries_factory, -1, MAX_ROOTS + 1> entries_t;
+    using entries_t = cado::multityped_array<fb_entries_factory, -1, MAX_ROOTS + 1>;
     entries_t entries;
 
   public:
-    typedef std::array<size_t, MAX_ROOTS + 2> threshold_pos;
+    using threshold_pos = std::array<size_t, MAX_ROOTS + 2>;
     threshold_pos get_threshold_pos(fbprime_t) const;
 
   private:
@@ -483,9 +479,6 @@ class fb_factorbase
      * ("weight") of entries in the whole factor base, or in subranges
      */
   private:
-    struct helper_functor_count_primes;
-    struct helper_functor_count_prime_ideals;
-    struct helper_functor_count_weight;
     struct helper_functor_count_combined;
     struct helper_functor_count_primes_interval;
     struct helper_functor_count_prime_ideals_interval;
@@ -504,13 +497,13 @@ class fb_factorbase
     struct key_type {
         std::array<fbprime_t, FB_MAX_PARTS> thresholds;
         fbprime_t td_thresh;
-        fbprime_t skipped;
-        double scale;
+        fbprime_t skipped = 0;
+        double scale = 0;
         /* This might seem non obvious, but this parameters controls
          * the size of the slices, because we want to enforce some
          * relatively-even division. It's not entirely clear that we
          * want it here, but we definitely want it somewhere. */
-        unsigned int nb_threads;
+        unsigned int nb_threads = 0;
 
         bool operator<(key_type const & x) const
         {
@@ -552,13 +545,13 @@ class fb_factorbase
              * of fb_slice objects) for all numbers of roots between 1 and
              * MAX_ROOTS.
              */
-            typedef multityped_array<fb_slices_factory, -1, MAX_ROOTS + 1>
-                slices_t;
+            using slices_t = cado::multityped_array<fb_slices_factory, -1, MAX_ROOTS + 1>;
             friend struct helper_functor_subdivide_slices;
-            slices_t slices;
-            slice_index_t first_slice_index = 0;
 
           public:
+            slices_t slices;
+
+            slice_index_t first_slice_index = 0;
             template <int n>
             typename fb_slices_factory<n>::type & get_slices_vector_for_nroots()
             {
@@ -588,8 +581,8 @@ class fb_factorbase
              * --> return &(slices1[i-slicesG.size()-slices0.size()]) and so on.
              */
             struct helper_functor_get {
-                typedef fb_slice_interface const * type;
-                typedef slice_index_t key_type;
+                using type = fb_slice_interface const *;
+                using key_type = slice_index_t;
                 template <typename T>
                 type operator()(T const & x, slice_index_t & k)
                 {
@@ -613,15 +606,30 @@ class fb_factorbase
                  * TODO: dichotomy, perhaps ? Can we do the dichotomy
                  * elegantly ?
                  */
+
+
                 if (index < first_slice_index)
                     return nullptr;
+
+                /*
                 const slice_index_t idx = index - first_slice_index;
                 if (idx >= nslices()) {
                     // index = idx - nslices();
                     return nullptr;
                 }
-                fb_slice_interface const * res =
-                    multityped_array_locate<helper_functor_get>()(slices, idx);
+                */
+
+                auto nth = [](auto const & B, size_t v) {
+                    auto locate = [&](auto const & x) -> fb_slice_interface const * {
+                        if (v < x.size())
+                            return &(x[v]);
+                        v -= x.size();
+                        return nullptr;
+                    };
+                    return B.find(locate);
+                };
+
+                auto const * res = nth(slices, index - first_slice_index);
                 ASSERT_ALWAYS(res);
                 ASSERT_ALWAYS(res->get_index() == index);
                 return res;
@@ -631,49 +639,35 @@ class fb_factorbase
              * thing to query */
             mutable slice_index_t _nslices =
                 std::numeric_limits<slice_index_t>::max();
-            struct helper_functor_nslices {
-                template <typename T>
-                slice_index_t operator()(slice_index_t t, T const & x) const
-                {
-                    return t + x.size();
-                }
-            };
 
           public:
             slice_index_t nslices() const
             {
                 if (_nslices != std::numeric_limits<slice_index_t>::max())
                     return _nslices;
-                helper_functor_nslices N;
-                return _nslices = multityped_array_fold(N, 0, slices);
+                auto totalsize = [](auto const & B) {
+                    size_t s = 0;
+                    B.foreach([&](auto const & x) { s += x.size(); });
+                    return s;
+                };
+                return _nslices = totalsize(slices);
             }
             /* }}} */
 
-          private:
-            template <typename F> struct foreach_slice_s {
-                F & f;
-                template <typename T> void operator()(T & x)
-                {
-                    for (auto & a: x)
-                        f(a);
-                }
-                template <typename T> void operator()(T const & x)
-                {
-                    for (auto const & a: x)
-                        f(a);
-                }
-            };
-
           public:
-            template <typename F> void foreach_slice(F & f)
+            template <typename F> void foreach_slice(F && f)
             {
-                foreach_slice_s<F> FF {f};
-                multityped_array_foreach(FF, slices);
+                slices.foreach([&](auto & x) {
+                    for (auto & a: x)
+                        std::forward<F>(f)(a);
+                });
             }
-            template <typename F> void foreach_slice(F & f) const
+            template <typename F> void foreach_slice(F && f) const
             {
-                foreach_slice_s<F> FF {f};
-                multityped_array_foreach(FF, slices);
+                slices.foreach([&](auto const & x) {
+                    for (auto const & a: x)
+                        std::forward<F>(f)(a);
+                });
             }
             /*
              * old g++ seems to have difficulties with this variant, and
@@ -715,17 +709,28 @@ class fb_factorbase
         /* toplevel is set by the ctor */
         int toplevel = 0;
 
+      public:
+        size_t nparts() const { return parts.size(); }
+
         /* index: global index across all fb parts */
-        fb_slice_interface const * get(slice_index_t index) const
+        fb_slice_interface const * get(slice_index_t index, size_t i0, size_t i1) const
         {
-            for (auto const & p: parts) {
+            for (size_t i = i0 ; i < i1 ; i++) {
+                auto const & p = parts[i];
                 if (index < p.first_slice_index + p.nslices())
                     return p.get(index);
             }
             return nullptr;
         }
+        fb_slice_interface const * get(slice_index_t index, size_t i0) const
+        {
+            return get(index, i0, parts.size());
+        }
+        fb_slice_interface const * get(slice_index_t index) const
+        {
+            return get(index, 0, parts.size());
+        }
 
-      public:
         part const & get_part(int i) const { return parts[i]; }
 
         int get_toplevel() const { return toplevel; }
@@ -854,16 +859,18 @@ class fb_factorbase
     fb_factorbase(cxx_cado_poly const & cpoly, int side, cxx_param_list & pl,
                   char const * fbc_filename, int nthreads = 1);
     fb_factorbase() = default;
+    /*
     fb_factorbase(fb_factorbase &&) = default;
     fb_factorbase & operator=(fb_factorbase &&) = default;
+    */
 
-  private:
-    struct sorter {
-        template <typename T> void operator()(T & x)
-        {
+  public:
+    void finalize()
+    {
+        entries.foreach([](auto & x) {
             /* not entirely clear to me. Shall we sort by q or by p ?
              */
-            typedef typename T::value_type X;
+            using X = std::remove_reference_t<decltype(x)>::value_type;
             auto by_q = [](X const & a, X const & b) {
                 return a.get_q() < b.get_q();
             };
@@ -875,19 +882,16 @@ class fb_factorbase
                     a.get_q() < b.get_q();
             };
             */
-            std::sort(x.begin(), x.end(), by_q);
-        }
-    };
-
-  public:
-    void finalize()
-    {
-        sorter S;
-        multityped_array_foreach(S, entries);
+            std::ranges::sort(x, by_q);
+            });
     }
 };
 
 std::ostream & operator<<(std::ostream & o, fb_factorbase::key_type const &);
+
+namespace fmt {
+    template<> struct formatter<fb_factorbase::key_type> : ostream_formatter {};
+} /* namespace fmt */
 
 unsigned char fb_log(double x, double y, double z);
 unsigned char fb_log_delta(fbprime_t, unsigned long, unsigned long, double);

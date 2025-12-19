@@ -206,10 +206,13 @@ step_coverage() {
         # --json
         #
         gcovr_args=()
+        gcovr_args+=(-j0)
+        gcovr_args+=(--exclude-lines-by-pattern '.*ASSERT_ALWAYS')
         gcovr_args+=(--merge-mode-functions=separate)
         gcovr_args+=(-r "$source_tree")
         gcovr_args+=(--json "$outfile")
         gcovr_args+=(--gcov-ignore-parse-errors=suspicious_hits.warn_once_per_file)
+        gcovr_args+=(--exclude-throw-branches)
         (set -x ; cd "$build_tree" ; time gcovr "${gcovr_args[@]}")
     fi
 
@@ -229,7 +232,7 @@ step_coverage() {
             --directory "$build_tree"
             --exclude "$build_tree"
             --exclude "/usr/*"
-            --ignore-errors unused
+            --ignore-errors unused,inconsistent
             --external
         )
         if [ "$2" = "base" ] ; then
@@ -245,7 +248,7 @@ step_coverage() {
             --exclude "$PWD/utils/embedded/*"
             --exclude "$PWD/linalg/bwc/flint-fft/*"
             --exclude "$PWD/gf2x/*"
-            --ignore-errors unused
+            --ignore-errors unused,inconsistent
         )
         lcov -a "$outfile_pre0" "${lcov_removal_args[@]}" -o "$outfile_pre1"
 
@@ -340,6 +343,10 @@ step_check() {
 
     if [ "$specific_checks" = "bwc.sagemath" ] ; then
         ctest_args+=(-R with_sagemath)
+        # it's only for our sage-in-docker script, but we really want
+        # this in order to avoid long pulls from runners.
+        # Note that we'll pull anyway if the image is not there.
+        export DOCKER_SAGEMATH_NO_PULL=1
     elif [ "$specific_checks" = "including_mpi" ] ; then
         # nothing to do
         :

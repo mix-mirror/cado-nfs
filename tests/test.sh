@@ -24,6 +24,10 @@ while [ $# -gt 0 ] ; do
         shift
         filter_regex="$1"
         shift
+    elif [ "$1" = "--sed-output" ] ; then
+        shift
+        filter_sed="$1"
+        shift
     elif [ "$1" = "--expect-sha1" ] ; then
         shift
         expect_sha1="$1"
@@ -61,7 +65,14 @@ dotest() {
     fi
 }
 
-got_sha1=$(dotest "$@" <"$stdin" | tee >(cat >&3) | (grep "$filter_regex" || :) | $SHA1BIN)
+
+if [ "$filter_sed" ] ; then
+    do_filter() { (grep "$filter_regex" || : ) | sed -e "$filter_sed" ; }
+else
+    do_filter() { grep "$filter_regex" || : ; }
+fi
+
+got_sha1=$(dotest "$@" <"$stdin" | tee >(cat >&3) | do_filter | $SHA1BIN)
 
 if ! [ "$expect_sha1" ] ; then
     # echo "========= $got_sha1 ========"
@@ -79,7 +90,7 @@ for ref in "${reftab[@]}" ; do
 done
 
 if ! [ "$match" ] ; then
-    echo "Got sha1 checksum=$got_sha1, different from expected $expect_sha1" >&2
+    echo "Got sha1 checksum $got_sha1 different from expected $expect_sha1" >&2
     exit 1
 fi
 

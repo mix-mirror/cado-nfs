@@ -13,7 +13,8 @@ target_link_libraries (makefb utils)
 
 add_library (trialdiv OBJECT trialdiv.cpp)
 
-add_library(las_core_0 OBJECT las-side-config.cpp)
+add_library(las_core_0 OBJECT
+        las-side-config.cpp)
 
 add_executable(freerel freerel.cpp $<TARGET_OBJECTS:las_core_0>)
 target_link_libraries(freerel utils)
@@ -21,7 +22,6 @@ target_link_libraries(freerel utils)
 # las_core_a has just very very basic types and code that can be used
 # (and are actually used) by some unit tests.
 add_library(las_core_a OBJECT
-        las-todo-entry.cpp
         las-qlattice.cpp
         )
 
@@ -33,7 +33,6 @@ add_library(las_core_a OBJECT
 # las_core_b0 is slighlty intermediary.
 add_library(las_core_b0 OBJECT
         las-siever-config.cpp
-        las-config.c
         las-norms.cpp
         logapprox.cpp
         las-coordinates.cpp
@@ -41,6 +40,8 @@ add_library(las_core_b0 OBJECT
 
 add_library(las_core_b OBJECT
         las-info.cpp
+        las-special-q-task-collection.cpp
+        las-special-q-task-tree.cpp
         las-memory.cpp
         las-parallel.cpp
         las-sieve-shared-data.cpp
@@ -58,21 +59,18 @@ add_library(las_core_b OBJECT
         las-threads-work-data.cpp
         las-dumpfile.cpp
         las-duplicate.cpp
-        las-plattice.cpp
-        las-descent.cpp
         las-divide-primes.cpp
         las-sieve2357.cpp
 )
 
 add_library(las_core_c OBJECT
         las-arith.cpp
-        las-descent-trees.cpp
-        las-plattice.cpp
 )
 
 set(las_multi_a_sources
         fb.cpp
 	bucket.cpp
+        las-config.cpp
 	las-fill-in-buckets.cpp
 	las-smallsieve.cpp
         las-cofac-standalone.cpp
@@ -132,10 +130,6 @@ add_executable(las_descent
 target_link_libraries (las_descent facul utils)
 set_property(TARGET las_descent PROPERTY COMPILE_DEFINITIONS DLP_DESCENT SUPPORT_LARGE_Q)
 
-add_executable (fb_test EXCLUDE_FROM_ALL fb.cpp)
-set_property(TARGET fb_test PROPERTY COMPILE_DEFINITIONS TESTDRIVE=1)
-target_link_libraries (fb_test utils)
-
 add_subdirectory(ecm)
 add_subdirectory(strategies)
 
@@ -150,10 +144,7 @@ add_executable(dupsup dupsup.cpp
     )
 target_link_libraries(dupsup facul utils)
 
-add_executable(fake_rels EXCLUDE_FROM_ALL fake_rels.cpp
-    # I don't like this situation where there's a single object file that
-    # I want to pull from a greater compound.
-    las-todo-entry.cpp)
+add_executable(fake_rels EXCLUDE_FROM_ALL fake_rels.cpp)
 target_link_libraries(fake_rels utils_with_io)
 
 install(TARGETS makefb las las_descent freerel RUNTIME DESTINATION ${LIBSUFFIX}/sieve) 

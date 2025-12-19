@@ -130,16 +130,12 @@ struct lingen_substep_schedule {
         return is;
     }
 
-    bool operator<(lingen_substep_schedule const & o) const {
-        if (fft_type < o.fft_type) return true;
-        if (fft_type > o.fft_type) return false;
-        if (shrink0 < o.shrink0) return true;
-        if (shrink0 > o.shrink0) return false;
-        if (shrink2 < o.shrink2) return true;
-        if (shrink2 > o.shrink2) return false;
-        if (batch < o.batch) return true;
-        if (batch > o.batch) return false;
-        return false;
+    auto operator<=>(lingen_substep_schedule const & o) const {
+        if (auto c = fft_type <=> o.fft_type; c != 0) return c;
+        if (auto c = shrink0 <=> o.shrink0; c != 0) return c;
+        if (auto c = shrink2 <=> o.shrink2; c != 0) return c;
+        if (auto c = batch <=> o.batch; c != 0) return c;
+        return std::strong_ordering::equal;
     }
     bool operator==(lingen_substep_schedule const & o) const {
         return fft_type == o.fft_type
@@ -152,25 +148,23 @@ struct lingen_substep_schedule {
     }
 };
 
-template<typename T> lingen_substep_schedule::fft_type_t encode_fft_type();
-template<> inline lingen_substep_schedule::fft_type_t encode_fft_type<void>()
-{
-    return lingen_substep_schedule::FFT_NONE;
-}
+template<typename T> struct encode_fft_type_details {
+    static constexpr lingen_substep_schedule::fft_type_t value = lingen_substep_schedule::FFT_NONE;
+};
 #ifndef LINGEN_BINARY
-template<> inline lingen_substep_schedule::fft_type_t encode_fft_type<fft_transform_info>()
-{
-    return lingen_substep_schedule::FFT_FLINT;
-}
+template<> struct encode_fft_type_details<fft_transform_info> {
+    static constexpr lingen_substep_schedule::fft_type_t value = lingen_substep_schedule::FFT_FLINT;
+};
 #else
-template<> inline lingen_substep_schedule::fft_type_t encode_fft_type<gf2x_cantor_fft_info>()
-{
-    return lingen_substep_schedule::FFT_CANTOR;
-}
-template<> inline lingen_substep_schedule::fft_type_t encode_fft_type<gf2x_ternary_fft_info>()
-{
-    return lingen_substep_schedule::FFT_TERNARY;
-}
+template<> struct encode_fft_type_details<gf2x_cantor_fft_info> {
+    static constexpr lingen_substep_schedule::fft_type_t value = lingen_substep_schedule::FFT_CANTOR;
+};
+template<> struct encode_fft_type_details<gf2x_ternary_fft_info> {
+    static constexpr lingen_substep_schedule::fft_type_t value = lingen_substep_schedule::FFT_TERNARY;
+};
 #endif
+template<typename T>
+inline constexpr lingen_substep_schedule::fft_type_t encode_fft_type = encode_fft_type_details<T>::value;
+
 
 #endif	/* LINGEN_SUBSTEP_SCHEDULE_HPP_ */

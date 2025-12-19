@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <limits.h>     /* for INT_MAX */
+#include <math.h>
 
 #include <gmp.h>
 
@@ -561,7 +562,12 @@ next_mpz_with_factor_constraints(mpz_ptr r,
     ASSERT_ALWAYS(0); // Should never get there.
 }
 
-/* return the number of bits of p, counting from the least significant end */
+/* return the number of bits of p, counting from the least significant end.
+ * 0 has 0 bit
+ * 1 has 1 bit
+ * 2 and 3 have 2 bits,
+ * 4 to 7 have 3 bits, etc
+ */
 int nbits (uintmax_t p)
 {
   int k;
@@ -739,3 +745,19 @@ void memfill_random(void *p, size_t s, gmp_randstate_t rstate)
     for( ; s ; pc++, s--) *pc = gmp_urandomb_ui(rstate, CHAR_BIT);
 }
 
+/* Adapted from mpz_ln2 in utils/usp.c */
+double mpz_log(mpz_srcptr a)
+{
+    size_t l = mpz_sizeinbase (a, 2);
+    if (l <= 1024) { /* a fits in a double */
+        return log(fabs(mpz_get_d(a)));
+    } else {
+        mpz_t b;
+        mpz_init (b);
+        mpz_tdiv_q_2exp (b, a, l - 900U);
+        double r = mpz_get_d(b);
+        r = ((double) l - 900.0)*log(2.0) + log(fabs(r));
+        mpz_clear (b);
+        return r;
+    }
+}

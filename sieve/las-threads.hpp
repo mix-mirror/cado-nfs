@@ -9,7 +9,7 @@
 
 #include "bucket.hpp"
 #include "las-bkmult.hpp"
-#include "las-config.h"
+#include "las-config.hpp"
 #include "threadpool.hpp"
 #include "macros.h"
 
@@ -20,6 +20,7 @@ class nfs_aux;
    of them for exclusive use and to release it again. */
 template <typename T>
 class reservation_array : public monitor {
+  static_assert(T::level <= MAX_TOPLEVEL);
     /* typically, T is here bucket_array_t<LEVEL, HINT>. It's a
      * non-copy-able object. Yet, it's legit to use std::vectors's on
      * such objects in c++11, provided that we limit ourselves to the
@@ -81,42 +82,86 @@ public:
 class reservation_group {
   friend class nfs_work;
   reservation_array<bucket_array_t<1, shorthint_t> > RA1_short;
-  reservation_array<bucket_array_t<2, shorthint_t> > RA2_short;
-  reservation_array<bucket_array_t<3, shorthint_t> > RA3_short;
-  reservation_array<bucket_array_t<1, longhint_t> > RA1_long;
-  reservation_array<bucket_array_t<2, longhint_t> > RA2_long;
   reservation_array<bucket_array_t<1, emptyhint_t> > RA1_empty;
+#if MAX_TOPLEVEL >= 2
+  reservation_array<bucket_array_t<2, shorthint_t> > RA2_short;
   reservation_array<bucket_array_t<2, emptyhint_t> > RA2_empty;
-  reservation_array<bucket_array_t<3, emptyhint_t> > RA3_empty;
+  reservation_array<bucket_array_t<1, longhint_t> > RA1_long;
   reservation_array<bucket_array_t<1, logphint_t> > RA1_logp;
+#endif
+#if MAX_TOPLEVEL >= 3
+  reservation_array<bucket_array_t<3, shorthint_t> > RA3_short;
+  reservation_array<bucket_array_t<3, emptyhint_t> > RA3_empty;
+  reservation_array<bucket_array_t<2, longhint_t> > RA2_long;
   reservation_array<bucket_array_t<2, logphint_t> > RA2_logp;
+#endif
+  static_assert(MAX_TOPLEVEL == 3);
 protected:
-  template<int LEVEL, typename HINT>
-  reservation_array<bucket_array_t<LEVEL, HINT> > &
-  get();
+#define RA_NAME(LEVEL, HINTTYPE) RA ## LEVEL ## _ ## HINTTYPE
+#define RA_ACCESSOR(LEVEL, HINTTYPE)					\
+  template<int LEV, typename HINT>					\
+  reservation_array<bucket_array_t<LEV, HINT> > &			\
+  get()									\
+  requires (LEV == (LEVEL) && std::is_same_v<HINT, CPP_PAD(HINTTYPE, hint_t)>)\
+  { return RA_NAME(LEVEL,HINTTYPE); }                                   \
+  template<int LEV, typename HINT>					\
+  reservation_array<bucket_array_t<LEV, HINT> > const &			\
+  cget() const								\
+  requires (LEV == (LEVEL) && std::is_same_v<HINT, CPP_PAD(HINTTYPE, hint_t)>)\
+  { return RA_NAME(LEVEL,HINTTYPE); }
 
-  template <int LEVEL, typename HINT>
-  const reservation_array<bucket_array_t<LEVEL, HINT> > &
-  cget() const;
+  RA_ACCESSOR(1, short)
+  RA_ACCESSOR(1, empty)
+#if MAX_TOPLEVEL >= 2
+  RA_ACCESSOR(1, long)
+  RA_ACCESSOR(1, logp)
+  RA_ACCESSOR(2, short)
+  RA_ACCESSOR(2, empty)
+#endif
+#if MAX_TOPLEVEL >= 3
+  RA_ACCESSOR(2, long)
+  RA_ACCESSOR(2, logp)
+  RA_ACCESSOR(3, short)
+  RA_ACCESSOR(3, empty)
+#endif
+  static_assert(MAX_TOPLEVEL == 3);
 public:
   reservation_group(int nr_bucket_arrays);
   void allocate_buckets(
-          las_memory_accessor & memory,
-          const int *n_bucket,
-          bkmult_specifier const& multiplier,
-          std::array<double, FB_MAX_PARTS> const &
-          fill_ratio, int logI, nfs_aux&, thread_pool&,
-          bool);
+        las_memory_accessor & memory,
+        const int *n_bucket,
+        bkmult_specifier const& mult,
+        std::array<double, FB_MAX_PARTS> const & fill_ratio, int logI,
+        nfs_aux & aux,
+        thread_pool & pool,
+        bool with_hints);
+private:
+  template<bool> void allocate_buckets(
+        las_memory_accessor & memory,
+        const int *n_bucket,
+        bkmult_specifier const& mult,
+        std::array<double, FB_MAX_PARTS> const & fill_ratio, int logI,
+        nfs_aux & aux,
+        thread_pool & pool);
 };
 
 extern template class reservation_array<bucket_array_t<1, shorthint_t> >;
-extern template class reservation_array<bucket_array_t<2, shorthint_t> >;
-extern template class reservation_array<bucket_array_t<3, shorthint_t> >;
-extern template class reservation_array<bucket_array_t<1, longhint_t> >;
-extern template class reservation_array<bucket_array_t<2, longhint_t> >;
 extern template class reservation_array<bucket_array_t<1, emptyhint_t> >;
+
+#if MAX_TOPLEVEL >= 2
+extern template class reservation_array<bucket_array_t<2, shorthint_t> >;
 extern template class reservation_array<bucket_array_t<2, emptyhint_t> >;
-extern template class reservation_array<bucket_array_t<3, emptyhint_t> >;
+extern template class reservation_array<bucket_array_t<1, longhint_t> >;
 extern template class reservation_array<bucket_array_t<1, logphint_t> >;
+#endif
+
+#if MAX_TOPLEVEL >= 3
+extern template class reservation_array<bucket_array_t<3, shorthint_t> >;
+extern template class reservation_array<bucket_array_t<3, emptyhint_t> >;
+extern template class reservation_array<bucket_array_t<2, longhint_t> >;
 extern template class reservation_array<bucket_array_t<2, logphint_t> >;
+#endif
+
+static_assert(MAX_TOPLEVEL == 3);
+
 #endif

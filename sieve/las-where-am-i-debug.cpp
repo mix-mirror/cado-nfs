@@ -12,7 +12,6 @@
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
-#include <cstdarg>  // IWYU pragma: keep // because we want _gmp_vfprintf !
 
 #include <array>
 #include <memory>
@@ -20,13 +19,13 @@
 #include <vector>
 
 #ifdef HAVE_CXXABI_H
-#include <cxxabi.h> // IWYU pragma: keep
+#include <cxxabi.h>
 #endif
 #ifdef HAVE_EXECINFO
-#include <execinfo.h>                    // for backtrace, backtrace_symbols
+#include <execinfo.h>
 #endif
 
-#include <gmp.h>                         // for gmp_vfprintf, mpz_divexact_ui
+#include <gmp.h>
 
 #include "cxx_mpz.hpp"
 #include "fb.hpp"
@@ -34,7 +33,7 @@
 #include "las-where-am-i.hpp"
 #include "las-where-am-i-debug.hpp"
 #include "las-info.hpp"
-#include "las-config.h"
+#include "las-config.hpp"
 #include "las-coordinates.hpp"
 #include "las-norms.hpp"
 #include "las-qlattice.hpp"
@@ -154,7 +153,7 @@ void where_am_I::begin_special_q(nfs_work const & ws)
       if (convert_ab_to_ij(trace_ij.i, trace_ij.j, trace_ab.a, trace_ab.b, Q)) {
           convert_ij_to_Nx(trace_Nx.N, trace_Nx.x, trace_ij.i, trace_ij.j, logI);
       } else {
-          verbose_output_print(3 /* TRACE_CHANNEL */, 0, "# Relation (%" PRId64 ",%" PRIu64 ") to be traced "
+          verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Relation ({},{}) to be traced "
                   "is outside of the current q-lattice\n",
                   trace_ab.a, trace_ab.b);
           trace_ij.i=0;
@@ -184,7 +183,7 @@ void where_am_I::begin_special_q(nfs_work const & ws)
          || (trace_ij.i < -(1L << (logI-1)))
          || (trace_ij.i >= (1L << (logI-1))))
     {
-        verbose_output_print(3 /* TRACE_CHANNEL */, 0, "# Relation (%" PRId64 ",%" PRIu64 ") to be traced is "
+        verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Relation ({},{}) to be traced is "
                 "outside of the current (i,j)-rectangle (i=%d j=%u)\n",
                 trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
         trace_ij.i=0;
@@ -194,8 +193,8 @@ void where_am_I::begin_special_q(nfs_work const & ws)
         return;
     }
     if (trace_ij.i || trace_ij.j < UINT_MAX) {
-        verbose_output_print(3 /* TRACE_CHANNEL */, 0, "# Tracing relation (a,b)=(%" PRId64 ",%" PRIu64 ") "
-                "(i,j)=(%d,%u), (N,x)=(%u,%u)\n",
+        verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Tracing relation (a,b)=({},{}) "
+                "(i,j)=({},{}), (N,x)=({},{})\n",
                 trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j, trace_Nx.N,
                 trace_Nx.x);
     }
@@ -237,9 +236,8 @@ int test_divisible(where_am_I const & w)
     if (rc)
         mpz_divexact_ui (traced_norms[w->side], traced_norms[w->side], (unsigned long) q);
     else
-        verbose_output_vfprint(3 /* TRACE_CHANNEL */, 0, gmp_vfprintf, "# FAILED test_divisible(p=%" FBPRIME_FORMAT
-                ", N=%d, x=%u, side %d): i = %ld, j = %u, norm = %Zd\n",
-                w->p, w->N, w->x, w->side, (long) i, j, (mpz_srcptr) traced_norms[w->side]);
+        verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# FAILED test_divisible(p={},N={}, x={}, side {}): i = {}, j = {}, norm = {}\n",
+                w->p, w->N, w->x, w->side, (long) i, j, traced_norms[w->side]);
 
     return rc;
 }
@@ -330,12 +328,12 @@ static void sieve_increase_logging_backend(unsigned char *S, const unsigned char
     }
 #endif
     if (w->p) 
-        verbose_output_print(3 /* TRACE_CHANNEL */, 0, "# Add log(%" FBPRIME_FORMAT ",side %d) = %hhu to "
-            "S[%u] = %hhu, from BA[%u] -> %hhu [%s]\n",
+        verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Add log({},side {}) = {} to "
+            "S[{}] = {}, from BA[{}] -> {} [{}]\n",
             w->p, w->side, logp, w->x, *S, w->N, (unsigned char)(*S+logp), caller.c_str());
     else
-        verbose_output_print(3 /* TRACE_CHANNEL */, 0, "# Add log(hint=%lu,side %d) = %hhu to "
-            "S[%u] = %hhu, from BA[%u] -> %hhu [%s]\n",
+        verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Add log(hint={},side {}) = {} to "
+            "S[{}] = {}, from BA[{}] -> {} [{}]\n",
             (unsigned long) w->h, w->side, logp, w->x, *S, w->N, (unsigned char)(*S+logp), caller.c_str());
 }
 
@@ -376,9 +374,9 @@ void sieve_increase_underflow_trap(unsigned char *S, const unsigned char logp, w
     if ((unsigned int) logp + *S > maxdiff)
       {
         maxdiff = logp - *S;
-        verbose_output_print(3 /* TRACE_CHANNEL */, 0, "# Error, underflow at (N,x)=(%u, %u), "
-                "(i,j)=(%d, %u), (a,b)=(%ld, %lu), S[x] = %hhu, log(%"
-                FBPRIME_FORMAT ") = %hhu\n",
+        verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Error, underflow at (N,x)=({}, {}), "
+                "(i,j)=({}, {}), (a,b)=({}, {}), S[x] = {}, log(%"
+                FBPRIME_FORMAT ") = {}\n",
                 w->N, w->x, i, j, a, b, *S, w->p, logp);
       }
     /* arrange so that the unconditional increase which comes next

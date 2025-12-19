@@ -8,7 +8,7 @@
 #include "cxx_mpz.hpp"
 #include "numbertheory/number_field_element.hpp"
 #include "numbertheory/number_field.hpp"
-#include "numbertheory/fmt_helpers.hpp"
+#include "fmt_helper_sagemath.hpp"
 #include "mpz_mat_accessors.h"
 #include "mpz_poly.h"
 
@@ -22,7 +22,7 @@ number_field_element::number_field_element(class number_field const & K, cxx_mpz
 
     if (a.degree() >= n) {
         cxx_mpz c;
-        mpz_poly_pseudo_remainder(r, a, K.defining_polynomial());
+        mpz_poly_pseudo_remainder(r, a, f);
         mpz_pow_ui(denom, mpz_poly_lc(f), a.degree() - n + 1);
         mpz_poly_content(c, r);
         mpz_gcd(c, c, denom);
@@ -123,6 +123,20 @@ number_field_element number_field_element::operator*(number_field_element const 
         mpq_canonicalize(ri);
     }
     return ret;
+}
+
+number_field_element number_field_element::operator*(cxx_mpz const & m) const
+{
+    cxx_mpq_mat cm;
+    mpq_mat_mul_mpz(cm, coefficients, m);
+    return { K, cm };
+}
+
+number_field_element number_field_element::operator/(cxx_mpz const & m) const
+{
+    cxx_mpq_mat cm;
+    mpq_mat_div_mpz(cm, coefficients, m);
+    return { K, cm };
 }
 
 auto fmt::formatter<number_field_element>::format(number_field_element const & e, format_context& ctx) const -> format_context::iterator

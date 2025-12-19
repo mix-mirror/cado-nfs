@@ -21,10 +21,6 @@
 
 #cmakedefine HAVE_GDB_PYTHON_PRETTY_PRINT
 
-#cmakedefine    HAVE_CXX11
-
-#cmakedefine    HAVE_CXX20
-
 #define GMP_INCDIR    "@GMP_INCDIR@"
 #define GMP_LIBDIR    "@GMP_LIBDIR@"
 #define MPIR_INCDIR    "@MPIR_INCDIR@"
@@ -75,9 +71,7 @@
 
 #cmakedefine    HAVE_CURL
 
-#cmakedefine    HAVE_CABSL
 #cmakedefine    HAVE_LOG2
-#cmakedefine    HAVE_CLOG
 #cmakedefine    HAVE_EXP2
 
 #cmakedefine    HAVE_STDCPP_MATH_SPEC_FUNCS
@@ -128,6 +122,9 @@
 #cmakedefine    HAVE_HWLOC
 
 #cmakedefine    HAVE_GMPECM
+
+#cmakedefine    HAVE_MPFR
+#cmakedefine    HAVE_MPC
 
 #cmakedefine    HAVE_CXXABI_H
 
@@ -208,6 +205,8 @@
 #define CADO_MPI_MP_LIMB_T   @CADO_MPI_MP_LIMB_T@
 #define CADO_MPI_MP_SIZE_T   @CADO_MPI_MP_SIZE_T@
 #define CADO_MPI_MPZ_INTERNAL_SIZE_T   @CADO_MPI_MPZ_INTERNAL_SIZE_T@
+
+#cmakedefine HAVE_LIBSTDCXX_BUG_114153
 
 /* see also select_mpi.h for c++ templates meant to help in determining mpi type tags */
 

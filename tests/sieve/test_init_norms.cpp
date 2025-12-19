@@ -2,38 +2,36 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cstdarg> // needed by gmp_vfprintf // IWYU pragma: keep
 #include <cstring>
-#include <cinttypes> /* for PRIx64 macro and strtoumax */
-#include <cmath>   // for ceiling, floor in cfrac
+#include <cmath>
 #include <cfloat>
-#include <climits>                // INT_MAX INT_MIN
+#include <climits>
 
-#include <memory>                 // for shared_ptr, allocator_traits<>::val...
-#include <string>                 // for string, operator==
+#include <memory>
+#include <string>
 #include <vector>
 #include <algorithm>
 
 #ifdef HAVE_MINGW
-#include <fcntl.h>   /* for _O_BINARY */
+#include <fcntl.h>
 #endif
 
-#include <gmp.h>                  // for mpz_srcptr, gmp_urandomm_ui, gmp_vf...
+#include <gmp.h>
 
-#include "cado_poly.h"            // for cxx_cado_poly, cado_poly_read, cado...
-#include "cxx_mpz.hpp"            // for cxx_mpz
-#include "las-config.h"
+#include "gmp_aux.h"
+#include "cado_poly.h"
+#include "cxx_mpz.hpp"
+#include "las-config.hpp"
 #include "las-coordinates.hpp"
 #include "las-norms.hpp"
-#include "las-qlattice.hpp"       // for qlattice_basis
-#include "las-siever-config.hpp"  // for siever_config
-#include "las-todo-entry.hpp"     // for las_todo_entry
+#include "las-siever-config.hpp"
+#include "special-q.hpp"
 #include "macros.h"
-#include "mpz_poly.h"             // for mpz_poly, mpz_poly_srcptr
+#include "mpz_poly.h"
 #include "params.h"
-#include "rootfinder.h" // mpz_poly_roots
-#include "timing.h"     // wct_seconds
-#include "verbose.h"    // verbose_output_print
+#include "rootfinder.h"
+#include "timing.h"
+#include "verbose.h"
 
 static int adjust_strategy = 0;
 
@@ -285,7 +283,7 @@ int main(int argc0, char const * argv0[])
         } else {
             q = q0;
         }
-        las_todo_entry doing(q, rho, sqside);
+        special_q doing(q, rho, sqside);
 
         sieve_range_adjust Adj(doing, cpoly, config_base);
 
@@ -293,19 +291,9 @@ int main(int argc0, char const * argv0[])
         int const should_discard = !Adj.sieve_info_adjust_IJ();
 
         if (should_discard) {
-                verbose_output_vfprint(0, 1, gmp_vfprintf,
-                        "# "
-                        "Discarding side-%d q=%Zd; rho=%Zd;",
-                        doing.side,
-                        (mpz_srcptr) doing.p,
-                        (mpz_srcptr) doing.r);
-                verbose_output_print(0, 1,
-                         " a0=%" PRId64
-                        "; b0=%" PRId64
-                        "; a1=%" PRId64
-                        "; b1=%" PRId64
-                        "; raw_J=%u;\n", 
-                        Adj.Q.a0, Adj.Q.b0, Adj.Q.a1, Adj.Q.b1, Adj.J);
+                verbose_fmt_print(0, 1,
+                        "# Discarding {}; raw_J={};\n",
+                        Adj.Q, Adj.J);
                 continue;
         }
 
@@ -329,25 +317,14 @@ int main(int argc0, char const * argv0[])
 
         /* done with skew gauss ! */
 
-        verbose_output_vfprint(0, 1, gmp_vfprintf,
-                             "# "
-                             "Sieving side-%d q=%Zd; rho=%Zd;",
-                             doing.side,
-                             (mpz_srcptr) doing.p,
-                             (mpz_srcptr) doing.r);
-
-        verbose_output_print(0, 1, " a0=%" PRId64 "; b0=%" PRId64 "; a1=%" PRId64 "; b1=%" PRId64 "; J=%u;",
-                             Adj.Q.a0, Adj.Q.b0,
-                             Adj.Q.a1, Adj.Q.b1,
-                             Adj.J);
-        verbose_output_print(0, 1, "\n");
+        verbose_fmt_print(0, 1, "# Sieving {}; J={};\n", Adj.Q, Adj.J);
         /* TODO: maybe print that later */
         if (!mpz_probab_prime_p(doing.p, 1)) {
-            verbose_output_vfprint(1, 0, gmp_vfprintf,
-                    "# Warning, q=%Zd is not prime\n",
-                    (mpz_srcptr) doing.p);
+            verbose_fmt_print(1, 0,
+                    "# Warning, q={} is not prime\n",
+                    doing.p);
         }
-        verbose_output_print(0, 2, "# I=%u; J=%u\n", 1U << conf.logI, Adj.J);
+        verbose_fmt_print(0, 2, "# I={}; J={}", 1U << conf.logI, Adj.J);
 
         std::unique_ptr<lognorm_base> lognorms[NCODES][2];
 
@@ -355,10 +332,9 @@ int main(int argc0, char const * argv0[])
             for(size_t c = 0 ; c < impls.size() ; c++) {
                 std::string const & s(impls[c]);
                 if (s == "reference") {
-                    lognorms[c][side].reset(new lognorm_reference(conf, cpoly, side, Adj.Q, Adj.logI, Adj.J));
+                    lognorms[c][side] = std::make_unique<lognorm_reference>(conf, cpoly, side, Adj.Q, Adj.logI, Adj.J);
                 } else if (s == "smart") {
-                    lognorms[c][side].reset(
-                            new lognorm_smart(conf, cpoly, side, Adj.Q, Adj.logI, Adj.J));
+                    lognorms[c][side] = std::make_unique<lognorm_smart>(conf, cpoly, side, Adj.Q, Adj.logI, Adj.J);
                     impl_stats[c][side] += dynamic_cast<lognorm_smart*>(lognorms[c][side].get())->G.endpoints.size();
                 } else {
                     fprintf(stderr, "no such implementation: %s\n", s.c_str());
@@ -421,12 +397,12 @@ int main(int argc0, char const * argv0[])
                             d1, sqrt(d2 - d1*d1));
                 }
                 if (MAX(-dmin, dmax) > abort_on_jitter[side]) {
-                    gmp_fprintf(stderr,
+                    fmt::print(stderr,
                             "###### The jitter reported above will"
                             " cause a program failure\n"
                             "###### Reproduce with:\n"
-                            "###### -sqside %d -q0 %Zd -rho %Zd -check-bucket %d\n",
-                            sqside, (mpz_srcptr) q, (mpz_srcptr) rho, N);
+                            "###### -sqside {} -q0 {} -rho {} -check-bucket {}",
+                            sqside, q, rho, N);
                     abort();
                 }
             }

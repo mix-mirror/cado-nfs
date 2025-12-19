@@ -1,38 +1,36 @@
 #include "cado.h" // IWYU pragma: keep
 
-#include <cinttypes>              // for PRId64, PRIu32
 #include <cstdint>
-#include <climits>                // for UCHAR_MAX
-#include <cstdlib>                // for free, malloc, abs
-#include <cstring>                // for memset, size_t, NULL
-#include <cmath>                  // for fabs, log2, sqrt, pow, trunc, ceil
-#include <cstdarg>             // IWYU pragma: keep
+#include <climits>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
 
-#include <algorithm>              // for min, max
+#include <algorithm>
 #include <array>
-#include <iomanip>                // for operator<<, setprecision
+#include <iomanip>
 #include <ios>
-#include <sstream>                // IWYU pragma: keep
+#include <sstream>
 #include <string>
-#include <utility>                // for swap, pair
+#include <utility>
 
-#include <gmp.h> // IWYU pragma: keep // for gmp_vfprintf, mpz_srcptr, ...
+#include <gmp.h>
 #include "fmt/base.h"
 
 #include "cado_poly.h"
 #include "cxx_mpz.hpp"
 #include "fb-types.hpp"
-#include "las-config.h"           // for LOG_BUCKET_REGION, LOGNORM_GUARD_BITS
+#include "las-config.hpp"
 #include "las-norms.hpp"
-#include "las-qlattice.hpp"       // for qlattice_basis
-#include "las-siever-config.hpp"  // for siever_config::side_config, siever_...
-#include "las-todo-entry.hpp"     // for las_todo_entry
+#include "las-qlattice.hpp"
+#include "las-siever-config.hpp"
+#include "special-q.hpp"
 #include "logapprox.hpp"
 #include "macros.h"
 #include "mpz_poly.h"
 #include "polynomial.hpp"
-#include "rho.h"        // dickman_rho_local
-#include "verbose.h"    // verbose_output_print
+#include "rho.h"
+#include "verbose.h"
 
 using namespace std;
 
@@ -130,9 +128,8 @@ static inline void memset_with_writeahead(void *s, int c, size_t n, size_t n0)
  * Presumably it would suffice to parameterize this by tan(t/2), so that
  * we are led to this function again.
  */
-/* {{{ get_maxnorm_aux (for x in (0,s)) */
-/* return max |g(x)| for x in (0, s) where s can be negative,
-   and g(x) = g[d]*x^d + ... + g[1]*x + g[0] */
+/* {{{ get_maxnorm_aux */
+/* return max |poly(x)| for x in (-s, s) */
 static double get_maxnorm_aux (polynomial<double> const & poly, double s)
 {
   const int d = poly.degree();
@@ -142,19 +139,10 @@ static double get_maxnorm_aux (polynomial<double> const & poly, double s)
   if (d == 0)
     return fabs (poly[0]);
 
-  double gmax = std::max(std::fabs (poly[0]), std::fabs(poly(s)));
-  for(auto x : poly.derivative().positive_roots(s))
+  double gmax = std::max(std::fabs(poly(-s)), std::fabs(poly(s)));
+  for(auto x : poly.derivative().template roots<double>(s))
       gmax = std::max(gmax, std::fabs(poly(x)));
   return gmax;
-}
-/* }}} */
-
-/* {{{ get_maxnorm_aux_pm (for x in (-s,s)) */
-/* Like get_maxnorm_aux(), but for interval [-s, s] */
-static double
-get_maxnorm_aux_pm (polynomial<double> const & poly, double s)
-{
-  return std::max(get_maxnorm_aux(poly, s), get_maxnorm_aux(poly, -s));
 }
 /* }}} */
 
@@ -179,10 +167,10 @@ get_maxnorm_rectangular (polynomial<double> const & poly, const double X,
 {
     const double d = poly.degree();
     /* (b) determine the maximum of |f(x)| * Y^d for -X/Y <= x <= X/Y */
-    const double b = get_maxnorm_aux_pm (poly, X/Y) * std::pow(Y, d);
+    const double b = get_maxnorm_aux (poly, X/Y) * std::pow(Y, d);
 
     /* (a) determine the maximum of |g(y)| for -1 <= y <= 1, with g(y) = F(s,y) */
-    const double a = get_maxnorm_aux_pm (poly.reciprocal(), Y/X) * std::pow(X, d);
+    const double a = get_maxnorm_aux (poly.reciprocal(), Y/X) * std::pow(X, d);
     return std::max(a, b);
 }
 /* }}} */
@@ -264,8 +252,8 @@ lognorm_base::lognorm_base(siever_config const & sc, cxx_cado_poly const & cpoly
     scale = (int)(scale * 40) * 0.025;
 
     verbose_output_start_batch();
-    verbose_output_print (0, 2,
-            "# Side %d: log2(maxnorm)=%1.2f scale=%1.2f, logbase=%1.6f",
+    verbose_fmt_print (0, 2,
+            "# Side {}: log2(maxnorm)={:1.2f} scale={:1.2f}, logbase={:1.6f}",
             side, maxlog2, scale, exp2 (1. / scale));
 
     /* we want to select relations with a cofactor of less than r bits */
@@ -290,15 +278,15 @@ lognorm_base::lognorm_base(siever_config const & sc, cxx_cado_poly const & cpoly
 
     bound = (unsigned char) (r * scale + LOGNORM_GUARD_BITS);
 
-    verbose_output_print (0, 2, " bound=%u\n", bound);
+    verbose_fmt_print (0, 2, " bound={}\n", bound);
     if (lambda > max_lambda)
-        verbose_output_print (0, 2, "# Warning, lambda>%.1f on side %d does "
+        verbose_fmt_print (0, 2, "# Warning, lambda>{:.1f} on side {} does "
                 "not make sense (capped to limit)\n", max_lambda, side);
 
     verbose_output_end_batch();
 }/*}}}*/
 
-void lognorm_base::norm(mpz_ptr x, int i, unsigned int j) const {
+void lognorm_base::norm(cxx_mpz & x, int i, unsigned int j) const {
     mpz_poly_homogeneous_eval_siui(x, fij, i, j);
     mpz_abs(x, x);
 }
@@ -448,7 +436,7 @@ void lognorm_reference::fill_alg(unsigned char *S, uint32_t N) const
 
     polynomial<double> u;
     for (unsigned int j = j0 ; j < j1 ; j++) {
-        u = fijd.reverse_scale(j);
+        u = fijd.inverse_scale(j);
         for(int i = i0; i < i0 + I; i++) {
             *S++ = lg2(std::fabs(u(i)), offset, modscale);
         }
@@ -787,7 +775,7 @@ get_maxnorm_circular (polynomial<double> const & src_poly, const double X,
       poly[i + 1] -= (double) d * Y * t;
     }
 
-  auto roots = poly.roots();
+  auto roots = poly.roots<double>();
 
   /* evaluate at y=0 */
   max_norm = fabs (src_poly[d] * pow (X, (double) d));
@@ -964,21 +952,17 @@ double sieve_range_adjust::estimate_yield_in_sieve_area(mat<int> const& shuffle,
             double weight = 1;
             if (i == -nx/2 || i == nx/2) weight /= 2;
             if (j == 0 || j == ny/2) weight /= 2;
-            verbose_output_print(0, 4, "# %d %d (%.2f) %.1f %.1f", i, j, weight, xys[0], xys[1]);
+            verbose_fmt_print(0, 4, "# {} {} ({:.2f}) {:.1f} {:.1f}", i, j, weight, xys[0], xys[1]);
 
-            double sprod = 0;
-            double p0 = 1;
+            double sprod = 1;
             for(int side = 0 ; side < nsides ; side++) {
                 double const z = fijd[side].eval(xys[0], xys[1]);
                 double const a = log2(fabs(z));
                 double const d = dickman_rho_local(a/conf.sides[side].lpb, fabs(z));
-                verbose_output_print(0, 4, " %d %e %e", side, z, d);
-                if (side == 0)
-                    p0 = d;
-                else
-                    sprod += p0 * d;
+                verbose_fmt_print(0, 4, " {} {:e} {:e}", side, z, d);
+                sprod *= d;
             }
-            verbose_output_print(0, 4, " %e\n", sprod);
+            verbose_fmt_print(0, 4, " {:e}", sprod);
 
             weightsum += weight;
             sum += weight*sprod;
@@ -1086,7 +1070,7 @@ B:=[bestrep(a):a in {{a*b*c*x:a in {1,-1},b in {1,d},c in {1,s}}:x in MM}];
                 best_squeeze = squeeze;
                 best_sum = sum;
             }
-            verbose_output_print(0, 4, "# estimated yield for rectangle #%d,%d: %e\n", r, squeeze, sum);
+            verbose_fmt_print(0, 4, "# estimated yield for rectangle #{},{}: {}", r, squeeze, sum);
         }
     }
 
@@ -1166,11 +1150,9 @@ int sieve_range_adjust::sieve_info_adjust_IJ()/*{{{*/
      */
     const double skew = cpoly->skew;
     const double rt_skew = sqrt(skew);
-    verbose_output_vfprint(0, 3, gmp_vfprintf,
-            "# Called sieve_info_adjust_IJ((a0=%" PRId64 "; b0=%" PRId64
-            "; a1=%" PRId64 "; b1=%" PRId64 "), p=%Zd, skew=%f)\n",
-            Q.a0, Q.b0, Q.a1, Q.b1,
-            (mpz_srcptr) Q.doing.p, skew);
+    verbose_fmt_print(0, 3,
+            "# Called sieve_info_adjust_IJ(p={}, skew={})\n",
+            Q, skew);
     if (Q.skewed_norm0(skew) > Q.skewed_norm1(skew)) {
         /* exchange u0 and u1, thus I and J */
         swap(Q.a0, Q.a1);
@@ -1202,9 +1184,9 @@ int sieve_range_adjust::round_to_full_bucket_regions(const char * origin, std::s
     uint32_t const nJ = (J / i) * i; /* Round down to multiple of i */
 
     if (message.empty()) {
-        verbose_output_print(0, 3, "# %s(): logI=%d J=%" PRIu32 "\n", origin, logI, nJ);
+        verbose_fmt_print(0, 3, "# {}(): logI={} J={}\n", origin, logI, nJ);
     } else {
-        verbose_output_print(0, 3, "# %s(): logI=%d J=%" PRIu32 " [%s]\n", origin, logI, nJ, message.c_str());
+        verbose_fmt_print(0, 3, "# {}(): logI={} J={} [{}]\n", origin, logI, nJ, message.c_str());
     }
     /* XXX No rounding if we intend to abort */
     if (nJ > 0) J = nJ;

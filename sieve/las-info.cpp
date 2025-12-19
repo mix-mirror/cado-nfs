@@ -17,6 +17,7 @@
 #include "las-side-config.hpp"
 #include "las-siever-config.hpp"
 #include "las-sieve-shared-data.hpp"
+#include "las-special-q-task-collection.hpp"
 #include "las-todo-list.hpp"
 #include "macros.h"
 #include "params.h"
@@ -34,6 +35,7 @@ void las_info::configure_switches(cxx_param_list & pl)
     las_todo_list::configure_switches(pl);
     param_list_configure_switch(pl, "-allow-compsq", nullptr);
     param_list_configure_switch(pl, "-dup", nullptr);
+    param_list_configure_switch(pl, "-smallset-purge", nullptr);
     param_list_configure_switch(pl, "-batch", nullptr);
 }
 
@@ -46,8 +48,6 @@ void las_info::declare_usage(cxx_param_list & pl)
     cofactorization_statistics::declare_usage(pl);
     batch_side_config::declare_usage(pl);
 
-
-    param_list_decl_usage(pl, "seed", "Use this seed for random state seeding (currently used only by --random-sample)");
 
     param_list_decl_usage(pl, "galois", "depending on the specified galois automorphism, sieve only part of the q's");
 
@@ -62,8 +62,8 @@ void las_info::declare_usage(cxx_param_list & pl)
     param_list_decl_usage(pl, "dup", "suppress duplicate relations");
     param_list_decl_usage(pl, "dup-qmin", "lower limit of global q-range for 2-sided duplicate removal");
     param_list_decl_usage(pl, "dup-qmax", "upper limit of global q-range for 2-sided duplicate removal");
-    param_list_decl_usage(pl, "adjust-strategy", "strategy used to adapt the sieving range to the q-lattice basis (0 = logI constant, J so that boundary is capped; 1 = logI constant, (a,b) plane norm capped; 2 = logI dynamic, skewed basis; 3 = combine 2 and then 0) ; default=0");
 
+    param_list_decl_usage(pl, "smallset-purge", "use experimental 'smallset' code in purge_buckets");
 
     param_list_decl_usage(pl, "batch", "use batch cofactorization");
     param_list_decl_usage(pl, "batch-print-survivors", "just print survivors to files with the given basename for an external cofactorization");
@@ -113,12 +113,16 @@ void las_info::load_factor_base(cxx_param_list & pl)
 }
 
 las_info::las_info(cxx_param_list & pl)
-    : cpoly(pl)
+    : galois(param_list_lookup_string(pl, "galois"))
+    , suppress_duplicates(param_list_parse_switch(pl, "-dup"))
+    , use_smallset_purge(param_list_parse_switch(pl, "-smallset-purge"))
+    , cpoly(pl)
     , config_pool(pl, cpoly->nb_polys)
 #ifndef HAVE_HWLOC
     , shared_structure_private(cpoly, pl)
 #endif
     , dlog_base(cpoly, pl)
+    , tree(special_q_task_collection_base::create(cpoly, pl))
     , cofac_stats(pl)
       /*{{{*/
 {
@@ -127,29 +131,15 @@ las_info::las_info(cxx_param_list & pl)
     /* We strive to initialize things in the exact order they're written
      * in the struct */
     // ----- general operational flags {{{
-    unsigned long seed = 0;
-    if (param_list_parse_ulong(pl, "seed", &seed))
-        gmp_randseed_ui(rstate, seed);
 
-    galois = param_list_lookup_string(pl, "galois");
-    suppress_duplicates = param_list_parse_switch(pl, "-dup");
 
     if (const char * tmp = param_list_lookup_string(pl, "bkmult")) {
         bk_multiplier = bkmult_specifier(tmp);
     }
 
-    param_list_parse_int(pl, "adjust-strategy", &adjust_strategy);
 
     // }}}
 
-
-    /* composite special-q ? Note: this block is present both in
-     * las-todo-list.cpp and las-info.cpp */
-    if ((allow_composite_q = param_list_parse_switch(pl, "-allow-compsq"))) {
-        /* defaults are set in the class description */
-        param_list_parse_uint64(pl, "qfac-min", &qfac_min);
-        param_list_parse_uint64(pl, "qfac-max", &qfac_max);
-    }
 
     param_list_parse(pl, "relation_cache", relation_cache);
 
