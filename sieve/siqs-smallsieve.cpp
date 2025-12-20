@@ -339,7 +339,7 @@ siqs_small_sieve_data::resieve_small_bucket_region(
         const fbprime_t p = ssps_cur.get_p();
         fbprime_t const r = ssps_cur.get_r();
         WHERE_AM_I_UPDATE(w, p, p);
-        int pos = ssdpos[index];
+        int MAYBE_UNUSED pos = ssdpos[index];
         S_ptr = S;
         ASSERT(pos < (spos_t) p);
 
