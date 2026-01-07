@@ -21,12 +21,13 @@ extern char * d64toa16 (char *p, int64_t m);
 
 #ifdef __cplusplus
 /* Only used in dup2 which is a C++ binary */
-p_r_values_t relation_compute_r(mpz_srcptr a, mpz_srcptr b, p_r_values_t p)
+inline p_r_values_t
+relation_compute_r(mpz_srcptr a, mpz_srcptr b, p_r_values_t p)
 {
     return relation_compute_r(mpz_tdiv_uint64(a, p), mpz_tdiv_uint64(b, p), p);
 }
 
-char *
+inline char *
 u64toa16 (char *p, mpz_srcptr m)
 {
     ASSERT(mpz_sgn(m) >= 0); /* m should not be negative */
@@ -34,7 +35,7 @@ u64toa16 (char *p, mpz_srcptr m)
     return p + mpz_sizeinbase(m, 16);
 }
 
-char *
+inline char *
 d64toa16 (char *p, mpz_srcptr m)
 {
     mpz_get_str(p, 16, m);
