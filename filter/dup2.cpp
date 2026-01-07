@@ -54,6 +54,8 @@
 #include <cstdio>    // for fprintf, stderr, NULL, asprintf, feof, FILE
 #include <cstdlib>   // for exit, free, malloc, abort, EXIT_FAILURE
 #include <cstring>   // for strlen, strdup, memset, memcpy, strerror
+#include <string>
+#include <vector>
 
 #include <memory>
 
@@ -70,9 +72,12 @@
 #include "params.h"         // for cxx_param_list, param_list_decl_usage
 #include "portability.h"    // strdup  // IWYU pragma: keep
 #include "relation-tools.h" // for u64toa16, d64toa16, relation_compute_r
+#include "renumber.hpp"     // for renumber_t
 #include "renumber_proxy.h" // for renumber_proxy_t
 #include "typedefs.h"       // for prime_t, index_t, p_r_values_t, weight_t
 #include "verbose.h"        // for verbose_decl_usage, verbose_interpret_pa...
+
+#include "fmt/base.h"
 
 #define DEBUG 0
 
@@ -92,9 +97,7 @@ static uint64_t ndup_tot = 0, nrels_tot = 0;
 
 /* sanity check: we store (a,b) pairs for 0 <= i < sanity_size,
    and check for hash collisions */
-uint64_t sanity_size;
-int64_t * sanity_a;
-uint64_t * sanity_b;
+std::vector<std::pair<cxx_mpz, cxx_mpz>> sanity_ab;
 unsigned long sanity_checked = 0;
 unsigned long sanity_collisions = 0;
 /* end sanity check */
@@ -115,18 +118,19 @@ static int nthreads_for_roots = 3;
 #define TRACE_J 17
 #endif
 
-static inline void sanity_check(uint64_t i, int64_t a, uint64_t b)
+template <typename Ta, typename Tb>
+static inline void sanity_check(uint64_t i, Ta a, Tb b)
 {
     sanity_checked++;
-    if (sanity_a[i] == 0) {
-        sanity_a[i] = a;
-        sanity_b[i] = b;
-    } else if (sanity_a[i] != a) {
+    if (sanity_ab[i].first == 0) {
+        sanity_ab[i].first = a;
+        sanity_ab[i].second = b;
+    } else if (sanity_ab[i].first != a) {
         sanity_collisions++;
-        fprintf(stderr,
-                "Collision between (%" PRId64 ",%" PRIu64 ") and "
-                "(%" PRId64 ",%" PRIu64 ")\n",
-                sanity_a[i], sanity_b[i], a, b);
+        fmt::print(stderr,
+                "Collision between ({}, {}) and ({}, {})\n",
+                sanity_ab[i].first, sanity_ab[i].second,
+                cxx_mpz(a), cxx_mpz(b));
     }
 }
 
@@ -151,7 +155,8 @@ static inline void print_warning_size()
     The function adds a column of 1 if necessary, which is always
     column 0.
 */
-static inline void print_relation(FILE * file, earlyparsed_relation_srcptr rel)
+template<filter_io_config cfg>
+static inline void print_relation(FILE * file, typename cfg::rel_t rel)
 {
     char buf[1 << 12], *p, *op;
     uint64_t nonvoidside = 0; /* bit vector of which sides appear in the rel */
@@ -223,20 +228,37 @@ static inline void print_relation(FILE * file, earlyparsed_relation_srcptr rel)
     }
 }
 
+static inline uint64_t
+compute_hash(int64_t a, uint64_t b)
+{
+    return CA_DUP2 * (uint64_t)a + CB_DUP2 * b;
+}
+
+static inline uint64_t
+compute_hash(mpz_srcptr a, mpz_srcptr b)
+{
+    cxx_mpz r;
+    mpz_mul_uint64(r, a, CA_DUP2);
+    mpz_addmul_uint64(r, b, CB_DUP2);
+    return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+}
+
 /* if duplicate is_dup = 1, else is_dup = 0
  * return i for sanity check, which is the place in the hash table where
  * the relation is stored: more precisely we store in H[i] the value
  * of floor(h/2^32), where h(a,b) is a 64-bit value.
  */
+template<filter_io_config cfg>
 static inline uint64_t
-insert_relation_in_dup_hashtable(earlyparsed_relation_srcptr rel,
-                                 unsigned int * is_dup)
+insert_relation_in_dup_hashtable(
+        typename cfg::rel_srcptr rel,
+        unsigned int * is_dup)
 {
     uint64_t h, i;
     uint32_t j;
     double local_cost = 0;
 
-    h = CA_DUP2 * (uint64_t)rel->a + CB_DUP2 * rel->b;
+    h = compute_hash(rel->a, rel->b);
 
     /* We put j = floor(h/2^32) in cell H[i] where i = h % K (or the first
        available cell after i if H[i] is already occupied). We have extraneous
@@ -286,14 +308,11 @@ insert_relation_in_dup_hashtable(earlyparsed_relation_srcptr rel,
 
 #ifdef TRACE_HASH_TABLE
     if (i == TRACE_I && j == TRACE_J) {
-        fprintf(stderr,
-                "TRACE: a = %s%" PRIx64 "\nTRACE: b = %" PRIx64 "\n"
-                "TRACE: i = %" PRIu64 "\nTRACE: j = %" PRIu32 "\n"
-                "TRACE: initial value of i was %" PRIu64 "\n"
-                "TRACE: h = %" PRIx64 "\nTRACE: is_dup = %u\n",
-                (rel->a < 0) ? "-" : "",
-                (uint64_t)((rel->a < 0) ? -rel->a : rel->a), rel->b, i, j,
-                old_i, h, *is_dup);
+        fmt::print(stderr,
+                "TRACE: a = {}\nTRACE: b = {}\nTRACE: i = {}\nTRACE: j = {}\n"
+                "TRACE: initial value of i was {}\nTRACE: h = {}\n"
+                "TRACE: is_dup = {}\n",
+                cxx_mpz(rel->a), cxx_mpz(rel->b), i, j, old_i, h, *is_dup);
     }
 #endif
     return i;
@@ -303,7 +322,8 @@ insert_relation_in_dup_hashtable(earlyparsed_relation_srcptr rel,
  *  - the renumbering
  *  - the bad ideals
  */
-static inline void compute_index_rel(earlyparsed_relation_ptr rel)
+template<filter_io_config cfg>
+static inline void compute_index_rel(typename cfg::rel_t rel)
 {
     unsigned int i;
     p_r_values_t r;
@@ -332,18 +352,15 @@ static inline void compute_index_rel(earlyparsed_relation_ptr rel)
 
             p_r_values_t p = pr[i].p;
             int side = pr[i].side;
-            if (renumber_table_p_r_side_is_bad(renumber_tab, NULL, p, r,
-                                               side)) {
-                index_t first_index;
-                size_t nexps = renumber_table_get_poly_deg(renumber_tab, side);
-                auto exps = std::make_unique<int[]>(nexps);
-                renumber_table_indices_from_p_a_b(renumber_tab, &first_index,
-                                                  exps.get(), &nexps, p, r, side,
-                                                  pr[i].e, rel->a, rel->b);
+            renumber_t const & R = *((renumber_t const *) renumber_tab->x);
+            renumber_t::p_r_side const prside { p, r, side };
+            if (R.is_bad(prside)) {
+                auto [ first_index, exps ] = R.indices_from_p_a_b(
+                        prside, pr[i].e, rel->a, rel->b);
 
                 /* allocate room for (nb) more valuations */
-                for (; rel->nb + nexps - 1 > rel->nb_alloc;) {
-                    realloc_buffer_primes(rel);
+                for (; rel->nb + exps.size() - 1 > rel->nb_alloc;) {
+                    realloc_buffer_primes<cfg>(rel);
                     pr = rel->primes;
                 }
                 /* the first is put in place, while the other are put at the end
@@ -351,9 +368,9 @@ static inline void compute_index_rel(earlyparsed_relation_ptr rel)
                  * unsorted. Anyway, given that we're mixing sides when
                  * renumbering, we're bound to do sorting downhill. */
                 pr[i].h = first_index;
-                pr[i].e = exps[0];
+                pr[i].e = !is_for_dl ? exps[0] & 1 : exps[0];
 
-                for (size_t n = 1; n < nexps; n++) {
+                for (size_t n = 1; n < exps.size(); n++) {
                     pr[rel->nb].h = first_index + n;
                     pr[rel->nb].e = exps[n];
                     if (!is_for_dl) { /* Do we reduce mod 2 */
@@ -362,10 +379,8 @@ static inline void compute_index_rel(earlyparsed_relation_ptr rel)
                     rel->nb++;
                 }
             } else {
-                pr[i].h = renumber_table_index_from_p_r(renumber_tab, pr[i].p,
-                                                        r, pr[i].side);
-                int const f = renumber_table_p_r_side_get_inertia(renumber_tab, p, r,
-                                                            side);
+                pr[i].h = R.index_from_p_r(prside);
+                int const f = R.inertia_from_p_r(prside);
                 if (f > 1) {
                     /* XXX there's a catch here. A non-bad ideal can still have
                      * non-trivial inertia (say f=2), in which case we must
@@ -444,33 +459,39 @@ static void dup_print_stat(char const * s, uint64_t nrels, uint64_t ndup)
             s, nrels, ndup, pdup, nrem);
 }
 
-static void * hash_renumbered_rels(void * context_data MAYBE_UNUSED,
-                                   earlyparsed_relation_ptr rel)
+template<filter_io_config cfg>
+static void * hash_renumbered_rels(void *, typename cfg::rel_ptr rel)
 {
     unsigned int is_dup;
 
     nrels++;
     nrels_tot++;
-    uint64_t i = insert_relation_in_dup_hashtable(rel, &is_dup);
+    uint64_t i = insert_relation_in_dup_hashtable<cfg>(rel, &is_dup);
 
     static unsigned long count = 0;
 
     // They should be no duplicate in already renumbered file
     if (is_dup && count++ < 10) {
-        fprintf(stderr,
+        fmt::print(stderr,
                 "Warning, duplicate relation in already renumbered files:"
-                "\na = %s%" PRIx64 "\nb = %" PRIx64 "\ni = %" PRIu64
-                "\nj = %" PRIu32 "\n",
-                (rel->a < 0) ? "-" : "",
-                (uint64_t)((rel->a < 0) ? -rel->a : rel->a), rel->b, i, H[i]);
-        fprintf(stderr, "This warning may be due to a collision on the hash "
-                        "function or to an actual duplicate\nrelation. If it "
-                        "appears often you should check the input set of "
-                        "relations.\n\n");
+                "\na = {}\nb = {}\ni = {}\nj = {}\n"
+                "This warning may be due to a collision on the hash function "
+                "or to an actual duplicate\nrelation. If it appears often you "
+                "should check the input set of relations.\n\n",
+                cxx_mpz(rel->a), cxx_mpz(rel->b), i, H[i]);
     }
 
-    if (i < sanity_size)
-        sanity_check(i, rel->a, rel->b);
+    if (i < sanity_ab.size()) {
+        if constexpr (std::is_same_v<cfg, filter_io_large_ab_cfg>) {
+            /* Needed to avoid that the compiler infer mpz_struct * for the
+             * type of rel->a and rel->b, which is not compatible with
+             * operator== of the cxx_mpz class used in sanity_check.
+             */
+            sanity_check<mpz_srcptr, mpz_srcptr>(i, rel->a, rel->b);
+        } else {
+            sanity_check(i, rel->a, rel->b);
+        }
+    }
 
     if (cost >= factor * (double)(nrels_tot - ndup_tot))
         print_warning_size();
@@ -478,21 +499,28 @@ static void * hash_renumbered_rels(void * context_data MAYBE_UNUSED,
     return NULL;
 }
 
-static void * thread_dup2(void * context_data, earlyparsed_relation_ptr rel)
+template<filter_io_config cfg>
+static void * thread_dup2(void * context_data, typename cfg::rel_ptr rel)
 {
     unsigned int is_dup;
     uint64_t i;
     FILE * output = (FILE *)context_data;
     nrels++;
     nrels_tot++;
-    i = insert_relation_in_dup_hashtable(rel, &is_dup);
+    i = insert_relation_in_dup_hashtable<cfg>(rel, &is_dup);
     if (!is_dup) {
-        if (i < sanity_size)
-            sanity_check(i, rel->a, rel->b);
+        if (i < sanity_ab.size())
+        {
+            if constexpr (std::is_same_v<cfg, filter_io_large_ab_cfg>) {
+                sanity_check<mpz_srcptr, mpz_srcptr>(i, rel->a, rel->b);
+            } else {
+                sanity_check(i, rel->a, rel->b);
+            }
+        }
         if (cost >= factor * (double)(nrels_tot - ndup_tot))
             print_warning_size();
 
-        print_relation(output, rel);
+        print_relation<cfg>(output, rel);
     } else {
         ndup++;
         ndup_tot++;
@@ -501,7 +529,8 @@ static void * thread_dup2(void * context_data, earlyparsed_relation_ptr rel)
     return NULL;
 }
 
-void * thread_root(void * p MAYBE_UNUSED, earlyparsed_relation_ptr rel)
+template<filter_io_config cfg>
+static void * thread_root(void *, typename cfg::rel_ptr rel)
 {
     /* We used to reduce exponents here. However, it's not a good idea if
      * we want to get the valuations at bad ideals.
@@ -510,7 +539,7 @@ void * thread_root(void * p MAYBE_UNUSED, earlyparsed_relation_ptr rel)
      *
      * Anyway. Reduction is now done at the _end_ of compute_index_rel.
      */
-    compute_index_rel(rel);
+    compute_index_rel<cfg>(rel);
 
     return NULL;
 }
@@ -570,6 +599,70 @@ int check_whether_file_is_renumbered(char const * filename)
     }
 }
 
+template<filter_io_config cfg>
+void
+filter_new_rels(
+        std::vector<std::string> const & files_new,
+        char const * outdir,
+        char const * outfmt)
+{
+    typename cfg::description_t desc[3] = {
+        { .f = thread_root<cfg>, .arg = nullptr, .n = nthreads_for_roots, },
+        { .f = thread_dup2<cfg>, .arg = nullptr, .n = 1, },
+        { .f = nullptr,          .arg = nullptr, .n = 1, },
+    };
+    fmt::print(stderr, "Reading new files (using {} auxiliary threads for "
+                       "roots mod p):\n", desc[0].n);
+
+    for (std::string const & p: files_new) {
+        FILE * output = NULL;
+        char *oname, *oname_tmp;
+
+        get_outfilename_from_infilename(p.c_str(), outfmt, outdir, &oname,
+                                        &oname_tmp);
+        output = fopen_maybe_compressed(oname_tmp, "w");
+        if (output == NULL) {
+            fprintf(stderr,
+                    "Error, could not open file to write the "
+                    "relations. Check that the directory %s exists\n",
+                    outdir);
+            abort();
+        }
+        desc[1].arg = (void *)output;
+
+        nrels = ndup = 0;
+
+        uint64_t loc_nrels = filter_rels2<cfg>(
+                std::vector<std::string> { p }, desc,
+                EARLYPARSE_NEED_AB_DECIMAL | EARLYPARSE_NEED_PRIMES, NULL,
+                NULL);
+
+        ASSERT_ALWAYS(loc_nrels == nrels);
+
+        fclose_maybe_compressed(output, oname_tmp);
+
+        int rc;
+
+#ifdef HAVE_MINGW /* For MinGW, rename cannot overwrite an existing file */
+        rc = remove(oname);
+#endif
+        rc = rename(oname_tmp, oname);
+        if (rc < 0) {
+            fprintf(stderr, "rename(%s -> %s): %s\n", oname_tmp, oname,
+                    strerror(errno));
+            abort();
+        }
+
+        // stat for the current file
+        dup_print_stat(path_basename(p.c_str()), nrels, ndup);
+        // stat for all the files already read
+        dup_print_stat("Total so far", nrels_tot, ndup_tot);
+
+        free(oname);
+        free(oname_tmp);
+    }
+}
+
 static void declare_usage(param_list pl)
 {
     param_list_decl_usage(pl, "poly", "input polynomial file");
@@ -584,6 +677,8 @@ static void declare_usage(param_list pl)
     param_list_decl_usage(pl, "outfmt",
                           "format of output file (default same as input)");
     param_list_decl_usage(pl, "dl", "do not reduce exponents modulo 2");
+    param_list_decl_usage(pl, "large-ab", "enable support for a and b larger "
+                                          "than 64 bits");
     param_list_decl_usage(pl, "force-posix-threads",
                           "force the use of posix threads, do not rely on "
                           "platform memory semantics");
@@ -615,6 +710,9 @@ int main(int argc, char const * argv[])
 
     is_for_dl = 0; /* By default we do dup2 for factorization */
     param_list_configure_switch(pl, "dl", &is_for_dl);
+
+    int largeab = 0; /* By default, do not use mpz for a,b */
+    param_list_configure_switch(pl, "large-ab", &largeab);
 
 #ifdef HAVE_MINGW
     _fmode = _O_BINARY; /* Binary open for all files */
@@ -691,22 +789,9 @@ int main(int argc, char const * argv[])
     /* sanity check: since we allocate two 64-bit words for each, instead of
        one 32-bit word for the hash table, taking K/100 will use 2.5% extra
        memory */
-    sanity_size = 1 + (K / 100);
-    fprintf(stderr,
-            "[checking true duplicates on sample of %" PRIu64 " cells]\n",
-            sanity_size);
-    sanity_a = (int64_t *)malloc(sanity_size * sizeof(int64_t));
-    if (sanity_a == NULL) {
-        fprintf(stderr, "Error, cannot allocate sanity_a\n");
-        exit(1);
-    }
-    memset(sanity_a, 0, sanity_size * sizeof(int64_t));
-
-    sanity_b = (uint64_t *)malloc(sanity_size * sizeof(uint64_t));
-    if (sanity_b == NULL) {
-        fprintf(stderr, "Error, cannot allocate sanity_b\n");
-        exit(1);
-    }
+    sanity_ab.resize(1u + (K / 100u));
+    fmt::print(stderr, "[checking true duplicates on sample of {} cells]\n",
+            sanity_ab.size());
 
     H = (uint32_t *)malloc(K * sizeof(uint32_t));
     if (H == NULL) {
@@ -719,8 +804,8 @@ int main(int argc, char const * argv[])
             (K * sizeof(uint32_t)) >> 20);
 
     /* Construct the two filelists : new files and already renumbered files */
-    char const ** files_already_renumbered;
-    char const ** files_new;
+    std::vector<std::string> files_already_renumbered;
+    std::vector<std::string> files_new;
     {
         unsigned int nb_files = 0;
         fprintf(stderr, "Constructing the two filelists...\n");
@@ -729,30 +814,22 @@ int main(int argc, char const * argv[])
         for (char const ** p = files; *p; p++)
             nb_files++;
 
-        files_already_renumbered =
-            (char const **)malloc((nb_files + 1) * sizeof(char *));
-        files_new = (char const **)malloc((nb_files + 1) * sizeof(char *));
-
         /* separate already processed files
          * check if f_tmp is in raw format a,b:...:... or
          *            in renumbered format a,b:...
          */
-        unsigned int nb_f_new = 0;
-        unsigned int nb_f_renumbered = 0;
         for (char const ** p = files; *p; p++) {
             /* always strdup these, so that we can safely call
              * filelist_clear in the end */
             if (check_whether_file_is_renumbered(*p)) {
-                files_already_renumbered[nb_f_renumbered++] = strdup(*p);
+                files_already_renumbered.emplace_back(*p);
             } else {
-                files_new[nb_f_new++] = strdup(*p);
+                files_new.emplace_back(*p);
             }
         }
-        files_new[nb_f_new] = NULL;
-        files_already_renumbered[nb_f_renumbered] = NULL;
-        fprintf(stderr, "%u files (%u new and %u already renumbered)\n",
-                nb_files, nb_f_new, nb_f_renumbered);
-        ASSERT_ALWAYS(nb_f_new + nb_f_renumbered == nb_files);
+        fmt::print(stderr, "{} files ({} new and {} already renumbered)\n",
+                nb_files, files_new.size(), files_already_renumbered.size());
+        ASSERT_ALWAYS(nb_files == files_new.size() + files_already_renumbered.size());
         /* if filelist was not given, then files == argv, which of course
          * must not be cleared */
         if (filelist)
@@ -760,79 +837,22 @@ int main(int argc, char const * argv[])
     }
 
     fprintf(stderr, "Reading files already renumbered:\n");
-    filter_rels(files_already_renumbered,
-                (filter_rels_callback_t)&hash_renumbered_rels, NULL,
+    if (!largeab) {
+        filter_rels<filter_io_default_cfg>(
+                files_already_renumbered,
+                &hash_renumbered_rels<filter_io_default_cfg>, NULL,
                 EARLYPARSE_NEED_AB_HEXA, NULL, NULL);
+    } else {
+        filter_rels<filter_io_large_ab_cfg>(
+                files_already_renumbered,
+                &hash_renumbered_rels<filter_io_large_ab_cfg>, NULL,
+                EARLYPARSE_NEED_AB_HEXA, NULL, NULL);
+    }
 
-    {
-        struct filter_rels_description desc[3] = {
-            {
-                .f = thread_root,
-                .arg = 0,
-                .n = nthreads_for_roots,
-            },
-            {
-                .f = thread_dup2,
-                .arg = 0,
-                .n = 1,
-            },
-            {
-                .f = NULL,
-                .arg = 0,
-                .n = 1,
-            },
-        };
-        fprintf(stderr,
-                "Reading new files"
-                " (using %d auxiliary threads for roots mod p):\n",
-                desc[0].n);
-
-        for (char const ** p = files_new; *p; p++) {
-            FILE * output = NULL;
-            char *oname, *oname_tmp;
-
-            get_outfilename_from_infilename(*p, outfmt, outdir, &oname,
-                                            &oname_tmp);
-            output = fopen_maybe_compressed(oname_tmp, "w");
-            if (output == NULL) {
-                fprintf(stderr,
-                        "Error, could not open file to write the "
-                        "relations. Check that the directory %s exists\n",
-                        outdir);
-                abort();
-            }
-            desc[1].arg = (void *)output;
-
-            nrels = ndup = 0;
-
-            uint64_t loc_nrels = filter_rels2(
-                p, desc, EARLYPARSE_NEED_AB_DECIMAL | EARLYPARSE_NEED_PRIMES,
-                NULL, NULL);
-
-            ASSERT_ALWAYS(loc_nrels == nrels);
-
-            fclose_maybe_compressed(output, oname_tmp);
-
-            int rc;
-
-#ifdef HAVE_MINGW /* For MinGW, rename cannot overwrite an existing file */
-            rc = remove(oname);
-#endif
-            rc = rename(oname_tmp, oname);
-            if (rc < 0) {
-                fprintf(stderr, "rename(%s -> %s): %s\n", oname_tmp, oname,
-                        strerror(errno));
-                abort();
-            }
-
-            // stat for the current file
-            dup_print_stat(path_basename(*p), nrels, ndup);
-            // stat for all the files already read
-            dup_print_stat("Total so far", nrels_tot, ndup_tot);
-
-            free(oname);
-            free(oname_tmp);
-        }
+    if (!largeab) {
+        filter_new_rels<filter_io_default_cfg>(files_new, outdir, outfmt);
+    } else {
+        filter_new_rels<filter_io_large_ab_cfg>(files_new, outdir, outfmt);
     }
 
     fprintf(stderr, "At the end: %" PRIu64 " remaining relations\n",
@@ -847,7 +867,7 @@ int main(int argc, char const * argv[])
             "  [found %lu true duplicates on sample of %lu relations]\n",
             sanity_collisions, sanity_checked);
 
-    if (!*files_already_renumbered) {
+    if (files_already_renumbered.empty()) {
         if (nrels_tot != nrels_expected) {
             fprintf(stderr,
                     "Warning: number of relations read (%" PRIu64
@@ -867,10 +887,6 @@ int main(int argc, char const * argv[])
 
     renumber_table_clear(renumber_tab);
     free(H);
-    free(sanity_a);
-    free(sanity_b);
-    filelist_clear(files_already_renumbered);
-    filelist_clear(files_new);
     cado_poly_clear(cpoly);
     param_list_clear(pl);
 

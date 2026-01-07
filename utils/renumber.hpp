@@ -243,6 +243,14 @@ public:
 
     /* This second interface works for bad ideals as well. */
     std::pair<index_t, std::vector<int>> indices_from_p_a_b(p_r_side x, int e, int64_t a, uint64_t b) const;
+    std::pair<index_t, std::vector<int>> indices_from_p_a_b(
+            p_r_side x,
+            int e,
+            mpz_srcptr a,
+            mpz_srcptr b) const {
+        return indices_from_p_a_b(x, e, mpz_tdiv_uint64(a, x.p),
+                                        mpz_tdiv_uint64(b, x.p));
+    }
     /*}}}*/
 
     /* {{{ build() functionality */

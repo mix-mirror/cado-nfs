@@ -75,9 +75,12 @@ get_outfilename_from_infilename (std::string const & infilename,
   return prefix + newname + suffix_out;
 }
 
+template<filter_io_config cfg>
 static inline uint32_t
-insert_relation_in_dup_hashtable (earlyparsed_relation_srcptr rel,
-				  unsigned int *is_dup, const galois_action &G)
+insert_relation_in_dup_hashtable (
+        typename cfg::rel_srcptr rel,
+        unsigned int *is_dup,
+        const galois_action &G)
 {
   uint64_t h;
   uint32_t i, j;
@@ -101,13 +104,15 @@ insert_relation_in_dup_hashtable (earlyparsed_relation_srcptr rel,
 }
 
 struct thread_galois_arg {
+  int const for_dl;
   std::vector<index_t> const & ga_id_cache;
   galois_action const & gal_action;
   std::ostream & os;
 };
 
+template<filter_io_config cfg>
 static void *
-thread_galois (void * context_data, earlyparsed_relation_ptr rel)
+thread_galois (void * context_data, typename cfg::rel_ptr rel)
 {
   unsigned int is_dup;
   auto const & data = *(thread_galois_arg const *) context_data;
@@ -115,7 +120,7 @@ thread_galois (void * context_data, earlyparsed_relation_ptr rel)
   const std::vector<index_t> &sigma = data.ga_id_cache;
   const galois_action &G = data.gal_action;
   std::ostream & output(data.os);
-  insert_relation_in_dup_hashtable (rel, &is_dup, G);
+  insert_relation_in_dup_hashtable<cfg>(rel, &is_dup, G);
   if (is_dup)
     return nullptr;
 
@@ -139,7 +144,7 @@ thread_galois (void * context_data, earlyparsed_relation_ptr rel)
     // the fact that we change the prime ideal for its conjugate.
     int const neg = (rel->primes[i].e < 0) ^ (hrep != h);
     op = p;
-    if (neg) { *p++ = '-'; }
+    if (neg && data.for_dl) { *p++ = '-'; }
     p = u64toa16(p, (uint64_t) hrep);
     *p++ = ',';
     t = p - op;
@@ -170,6 +175,8 @@ static void declare_usage(param_list pl)
   param_list_decl_usage(pl, "basepath", "path added to all file in filelist");
   param_list_decl_usage(pl, "poly", "input polynomial file");
   param_list_decl_usage(pl, "dl", "for DL (untested)");
+  param_list_decl_usage(pl, "large-ab", "enable support for a and b larger "
+                                        "than 64 bits");
   param_list_decl_usage(pl, "renumber", "input file for renumbering table");
   param_list_decl_usage(pl, "outdir", "by default, input files are overwritten");
   param_list_decl_usage(pl, "outfmt",
@@ -196,6 +203,7 @@ main (int argc, char const * argv[])
   cxx_cado_poly cpoly;
   unsigned long nrels_expected = 0;
   int for_dl = 0;
+  int largeab = 0;
 
   cxx_param_list pl;
   declare_usage(pl);
@@ -204,6 +212,8 @@ main (int argc, char const * argv[])
   param_list_configure_switch(pl, "force-posix-threads",
       &filter_rels_force_posix_threads);
   param_list_configure_switch(pl, "dl", &for_dl);
+
+  param_list_configure_switch(pl, "large-ab", &largeab);
 
 #ifdef HAVE_MINGW
   _fmode = _O_BINARY;     /* Binary open for all files */
@@ -332,7 +342,7 @@ main (int argc, char const * argv[])
   for (char const **p = files; *p ; p++) {
     // FILE * output = nullptr;
     std::string oname;
-    const char * local_filelist[] = { *p, nullptr};
+    std::vector<std::string> local_filelist { *p };
 
     oname = get_outfilename_from_infilename (*p, outfmt, outdir);
 
@@ -344,11 +354,19 @@ main (int argc, char const * argv[])
       abort();
     }
 
-    thread_galois_arg foo { ga_id_cache, gal_action, output };
+    thread_galois_arg foo { for_dl, ga_id_cache, gal_action, output };
 
-    filter_rels(local_filelist, (filter_rels_callback_t) &thread_galois,
+    if (!largeab) {
+        filter_rels<filter_io_default_cfg>(
+                local_filelist, &thread_galois<filter_io_default_cfg>,
                 (void *) &foo, EARLYPARSE_NEED_AB_HEXA | EARLYPARSE_NEED_INDEX,
                 nullptr, stats);
+    } else {
+        filter_rels<filter_io_large_ab_cfg>(
+                local_filelist, &thread_galois<filter_io_large_ab_cfg>,
+                (void *) &foo, EARLYPARSE_NEED_AB_HEXA | EARLYPARSE_NEED_INDEX,
+                nullptr, stats);
+    }
 
     // fclose_maybe_compressed(output, oname_tmp);
 
