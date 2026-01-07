@@ -600,7 +600,7 @@ earlyparser_inner_read_ab(
     mpz_set_ui(rel->a, 0);
     for (; (v = ugly[c]) < base;) {
         if constexpr ((base & (base - 1)) == 0) {
-            mpz_mul_2exp(rel->a, rel->a, u64arith_clz(base));
+            mpz_mul_2exp(rel->a, rel->a, u64arith_ctz(base));
         } else {
             mpz_mul_ui(rel->a, rel->a, base);
         }
@@ -614,7 +614,7 @@ earlyparser_inner_read_ab(
     mpz_set_ui(rel->b, 0);
     for (; (v = ugly[c]) < base;) {
         if constexpr ((base & (base - 1)) == 0) {
-            mpz_mul_2exp(rel->b, rel->b, u64arith_clz(base));
+            mpz_mul_2exp(rel->b, rel->b, u64arith_ctz(base));
         } else {
             mpz_mul_ui(rel->b, rel->b, base);
         }
