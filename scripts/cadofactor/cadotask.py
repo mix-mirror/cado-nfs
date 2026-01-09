@@ -2,7 +2,7 @@
 
 import re
 import os
-from math import gcd, prod
+from math import gcd
 import abc
 import random
 import time
@@ -6554,54 +6554,26 @@ class ClGroupStructureTask(Task):
             # TODO if program failed due to too large problematic p^e in the
             # group order, try to recover using linear algebra modulo p
 
-            self.state["classgroup_gens"] = ""
+            self.state["classgroup_desc"] = ""
             stdout = message.read_stdout(0).decode("utf-8")
             for line in stdout.splitlines():
                 if line.startswith("structure: "):
-                    structure_str = line[11:]
-                    if structure_str.startswith("group = "):
-                        self.state["classgroup_structure"] = structure_str[8:]
-                    elif structure_str.startswith("exponent = "):
-                        self.state["classgroup_exponent_fact"] = \
-                            structure_str[11:]
-                    elif structure_str.startswith("one element which order "):
-                        self.state["classgroup_elem_exp_order"] = \
-                            structure_str[42:]
-                    elif m := re.fullmatch(r"gen_\d+ = (.*)", structure_str):
-                        self.state["classgroup_gens"] += f"{m.group(1)}\n"
-                    else:
-                        self.logger.warning("Ignoring line starting with "
-                                            f"'structure: ':\n{structure_str}")
+                    self.state["classgroup_desc"] += line[11:] + "\n"
 
-            # Recomputing class number from classgroup_structure, the used
-            # value (called order) was possibly a multiple of the class number.
-            parts = self.state["classgroup_structure"].split(" x ")
-            self.state["classnumber"] = prod(int(m[2:-1]) for m in parts)
-            fact = []
-            for f in order.split("*"):
-                [p, e] = map(int, f.split('^'))
-                while self.state["classnumber"] % p**e != 0:
-                    e -= 1
-                fact.append(f"{p}^{e}")
-            self.state["classnumber_fact"] = " * ".join(fact)
+            if not self.state["classgroup_desc"]:
+                self.logger.error("No information on the class group "
+                                  "structure was found in the output file")
+                raise Exception("Parsing failed or uncaught error")
 
         self.logger.debug("Exit ClGroupStructureTask.run(" + self.name + ")")
         return True
 
     def has_all_data_in_state(self, order):
-        outputs = ("classnumber", "classnumber_fact",
-                   "classgroup_exponent_fact", "classgroup_structure",
-                   "classgroup_elem_exp_order", "classgroup_gens")
         return "order" in self.state and self.state["order"] == order \
-            and all(k in self.state for k in outputs)
+            and "classgroup_desc" in self.state
 
     def get_class_group_structure(self):
-        return (self.state.get("classnumber", None),
-                self.state.get("classnumber_fact", None),
-                self.state.get("classgroup_exponent_fact", None),
-                self.state.get("classgroup_structure", None),
-                self.state.get("classgroup_gens", None),
-                )
+        return self.state.get("classgroup_desc", None)
 
 
 class FactorTask(Task):

@@ -245,9 +245,6 @@ if __name__ == '__main__':
                 logger.warning("NO LOG FOUND for target = " + str(t))
             print(",".join([str(x) for x in logtargets]))
     elif computation == Computation.CL:
-        print(f"class number = {factors[0]} = {factors[1]}")
-        print(f"exponent = {factors[2]}")
-        print(f"class group = {factors[3]}")
-        print(f"generators = [{', '.join(factors[4].splitlines())}]")
+        print(factors, end="")
     else:
         raise RuntimeError(f"unknown computation '{computation}'")
