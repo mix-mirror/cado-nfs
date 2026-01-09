@@ -55,7 +55,10 @@ istream& operator>>(istream& is, mpz_ptr x)
 {
     string s;
     is >> s;
-    mpz_set_str(x, s.c_str(), 0);
+    int base = (is.flags() & std::ios_base::hex) ? 16 : 0;
+    int const rc = mpz_set_str(x, s.c_str(), base);
+    if (rc < 0)
+        is.setstate(std::ios_base::failbit);
     return is;
 }
 
@@ -64,7 +67,9 @@ istream& operator>>(istream& is, mpq_ptr x)
 {
     string s;
     is >> s;
-    mpq_set_str(x, s.c_str(), 0);
+    int const rc = mpq_set_str(x, s.c_str(), 0);
+    if (rc < 0)
+        is.setstate(std::ios_base::failbit);
     return is;
 }
 

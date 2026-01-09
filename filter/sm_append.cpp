@@ -20,18 +20,15 @@
 
 #include "cado.h" // IWYU pragma: keep
 
-#include <cinttypes>
-#include <cstdarg>
 #include <cstddef>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 #include <algorithm>
+#include <array>
 #include <condition_variable>
 #include <functional>
-#include <iterator>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -39,8 +36,13 @@
 #include <thread>
 #include <utility>
 #include <vector>
+#include <sstream>
+#include <locale>
+#include <ranges>
+#include <ios>
 
 #include "fmt/format.h"
+#include "fmt/base.h"
 #include <gmp.h>
 
 #include "cado_poly.h"
@@ -53,6 +55,7 @@
 #include "sm_utils.hpp"
 #include "timing.h"
 #include "verbose.h"
+#include "cxx_mpz.hpp"
 
 // {{{ debug print interface
 static unsigned int const debug = 0;
@@ -104,26 +107,40 @@ struct print_wrap { // {{{
 };
 // }}}
 
-struct ab_pair {   // {{{
-    int64_t a = 0; /* only a is allowed to be negative */
-    uint64_t b = 0;
+struct ab_pair : std::array<cxx_mpz, 2>{   // {{{
+    cxx_mpz const & a() const { return (*this)[0]; }
+    cxx_mpz const & b() const { return (*this)[1]; }
+    cxx_mpz & a() { return (*this)[0]; }
+    cxx_mpz & b() { return (*this)[1]; }
     explicit ab_pair(char const * p);
     ab_pair() = default;
 };
 
 ab_pair::ab_pair(char const * p)
 {
-    char const * p0 = p;
-    int64_t sign = 1;
-    if (*p == '-') {
-        sign = -1;
-        p++;
-    }
-    if (sscanf(p, "%" SCNx64 ",%" SCNx64 ":", &a, &b) < 2) {
-        fprintf(stderr, "Parse error at line: %s\n", p0);
-        exit(EXIT_FAILURE);
-    }
-    a *= sign;
+    /* taken from relation::parse */
+    struct relation_locale: std::ctype<char>
+    {
+        relation_locale(): std::ctype<char>(get_table()) {}
+
+        static std::ctype_base::mask const* get_table()
+        {
+            static std::vector<std::ctype_base::mask>
+                rc(std::ctype<char>::table_size,std::ctype_base::space);
+            std::fill(&rc['0'], &rc['9'+1], std::ctype_base::digit);
+            std::fill(&rc['a'], &rc['f'+1], std::ctype_base::xdigit);
+            std::fill(&rc['A'], &rc['F'+1], std::ctype_base::xdigit);
+            rc['-'] = std::ctype_base::punct;
+            return rc.data();
+        }
+    };
+
+    const std::string S(p);
+    std::istringstream is(S);
+    is.imbue(std::locale(std::locale(), new relation_locale()));
+
+    if (!(is >> std::hex >> a() >> expect(",") >> b() >> expect(":")))
+        throw std::runtime_error(fmt::format("parse error on {}", S));
 }
 
 // }}}
@@ -157,8 +174,8 @@ struct sm_capable { // {{{
             cxx_mpz_poly smpol, pol;
             mp_limb_t * dst = res.get();
             for (auto const & B: batch) {
-                mpz_poly_setcoeff_int64(pol, 0, B.a);
-                mpz_poly_setcoeff_int64(pol, 1, -(int64_t)B.b);
+                mpz_poly_setcoeff(pol, 0, B.a());
+                mpz_poly_setcoeff(pol, 1, -B.b());
                 int smidx = 0;
                 for (auto const & S: sm_info) {
                     S.compute_piecewise(smpol, pol);
@@ -261,7 +278,7 @@ struct uplink_thread { // {{{
 // }}}
 struct uplink_mpi { // {{{
     int rank = -1;
-    ;
+
     int id() const { return rank; }
 
     // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
@@ -273,9 +290,43 @@ struct uplink_mpi { // {{{
         if (bsize == 0)
             return {};
         std::vector<ab_pair> batch(bsize, ab_pair());
+
+        /*
         MPI_Recv((char *)batch.data(),
                  runtime_numeric_cast<int>(bsize * sizeof(ab_pair)), MPI_BYTE,
                  0, turn, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                 */
+
+        /* we receive the data flattened. We need to unflatten it. How
+         * fun.
+         */
+        std::vector<mp_size_t> sizes(bsize * 2);
+        MPI_Recv((char *)sizes.data(),
+                runtime_numeric_cast<int>(sizes.size()),
+                CADO_MPI_MP_SIZE_T,
+                0, turn, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        size_t total_limbs = 0;
+        for(auto c : sizes) total_limbs += std::abs(c);
+
+        std::vector<mp_limb_t> limbs(total_limbs);
+        MPI_Recv((char *)limbs.data(),
+                runtime_numeric_cast<int>(limbs.size()),
+                CADO_MPI_MP_LIMB_T,
+                0, turn, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        mp_limb_t const * p = limbs.data();
+        mp_size_t const * z = sizes.data();
+        for(auto & ab : batch) {
+            for(auto & v : ab) {
+                const size_t nlimbs = std::abs(*z);
+                mp_limb_t * q = mpz_limbs_write(v, nlimbs);
+                std::copy(p, p + nlimbs, q);
+                mpz_limbs_finish(v, *z);
+                z++;
+                p += nlimbs;
+            }
+        }
+
         return batch;
     }
 
@@ -408,13 +459,39 @@ struct downlink_thread : public thread_link_common { // {{{
 struct downlink_mpi : public downlink_base { // {{{
     void put_input(int turn) const
     {
-        unsigned long const bsize = batch.size();
-        MPI_Send(&bsize, 1, MPI_UNSIGNED_LONG, id, turn, MPI_COMM_WORLD);
+        size_t const bsize = batch.size();
+        MPI_Send(&bsize, 1, CADO_MPI_SIZE_T, id, turn, MPI_COMM_WORLD);
         if (batch.empty())
             return;
+
+        /*
         MPI_Send((char *)batch.data(),
                  runtime_numeric_cast<int>(batch.size() * sizeof(ab_pair)),
                  MPI_BYTE, id, turn, MPI_COMM_WORLD);
+                 */
+
+        /* we need to flatten the batch to something that can be
+         * transferred over mpi */
+        std::vector<mp_size_t> sizes;
+        std::vector<mp_limb_t> limbs;
+        for(auto const & ab: batch) {
+            for(auto const & v : ab) {
+                auto sz = mpz_size(v);
+                auto sgn = mpz_sgn(v);
+                auto const * p = mpz_limbs_read(v);
+                sizes.push_back(mp_size_t(sz) * sgn);
+                limbs.insert(limbs.end(), p, p + sz);
+            }
+        }
+
+        MPI_Send((char *)sizes.data(),
+                runtime_numeric_cast<int>(sizes.size()),
+                CADO_MPI_MP_SIZE_T,
+                id, turn, MPI_COMM_WORLD);
+        MPI_Send((char *)limbs.data(),
+                runtime_numeric_cast<int>(limbs.size()),
+                CADO_MPI_MP_LIMB_T,
+                id, turn, MPI_COMM_WORLD);
     }
 
     void get_output(int turn, size_t sz)
@@ -497,52 +574,21 @@ int downlink_base::produce(task_globals & tg) // {{{
 // }}}
 /* }}} */
 
-/* {{{ mrepl2 -- helper struct
- * This is an iterator that can be dereferenced exactly n times, and
- * returns the same reference every time, together with a counter.
- * We use it in order to create a vector will all instances created with
- * the same ctor args
- */
-template <typename T> struct repl2 {
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = std::pair<int, T const &>;
-    using difference_type = ptrdiff_t;
-    using pointer = value_type *;
-    using reference = value_type &;
-    T & r;
-    int i = 0;
-    int n;
-    repl2(T & r, int n)
-        : r(r)
-        , n(n)
-    {
-    }
-    value_type operator*() { return {i, r}; }
-    repl2<T> & operator++()
-    {
-        i++;
-        return *this;
-    }
-    bool operator==(repl2<T> const & o) const { return (n - i) == (o.n - o.i); }
-    bool operator!=(repl2<T> const & o) const { return !operator==(o); }
-};
-template <typename T> static repl2<T> mrepl2(T & tg, int n = 0)
-{
-    return {tg, n};
-}
-
-/* }}} */
-
 /* {{{ main control loop */
 template <typename T>
 static void sm_append_master(FILE * in, FILE * out,
                              std::vector<sm_side_info> const & sm_info,
-                             int size)
+                             unsigned int size)
 {
     /* need to know how many mp_limb_t's we'll get back from each batch */
     task_globals tg(in, out, sm_info);
 
-    std::vector<T> peers(mrepl2(sm_info, size), mrepl2(sm_info));
+    auto r = std::views::iota(0U, size) | std::views::transform(
+            [&](auto i) {
+                return std::pair<int, std::vector<sm_side_info> const &>
+                    { i, sm_info};
+            });
+    std::vector<T> peers(r.begin(), r.end());
 
     int eof = 0;
     /* eof = 1 on first time. eof = 2 when all receives are done */
@@ -595,14 +641,14 @@ static void sm_append_master(FILE * in, FILE * out,
                     " (%.1f / batch, %.1f rels/s)\n",
                     tg.nrels_out, wct_seconds() - t0,
                     (wct_seconds() - t0) / turn,
-                    double(tg.nrels_out) / (wct_seconds() - t0));
+                    double_ratio(tg.nrels_out, wct_seconds() - t0));
         }
     }
     fprintf(stderr,
             "# final: printed %zu rels in %.1f s"
             " (%.1f / batch, %.1f rels/s)\n",
             tg.nrels_out, wct_seconds() - t0, (wct_seconds() - t0) / turn,
-            double(tg.nrels_out) / (wct_seconds() - t0));
+            double_ratio(tg.nrels_out, wct_seconds() - t0));
 }
 /* }}} */
 
@@ -628,22 +674,12 @@ static void sm_append_sync(FILE * in, FILE * out,
             continue;
         }
 
-        char * p = buf;
-        int64_t a; /* only a is allowed to be negative */
-        uint64_t b;
-        int64_t sign = 1;
-        if (*p == '-') {
-            sign = -1;
-            p++;
-        }
-        if (sscanf(p, "%" SCNx64 ",%" SCNx64 ":", &a, &b) < 2) {
-            fprintf(stderr, "Parse error at line: %s\n", buf);
-            exit(EXIT_FAILURE);
-        }
+        ab_pair ab(buf);
 
         cxx_mpz_poly pol;
 
-        mpz_poly_set_ab(pol, a * sign, b);
+        mpz_poly_setcoeff(pol, 0, ab.a());
+        mpz_poly_setcoeff(pol, 1, -ab.b());
 
         fputs(buf, out);
         fputc(':', out);
@@ -669,19 +705,21 @@ static void sm_append(FILE * in, FILE * out,
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    unsigned int npeers = size * nthr;
+
     if (size > 1) {
         if (nthr > 1)
             throw std::runtime_error("This program won't do MPI **AND** "
                                      "threads at the same time!\n");
         if (rank == 0) {
-            sm_append_master<downlink_mpi>(in, out, sm_info, size * nthr);
+            sm_append_master<downlink_mpi>(in, out, sm_info, npeers);
         } else {
             uplink_loop_mpi(sm_info);
         }
     } else if (nthr > 1) {
         /* Because we mimick what goes on in the MPI setting, peer 0 will
          * do nothing, actually */
-        sm_append_master<downlink_thread>(in, out, sm_info, size * nthr);
+        sm_append_master<downlink_thread>(in, out, sm_info, npeers);
     } else {
         sm_append_sync(in, out, sm_info);
     }
