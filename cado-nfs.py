@@ -134,6 +134,7 @@ sys.path.append(pathdict["pylib"])
 
 from cadofactor import toplevel, cadologger, cadotask  # noqa: E402
 from cadofactor.cadocommand import shellquote          # noqa: E402
+from cadofactor.cadoutils import Computation           # noqa: E402
 
 if __name__ == '__main__':
     # Parse command line arguments
@@ -217,14 +218,14 @@ if __name__ == '__main__':
     else:
         toplevel_params.purge_temp_files()
 
-    dlp_param = parameters.myparams({"dlp": False}, "")
-    dlp = dlp_param["dlp"]
+    computation_param = parameters.myparams(keys=("computation",), path="")
+    computation = computation_param["computation"]
     target_param = parameters.myparams({"target": ""}, "")
     target = target_param["target"]
 
-    if not dlp:
+    if computation == Computation.FACT:
         print(" ".join(factors))
-    else:
+    elif computation == Computation.DLP:
         logger.info("If you want to compute"
                     " one or several new target(s),"
                     " run %s %s target=<target>[,<target>,...]",
@@ -243,3 +244,10 @@ if __name__ == '__main__':
                 t = targets[i]
                 logger.warning("NO LOG FOUND for target = " + str(t))
             print(",".join([str(x) for x in logtargets]))
+    elif computation == Computation.CL:
+        print(f"class number = {factors[0]} = {factors[1]}")
+        print(f"exponent = {factors[2]}")
+        print(f"class group = {factors[3]}")
+        print(f"generators = [{', '.join(factors[4].splitlines())}]")
+    else:
+        raise RuntimeError(f"unknown computation '{computation}'")

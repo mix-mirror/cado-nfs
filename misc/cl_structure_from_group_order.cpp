@@ -753,7 +753,8 @@ int main(int argc, char const * argv[])
 
     /* Compute the exponent */
     auto E = cl.exponent();
-    verbose_fmt_print(0, 1, "{}exponent = {}\n{}gen = {}\n",
+    verbose_fmt_print(0, 1, "{}exponent = {}\n"
+                            "{}one element which order is the exponent = {}\n",
                             prefix, E.exponent, prefix, E.g);
 
     /* Compute the p-Sylow groups if possible */
@@ -791,5 +792,15 @@ int main(int argc, char const * argv[])
 
     verbose_output_clear();
 
-    return S.size() == E.exponent.nfactors() ? EXIT_SUCCESS : EXIT_FAILURE;
+    if (S.size() != E.exponent.nfactors()) {
+        fmt::print(stderr, "Error, some p-Sylow groups were not computed "
+                           "because they are larger than {}.\nThe limit can "
+                           "be increased with the command-line parameter "
+                           "'-pSylow_bound' but beware that the current "
+                           "algorithm becomes inefficient very quickly.\n",
+                           cmdline.pSylow_bound);
+        return EXIT_FAILURE;
+    } else {
+        return EXIT_SUCCESS;
+    }
 }

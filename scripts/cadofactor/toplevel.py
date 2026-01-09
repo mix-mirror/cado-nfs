@@ -14,6 +14,7 @@ import argparse
 import shutil
 
 from cadofactor import wudb, cadotask, cadologger, cadoparams
+from cadofactor.cadoutils import Algorithm, Computation
 
 
 # This is a hack. We want to store some stuff in the tasks database for
@@ -40,10 +41,12 @@ class Cado_NFS_toplevel(object):
     def find_default_hint_file(self):
         ''' return the full path of the default hint file which
         is appropriate for the given dlp problem.'''
-        assert self.parameters.get_or_set_default("dlp", False)
+        c = self.parameters.get_or_set_default("computation", Computation.FACT)
+        assert c == Computation.DLP
         assert self.parameters.get_or_set_default("N", 0) != 0
         default_param_dir = self.pathdict["data"]
-        default_param_dir = os.path.join(default_param_dir, "dlp")
+        default_param_dir = os.path.join(default_param_dir,
+                                         Computation.DLP.param_dirname)
         size_of_n = len(repr(self.parameters.get_or_set_default("N", 0)))
         # also attempt nearest multiple of 5.
         if self.parameters.get_or_set_default("gfpext", 1) == 1:
@@ -173,13 +176,10 @@ class Cado_NFS_toplevel(object):
         '''
 
         default_param_dir = self.pathdict["data"]
-        if self.args.dlp:
-            default_param_dir = os.path.join(default_param_dir, "dlp")
-            letter = "p"
-        else:
-            default_param_dir = os.path.join(default_param_dir, "factor")
-            letter = "c"
-        size_of_n = len(repr(self.args.N))
+        default_param_dir = os.path.join(default_param_dir,
+                                         self.args.computation.param_dirname)
+        letter = self.args.computation.letter
+        size_of_n = len(repr(abs(self.args.N)))
         # we try the nearest value in range [size_of_n-k,size_of_n+k]
         # with k=3 for < 200 digits, k=5 for >= 200 digits
         if size_of_n < 200:
@@ -194,6 +194,8 @@ class Cado_NFS_toplevel(object):
         if self.args.gfpext > 1:
             attempts = [letter + "%ddd" % self.args.gfpext + x
                         for x in attempts]
+        elif self.args.algo == Algorithm.QS:
+            attempts = [f'qs.{letter}{x}' for x in attempts]
         else:
             attempts = [letter + x for x in attempts]
         if attempts[1] == attempts[0]:
@@ -453,6 +455,9 @@ class Cado_NFS_toplevel(object):
             if match_and_store(matches, r"^N=(\d+)$", x):
                 supplied_N.append(matches[0])
             elif match_and_store(matches, r"^(\d+)$", x):
+                supplied_N.append(matches[0])
+            elif self.args.computation == Computation.CL and \
+                    match_and_store(matches, r"^(-\d+)$", x):
                 supplied_N.append(matches[0])
             elif len(supplied_parameters) == 0 and os.path.isfile(x):
                 supplied_parameters.append(x)
@@ -1186,10 +1191,40 @@ class Cado_NFS_toplevel(object):
             "--server",
             help="Run a bare server, do not start any clients",
             action='store_true')
-        parser.add_argument(
+        comp_group = parser.add_mutually_exclusive_group()
+        comp_group.add_argument(
+            "--fact", "-fact",
+            help="Run factorization computation",
+            dest='computation',
+            action='store_const',
+            const=Computation.FACT,
+            default=Computation.FACT)
+        comp_group.add_argument(
             "--dlp", "-dlp",
-            help="Run discrete logarithm computation instead",
-            action='store_true')
+            help="Run discrete logarithm computation",
+            dest='computation',
+            action='store_const',
+            const=Computation.DLP)
+        comp_group.add_argument(
+            "--cl", "-cl",
+            help="Run class group computation",
+            dest='computation',
+            action='store_const',
+            const=Computation.CL)
+        algo_group = parser.add_mutually_exclusive_group()
+        algo_group.add_argument(
+            "--nfs", "-nfs",
+            help="Use NFS and its variants",
+            dest='algo',
+            action='store_const',
+            const=Algorithm.NFS,
+            default=Algorithm.NFS)
+        algo_group.add_argument(
+            "--qs", "-qs",
+            help="Use QS and its variants",
+            dest='algo',
+            action='store_const',
+            const=Algorithm.QS)
         parser.add_argument(
             "--mysql", "-mysql",
             help="Use a mysql db for tracking workunits etc",
@@ -1306,20 +1341,22 @@ class Cado_NFS_toplevel(object):
         self.set_threads_and_client_threads()
         self.set_slaves_parameters()
         # convert some more command-line args to parameters:
-        if self.args.dlp:
+        computation = self.parameters.set_if_unset("computation",
+                                                   self.args.computation.name)
+        algo = self.parameters.set_if_unset("algo", self.args.algo.name)
+        if computation == Computation.DLP:
             if not self.args.dlp_no_keep:
                 os.environ["CADO_DEBUG"] = "yes, please"
-            self.parameters.set_simple("dlp", self.args.dlp)
             if self.args.gfpext:
                 self.parameters.set_simple("gfpext", self.args.gfpext)
-        # get default hint file if necessary
-        if self.parameters.get_or_set_default("dlp", False):
             if self.parameters.get_or_set_default("target", ""):
                 hintfile = self.parameters.get_or_set_default("descent_hint",
                                                               "")
                 if hintfile == "":
                     hintfile = self.find_default_hint_file()
                 self.parameters.set_simple("descent_hint", hintfile)
+        elif algo == Algorithm.QS:
+            os.environ["CADO_DEBUG"] = "yes, please"
         # set cpubinding file if necessary
         self.parameters.set_if_unset(
             "tasks.linalg.bwc.cpubinding",
