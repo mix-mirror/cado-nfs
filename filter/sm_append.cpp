@@ -39,7 +39,7 @@
 #include <sstream>
 #include <locale>
 #include <ios>
-#include <iterator>
+#include <tuple>
 
 #include "fmt/format.h"
 #include "fmt/base.h"
@@ -56,6 +56,7 @@
 #include "timing.h"
 #include "verbose.h"
 #include "cxx_mpz.hpp"
+#include "utils_cxx.hpp"
 
 // {{{ debug print interface
 static unsigned int const debug = 0;
@@ -450,8 +451,8 @@ struct downlink_thread : public thread_link_common { // {{{
     }
 
     explicit downlink_thread(
-        std::pair<int, std::vector<sm_side_info> const &> p)
-        : downlink_thread(p.first, p.second)
+        std::tuple<int, std::vector<sm_side_info> const &> p)
+        : downlink_thread(std::get<0>(p), std::get<1>(p))
     {
     }
 };
@@ -506,8 +507,8 @@ struct downlink_mpi : public downlink_base { // {{{
         : downlink_base(id)
     {
     }
-    explicit downlink_mpi(std::pair<int, std::vector<sm_side_info> const &> p)
-        : downlink_mpi(p.first, p.second)
+    explicit downlink_mpi(std::tuple<int, std::vector<sm_side_info> const &> p)
+        : downlink_mpi(std::get<0>(p), std::get<1>(p))
     {
     }
 };
@@ -574,40 +575,6 @@ int downlink_base::produce(task_globals & tg) // {{{
 // }}}
 /* }}} */
 
-/* {{{ mrepl2 -- helper struct
- * This is an iterator that can be dereferenced exactly n times, and
- * returns the same reference every time, together with a counter.
- * We use it in order to create a vector will all instances created with
- * the same ctor args
- */
-template <typename T> struct repl2 {
-    using iterator_category = std::forward_iterator_tag;
-    using value_type = std::pair<int, T const &>;
-    using difference_type = ptrdiff_t;
-    using pointer = value_type *;
-    using reference = value_type &;
-    std::pair<int, T &> ir;
-    int n;
-    repl2(T & r, int n)
-        : ir { 0, r }
-        , n(n)
-    {
-    }
-    value_type & operator*() { return ir; }
-    value_type const & operator*() const { return ir; }
-    repl2<T> & operator++()
-    {
-        ir.first++;
-        return *this;
-    }
-    bool operator==(repl2<T> const & o) const { return (n - ir.first) == (o.n - o.ir.first); }
-};
-template <typename T> static repl2<T> mrepl2(T & tg, int n = 0)
-{
-    return {tg, n};
-}
-/* }}} */
-
 /* {{{ main control loop */
 template <typename T>
 static void sm_append_master(FILE * in, FILE * out,
@@ -617,27 +584,8 @@ static void sm_append_master(FILE * in, FILE * out,
     /* need to know how many mp_limb_t's we'll get back from each batch */
     task_globals tg(in, out, sm_info);
 
-    /* we would like this to work, but it can't work until c++23 because
-     * of the forward iterator requirements issue, which isn't fixed in
-     * c++20. See the following links:
-     *  - table 75 in §22.2.3.3 as well as forward iterator reqs §23.3.5.4
-     *  - https://wg21.link/p2408
-     *  - https://wg21.link/p2259
-     *  - https://stackoverflow.com/a/67606757
-     *
-     * as of c++20, this all boils down to the following failing:
-    static_assert(std::is_reference_v<std::iter_reference_t<decltype(r.begin())>>);
-     * basically for now we'll rely on our poor man's equivalent */
-#if 0
-    auto r = std::views::iota(0U, size) | std::views::transform(
-            [&](auto i) {
-                return std::pair<int, std::vector<sm_side_info> const &>
-                    { i, sm_info };
-            });
+    auto r = cado::counting_forward_view(0, (int) size, std::cref(sm_info));
     std::vector<T> peers(r.begin(), r.end());
-#else
-    std::vector<T> peers(mrepl2(sm_info, int(size)), mrepl2(sm_info));
-#endif
 
     int eof = 0;
     /* eof = 1 on first time. eof = 2 when all receives are done */
