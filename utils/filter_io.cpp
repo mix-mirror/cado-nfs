@@ -368,10 +368,13 @@ inflight_rels_buffer<locking, n, config>::~inflight_rels_buffer()
         ASSERT_ALWAYS_NOTHROW(active[i] == 0);
     }
     for(size_t i = 0 ; i < SIZE_BUF_REL ; i++) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Waddress"
         if constexpr (cfg::ab_clear != nullptr) {
             cfg::ab_clear(rels[i]->a);
             cfg::ab_clear(rels[i]->b);
         }
+#pragma GCC diagnostic pop
         if (rels[i]->primes != rels[i]->primes_data) {
             free(rels[i]->primes);
         }
