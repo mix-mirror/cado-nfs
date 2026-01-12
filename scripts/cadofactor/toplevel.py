@@ -76,16 +76,22 @@ class Cado_NFS_toplevel(object):
         well as the closest size up to a distance of 3 (of 5 for 200 digits
         or more).
 
-        If self.args.dlp is set, we look in the dlp/ subdirectory of
-        self.pathdict["data"]. Otherwise we look in the factor/ subdirectory.
+        The variable self.args.computation must be set and of type Computation
+        as we look in the subdirectory self.args.computation.param_dirname of
+        self.pathdict["data"].
+        See the definition of Computation class for the link between the type
+        of computation and the subdirectory for parameter files.
 
         >>> tempdir = tempfile.mkdtemp()
-        >>> names = ["c10", "c12", "c20", "p12", "p20" ]
+        >>> names = ["c10", "c12", "c20", "p12", "p20", "qs.d12", "qs.d20" ]
         >>> os.mkdir(os.path.join(tempdir, "factor"))
         >>> os.mkdir(os.path.join(tempdir, "dlp"))
+        >>> os.mkdir(os.path.join(tempdir, "cl"))
         >>> for n in names:
         ...  if re.search("^p", n):
         ...    dn = "dlp"
+        ...  elif re.search("^qs.d", n):
+        ...    dn = "cl"
         ...  else:
         ...    dn = "factor"
         ...  fn = os.path.join(tempdir, dn, "params." + n)
@@ -106,72 +112,105 @@ class Cado_NFS_toplevel(object):
         >>> n20 = 12345678901231231231
         >>> n21 = 123456789012312312311
         >>> t.args.N = n10
-        >>> t.args.dlp = False
+        >>> t.args.computation = Computation.FACT
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "factor", "params.c10")
         True
 
         >>> t.args.N = n12
-        >>> t.args.dlp = False
+        >>> t.args.computation = Computation.FACT
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "factor", "params.c12")
         True
 
         >>> t.args.N = n13
-        >>> t.args.dlp = False
+        >>> t.args.computation = Computation.FACT
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "factor", "params.c12")
         True
 
         >>> t.args.N = n16
-        >>> t.args.dlp = False
-        >>> try:
-        ...   t.find_default_parameter_file()
-        ... except RuntimeError:
-        ...   'NOTFOUND'
-        'NOTFOUND'
+        >>> t.args.computation = Computation.FACT
+        >>> t.find_default_parameter_file()  # doctest: +ELLIPSIS
+        Traceback (most recent call last):
+            ...
+        RuntimeError: no parameter file found for c16 (tried ...
+        ...
 
         >>> t.args.N = n18
-        >>> t.args.dlp = False
+        >>> t.args.computation = Computation.FACT
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "factor", "params.c20")
         True
 
         >>> t.args.N = n12
-        >>> t.args.dlp = True
+        >>> t.args.computation = Computation.DLP
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "dlp", "params.p12")
         True
 
         >>> t.args.N = n13
-        >>> t.args.dlp = True
+        >>> t.args.computation = Computation.DLP
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "dlp", "params.p12")
         True
 
         >>> t.args.N = n16
-        >>> t.args.dlp = True
-        >>> try:
-        ...   t.find_default_parameter_file()
-        ... except RuntimeError:
-        ...   'NOTFOUND'
-        'NOTFOUND'
+        >>> t.args.computation = Computation.DLP
+        >>> t.find_default_parameter_file()  # doctest: +ELLIPSIS
+        Traceback (most recent call last):
+            ...
+        RuntimeError: no parameter file found for p16 (tried ...
+        ...
 
         >>> t.args.N = n18
-        >>> t.args.dlp = True
+        >>> t.args.computation = Computation.DLP
         >>> fn = t.find_default_parameter_file()
         >>> fn == os.path.join(tempdir, "dlp", "params.p20")
+        True
+
+        >>> t.args.N = n12
+        >>> t.args.computation = Computation.CL
+        >>> t.args.algo = Algorithm.QS
+        >>> fn = t.find_default_parameter_file()
+        >>> fn == os.path.join(tempdir, "cl", "params.qs.d12")
+        True
+
+        >>> t.args.N = n13
+        >>> t.args.computation = Computation.CL
+        >>> t.args.algo = Algorithm.QS
+        >>> fn = t.find_default_parameter_file()
+        >>> fn == os.path.join(tempdir, "cl", "params.qs.d12")
+        True
+
+        >>> t.args.N = n16
+        >>> t.args.computation = Computation.CL
+        >>> t.args.algo = Algorithm.QS
+        >>> t.find_default_parameter_file()  # doctest: +ELLIPSIS
+        Traceback (most recent call last):
+            ...
+        RuntimeError: no parameter file found for qs.d16 (tried ...
+        ...
+
+        >>> t.args.N = n18
+        >>> t.args.computation = Computation.CL
+        >>> t.args.algo = Algorithm.QS
+        >>> fn = t.find_default_parameter_file()
+        >>> fn == os.path.join(tempdir, "cl", "params.qs.d20")
         True
 
         >>> for n in names:
         ...  if re.search("^p", n):
         ...    dn = "dlp"
+        ...  elif re.search("^qs.d", n):
+        ...    dn = "cl"
         ...  else:
         ...    dn = "factor"
         ...  fn = os.path.join(tempdir, dn, "params." + n)
         ...  os.unlink(fn)
         >>> os.rmdir(os.path.join(tempdir, "factor"))
         >>> os.rmdir(os.path.join(tempdir, "dlp"))
+        >>> os.rmdir(os.path.join(tempdir, "cl"))
         >>> os.rmdir(tempdir)
         '''
 
@@ -1316,6 +1355,8 @@ class Cado_NFS_toplevel(object):
         >>> px = px.replace(slashtmp, "SLASHTMP")
         >>> print(px)
         N = 12345
+        algo = NFS
+        computation = FACT
         slaves.basepath = TEMPDIR/client
         slaves.hostnames = foo,bar
         slaves.scriptpath = SLASHTMP
