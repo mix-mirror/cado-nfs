@@ -572,7 +572,6 @@ std::pair<index_t, std::vector<int>> renumber_t::indices_from_p_a_b(
             mpz_srcptr b) const
 {
     /* bad ideals start after the additional columns in the table. */
-    index_t first = above_add;
     int m = 1;
     p_r_values_t pm = x.p;
     ASSERT_ALWAYS(pm);
@@ -593,7 +592,6 @@ std::pair<index_t, std::vector<int>> renumber_t::indices_from_p_a_b(
             }
             return indices_from_p_a_b(x, e, sa, mpz_tdiv_uint64(b, pm));
         }
-        first += I.second.nbad;
     }
     throw cannot_lookup_p_a_b_in_bad_ideals(x, a, b);
 }
