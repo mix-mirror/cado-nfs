@@ -121,10 +121,9 @@ static int test_compute_r_large_ab(unsigned int nb)
 
         unsigned long const r2 = mpz_compute_r(a, b, tp);
         if (r != r2) {
-            gmp_fprintf(stderr,
-                        "ERROR: a=%Zd b=%Zd p=%" PRpr "\n"
-                        "Got r=%" PRpr " instead of %" PRpr "\n",
-                        a, b, p, r, r2);
+            fmt::print(stderr,
+                       "ERROR: a={} b={} p={}\nGot r={} instead of {}\n",
+                       a, b, p, r, r2);
             err++;
         }
     }
