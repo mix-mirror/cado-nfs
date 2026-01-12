@@ -240,7 +240,7 @@ compute_hash(mpz_srcptr a, mpz_srcptr b)
     cxx_mpz r;
     mpz_mul_uint64(r, a, CA_DUP2);
     mpz_addmul_uint64(r, b, CB_DUP2);
-    return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+    return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
 }
 
 /* if duplicate is_dup = 1, else is_dup = 0

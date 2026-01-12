@@ -24,7 +24,12 @@ extern char * d64toa16 (char *p, int64_t m);
 inline p_r_values_t
 relation_compute_r(mpz_srcptr a, mpz_srcptr b, p_r_values_t p)
 {
-    return relation_compute_r(mpz_tdiv_uint64(a, p), mpz_tdiv_uint64(b, p), p);
+    /* assumes p will never be > 63 bits */
+    int64_t sa = (int64_t) mpz_tdiv_uint64(a, p);
+    if (mpz_sgn(a) < 0) {
+        sa = -sa;
+    }
+    return relation_compute_r(sa, mpz_tdiv_uint64(b, p), p);
 }
 
 inline char *

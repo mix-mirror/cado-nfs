@@ -247,10 +247,7 @@ public:
             p_r_side x,
             int e,
             mpz_srcptr a,
-            mpz_srcptr b) const {
-        return indices_from_p_a_b(x, e, mpz_tdiv_uint64(a, x.p),
-                                        mpz_tdiv_uint64(b, x.p));
-    }
+            mpz_srcptr b) const;
     /*}}}*/
 
     /* {{{ build() functionality */

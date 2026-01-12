@@ -78,7 +78,7 @@ public:
         cxx_mpz r;
         mpz_mul_uint64(r, a, CA);
         mpz_addmul_uint64(r, b, CB);
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
@@ -200,7 +200,7 @@ public:
             if (mpz_sgn(a) < 0)
                 mpz_neg(r, r);
         }
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
@@ -271,7 +271,7 @@ public:
         mpz_mul_uint64(r, a, CA);
         mpz_abs(r, r);
         mpz_addmul_uint64(r, b, CB);
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
@@ -422,7 +422,7 @@ public:
                 mpz_submul_uint64(r, b, CB);
             }
         }
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
@@ -575,7 +575,7 @@ public:
                 mpz_submul_uint64(r, b, CB);
             }
         }
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
@@ -798,7 +798,7 @@ public:
                 mpz_fdiv_q_2exp(r, r, 1u);
             }
         }
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
@@ -1083,7 +1083,7 @@ public:
                 mpz_divexact_ui(r, r, 3u);
             }
         }
-        return mpz_tdiv_uint64(r, 0xffffffffffffffff);
+        return mpz_sgn(r) * mpz_tdiv_uint64(r, 0xffffffffffffffff);
     }
 
     void print_action(std::ostream& os) const final
