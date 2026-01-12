@@ -363,9 +363,6 @@ process_bucket_region_run::survivors_t process_bucket_region_run::search_survivo
 
     int const MAYBE_UNUSED N = first_region0_index + already_done + bucket_relative_index;
 
-    ASSERT(j1 > j0); /* even when we have a line fragment */
-
-
 #ifdef TRACE_K /* {{{ */
     if (trace_on_spot_Nx(N, trace_Nx.x)) {
         auto p1 = [&, this](size_t i) {
@@ -409,6 +406,8 @@ process_bucket_region_run::survivors_t process_bucket_region_run::search_survivo
     const int I = 1 << logI;
     const int i0 = (region_rank_in_line << LOG_BUCKET_REGION) - I/2;
     const int i1 = i0 + (1 << MIN(LOG_BUCKET_REGION, logI));
+
+    ASSERT(j1 > j0); /* even when we have a line fragment */
 
     for (unsigned int j = j0; j < j1; j++)
     {
