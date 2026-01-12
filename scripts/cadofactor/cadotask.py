@@ -7454,7 +7454,7 @@ class CompleteFactorization(HasState,
                    self.merge, self.linalg, self.hfactor, self.grstruct)
         else:
             fg = () if algo == Algorithm.NFS else (self.filtergalois, )
-            chars = (self.characters) if algo == Algorithm.NFS else ()
+            chars = (self.characters, ) if algo == Algorithm.NFS else ()
             self.tasks = self.polysel \
                 + (self.fb, self.freerel, self.sieving, self.dup1, self.dup2) \
                 + fg + (self.purge, self.merge, self.linalg) \
