@@ -230,7 +230,7 @@ class Cado_NFS_toplevel(object):
             tried_sizes.append(size_of_n + k)
             tried_sizes.append(size_of_n - k)
         attempts = ["%d" % x for x in tried_sizes]
-        if self.args.gfpext > 1:
+        if self.args.gfpext is not None and self.args.gfpext > 1:
             attempts = [letter + "%ddd" % self.args.gfpext + x
                         for x in attempts]
         elif self.args.algo == Algorithm.QS:
@@ -1221,7 +1221,6 @@ class Cado_NFS_toplevel(object):
         parser.add_argument(
             "--gfpext", "-gfpext",
             type=int,
-            default=1,
             help="Degree of the finite field extension (DLP only)")
         parser.add_argument(
             "--ell", "-ell",
@@ -1388,8 +1387,11 @@ class Cado_NFS_toplevel(object):
         if computation == Computation.DLP:
             if not self.args.dlp_no_keep:
                 os.environ["CADO_DEBUG"] = "yes, please"
-            if self.args.gfpext:
+            if self.args.gfpext is not None:
+                # override value from parameter file (if set) by the value
+                # given on the command-line (if given)
                 self.parameters.set_simple("gfpext", self.args.gfpext)
+            self.parameters.set_if_unset("gfpext", 1)
             if self.parameters.get_or_set_default("target", ""):
                 hintfile = self.parameters.get_or_set_default("descent_hint",
                                                               "")
