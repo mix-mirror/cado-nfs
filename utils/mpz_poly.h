@@ -319,6 +319,7 @@ void mpz_poly_pseudo_division(mpz_poly_ptr q, mpz_poly_ptr r,
 void mpz_poly_pseudo_remainder(mpz_poly_ptr r, mpz_poly_srcptr a, mpz_poly_srcptr b);
 void mpz_poly_xgcd_mpz(mpz_poly_ptr gcd, mpz_poly_srcptr f, mpz_poly_srcptr g, mpz_poly_ptr u, mpz_poly_ptr v, mpz_srcptr p);
 
+void mpz_poly_homogeneous_eval (mpz_ptr v, mpz_poly_srcptr f, mpz_srcptr i, mpz_srcptr j);
 void mpz_poly_homogeneous_eval_siui (mpz_ptr v, mpz_poly_srcptr f, int64_t i, uint64_t j);
 void mpz_poly_content (mpz_ptr c, mpz_poly_srcptr F);
 int mpz_poly_has_trivial_content (mpz_poly_srcptr F);

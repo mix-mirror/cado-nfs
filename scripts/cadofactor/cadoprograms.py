@@ -1436,10 +1436,12 @@ class Characters(Program):
                  out: Parameter(),
                  wfile: Parameter("ker"),  # noqa: F821
                  lpb0: Parameter(),
-                 lpb1: Parameter(),
+                 lpb1: Parameter() = None,
                  nchar: Parameter() = None,
                  nratchars: Parameter() = None,
                  threads: Parameter("t") = None,  # noqa: F821
+                 large_ab: Toggle("large-ab") = None,  # noqa: F821
+                 only_sign_chars: Toggle() = None,
                  **kwargs):
         super().__init__(locals(), **kwargs)
 

@@ -5904,15 +5904,19 @@ class CharactersTask(Task):
                  "purged": Request.GET_PURGED_FILENAME,
                  "index": Request.GET_INDEX_FILENAME,
                  "heavyblock": Request.GET_DENSE_FILENAME}
-        return ((cadoprograms.Characters, ("out",), input),)
+        override = ("out", "large_ab", "only_sign_chars")
+        return ((cadoprograms.Characters, override, input),)
 
     @property
     def paramnames(self):
-        return super().paramnames
+        return self.join_params(super().paramnames, {"algo": str})
 
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
+        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
+        self.progparams[0]["only_sign_chars"] = \
+            self.params["algo"] == Algorithm.QS
 
     def run(self):
         super().run()
@@ -7404,8 +7408,6 @@ class CompleteFactorization(HasState,
             self.linalg = LinAlgClTask(**tasks_kwargs)
         else:  # factorization
             self.linalg = LinAlgTask(**tasks_kwargs)
-
-        if computation == Computation.FACT and algo == Algorithm.NFS:
             self.characters = CharactersTask(**tasks_kwargs)
 
         # tasks.sqrt
@@ -7454,11 +7456,10 @@ class CompleteFactorization(HasState,
                    self.merge, self.linalg, self.hfactor, self.grstruct)
         else:
             fg = () if algo == Algorithm.NFS else (self.filtergalois, )
-            chars = (self.characters, ) if algo == Algorithm.NFS else ()
             self.tasks = self.polysel \
                 + (self.fb, self.freerel, self.sieving, self.dup1, self.dup2) \
                 + fg + (self.purge, self.merge, self.linalg) \
-                + chars + (self.sqrt, )
+                + (self.characters, self.sqrt)
 
         reverse_lookup = defaultdict(list)
         self.parameter_help = ""
@@ -7549,9 +7550,8 @@ class CompleteFactorization(HasState,
             self.request_map[Request.GET_VIRTUAL_LOGS_FILENAME] = \
                 self.linalg.get_virtual_logs_filename
         elif computation == Computation.FACT:
-            if algo == Algorithm.NFS:
-                self.request_map[Request.GET_KERNEL_FILENAME] = \
-                    self.characters.get_kernel_filename
+            self.request_map[Request.GET_KERNEL_FILENAME] = \
+                self.characters.get_kernel_filename
             self.request_map[Request.GET_DEPENDENCY_FILENAME] = \
                 self.linalg.get_dependency_filename
             self.request_map[Request.GET_LINALG_PREFIX] = \

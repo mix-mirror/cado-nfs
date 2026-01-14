@@ -3262,6 +3262,23 @@ cxx_mpz_poly cxx_mpz_poly::linear_transform(cxx_mpz const & u,
 }
 
 /* v <- f(i,j), where f is homogeneous of degree d */
+void mpz_poly_homogeneous_eval(mpz_ptr v, mpz_poly_srcptr f,
+                               mpz_srcptr i, mpz_srcptr const j)
+{
+    unsigned int k = f->deg;
+    ASSERT(k > 0);
+    mpz_set(v, f->_coeff[f->deg]);
+    mpz_mul(v, f->_coeff[k], i);
+    cxx_mpz jpow;
+    mpz_set(jpow, j);
+    mpz_addmul(v, f->_coeff[--k], jpow); /* v = i*f[d] + j*f[d-1] */
+    for (; k-- > 0;) {
+        mpz_mul(v, v, i);
+        mpz_mul(jpow, jpow, j);
+        mpz_addmul(v, f->_coeff[k], jpow);
+    }
+}
+
 void mpz_poly_homogeneous_eval_siui(mpz_ptr v, mpz_poly_srcptr f,
                                     int64_t const i, uint64_t const j)
 {
@@ -3273,9 +3290,8 @@ void mpz_poly_homogeneous_eval_siui(mpz_ptr v, mpz_poly_srcptr f,
     mpz_set_uint64(jpow, j);
     mpz_addmul(v, f->_coeff[--k], jpow); /* v = i*f[d] + j*f[d-1] */
     for (; k-- > 0;) {
-        /* this test will be resolved at compile time by most compilers */
-        if ((uint64_t)ULONG_MAX >=
-            UINT64_MAX) { /* hardcode since this function is critical in las */
+        if constexpr ((uint64_t) ULONG_MAX >= UINT64_MAX) {
+            /* hardcoded since this function is critical in las */
             mpz_mul_si(v, v, i);
             mpz_mul_ui(jpow, jpow, j);
         } else {
