@@ -5965,17 +5965,20 @@ class SqrtTask(Task):
                  "index": Request.GET_INDEX_FILENAME,
                  "kernel": Request.GET_KERNEL_FILENAME}
         return ((cadoprograms.Sqrt,
-                 ("ab", "prefix", "side0", "side1", "gcd", "dep"),
+                 ("ab", "prefix", "side0", "side1", "gcd", "dep", "large_ab",
+                  "qs"),
                  input), )
 
     @property
     def paramnames(self):
         return self.join_params(super().paramnames,
-                                {"N": int, "gzip": True, "first_dep": [int]})
+                                {"N": int, "gzip": True, "first_dep": [int],
+                                 "algo": str})
 
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
+        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
         self.factors = self.make_db_dict(self.make_tablename("factors"),
                                          connection=self.db_connection)
         self.add_factor(self.params["N"])
@@ -6015,12 +6018,13 @@ class SqrtTask(Task):
                 #                     dep, dep+t-1)
                 (stdoutpath, stderrpath) = self.make_std_paths(
                     cadoprograms.Sqrt.name)
-                p = cadoprograms.Sqrt(ab=False, side1=True,
-                                      side0=True, gcd=True, dep=dep,
-                                      prefix=prefix,
-                                      stdout=str(stdoutpath),
-                                      stderr=str(stderrpath),
-                                      **self.merged_args[0])
+                args = {"ab": False, "dep": dep, "prefix": prefix, "gcd": True,
+                        "stdout": str(stdoutpath), "stderr": str(stderrpath)}
+                if self.params["algo"] == Algorithm.NFS:
+                    args["side0"] = args["side1"] = True
+                else:
+                    args["qs"] = True
+                p = cadoprograms.Sqrt(**args, **self.merged_args[0])
                 message = self.submit_command(p, f"dep{dep}", log_errors=True)
                 if message.get_exitcode(0) != 0:
                     raise Exception("Program failed")

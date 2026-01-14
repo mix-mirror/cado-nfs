@@ -1462,7 +1462,9 @@ class Sqrt(Program):
                  ab: Toggle() = None,
                  side0: Toggle() = None,
                  side1: Toggle() = None,
+                 qs: Toggle() = None,
                  gcd: Toggle() = None,
+                 large_ab: Toggle("large-ab") = None,  # noqa: F821
                  **kwargs):
         super().__init__(locals(), **kwargs)
 
