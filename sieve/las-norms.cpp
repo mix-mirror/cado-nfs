@@ -301,9 +301,9 @@ lognorm_base::lognorm_base(
         int side,
         siqs_special_q_data const & Q,
         int logI,
-        uint32_t J)
+        uint32_t)
     : logI(logI)
-    , J(J)
+    , J(1u) /* for siqs, we sieve a line so J=1 in the context of the norms */
     , fij(cpoly[side].linear_transform(Q.doing.p, Q.doing.r).divexact(
                 Q.doing.side == side ? Q.doing.p : 1))
     , fijd(polynomial<double>(fij))
@@ -510,10 +510,28 @@ void lognorm_reference::fill_alg(unsigned char *S, uint32_t N) const
         }
     }
 }
+
+void lognorm_reference::fill_siqs(unsigned char *S, uint32_t N) const
+{
+    LOGNORM_FILL_COMMON_DEFS();
+    LOGNORM_COMMON_HANDLE_ORIGIN();
+
+    double const modscale = scale/0x100000;
+    const double offset = 0x3FF00000 - LOGNORM_GUARD_BITS / modscale;
+
+    for (unsigned int j = j0 ; j < j1 ; j++) {
+        for(int i = i0; i < i0 + I; i++) {
+            *S++ = lg2(std::fabs(fijd(i)), offset, modscale);
+        }
+    }
+}
+
 /* }}} */
 void lognorm_reference::fill(unsigned char * S, unsigned int N) const/*{{{*/
 {
-    if (fijd.degree() == 1)
+    if (J == 1u) /* J=1 => line sieve */
+        fill_siqs(S, N);
+    else if (fijd.degree() > 1)
         fill_rat(S, N);
     else
         fill_alg(S, N);
@@ -757,6 +775,44 @@ void lognorm_smart::fill_rat(unsigned char *S, uint32_t N) const
 }
 /* }}} */
 
+void lognorm_smart::fill_siqs(unsigned char *S, uint32_t N) const /* {{{ */
+{
+    LOGNORM_FILL_COMMON_DEFS();
+    unsigned char *S0 = S;
+    ASSERT(fijd.degree() > 1);
+
+    /* Each j corresponds to a different root of the special-q, we consider that
+     * the norms is the same for all values of j.
+     * G approximates F(x,1). We are given a set of linear functions {g} which
+     * match F(x, 1) on the intervals {[r0,r1[}, we want to evaluate these
+     * functions {g} on the corresponding intervals.
+     * We will do it for j0 and then copy the results for j0+1 <= j < j1.
+     */
+    auto it = G.endpoints.begin();
+    ++it;
+    int Gi0 = i0;
+    for (auto const & [uv0, uv1]: G.equations) {
+        double const r1 = *it;
+        int Gi1 = r1 + (r1 >= 0);
+        if (Gi0 >= i1) {
+            break;
+        } else if (Gi1 > Gi0) {
+            Gi1 = std::min(Gi1, i1);
+            fill_rat_inner(S, Gi0, Gi1, 1u, 2u, polynomial<double> {uv0, uv1});
+            S += Gi1 - Gi0;
+            Gi0 = Gi1;
+        }
+        ++it;
+    }
+
+    int const ni = i1 - i0;
+    ASSERT(S-S0 == ni);
+    for(unsigned int j = j0+1 ; j < j1 ; ++j, S+=ni) {
+        memcpy(S, S0, ni);
+    }
+}
+/* }}} */
+
 void lognorm_smart::fill_alg(unsigned char *S, uint32_t N) const /* {{{ */
 {
     LOGNORM_FILL_COMMON_DEFS();
@@ -817,7 +873,9 @@ void lognorm_smart::fill_alg(unsigned char *S, uint32_t N) const /* {{{ */
 
 void lognorm_smart::fill(unsigned char * S, unsigned int N) const/*{{{*/
 {
-    if (fijd.degree() > 1)
+    if (J == 1u) /* J=1 => line sieve */
+        fill_siqs(S, N);
+    else if (fijd.degree() > 1)
         fill_alg(S, N);
     else
         fill_rat(S, N);

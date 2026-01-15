@@ -108,6 +108,7 @@ struct lognorm_reference : public lognorm_base {/*{{{*/
     private:
     void fill_alg(unsigned char * S, uint32_t N) const;
     void fill_rat(unsigned char * S, uint32_t N) const;
+    void fill_siqs(unsigned char * S, uint32_t N) const;
 };
 
 /*}}}*/
@@ -142,6 +143,7 @@ struct lognorm_smart : public lognorm_base {/*{{{*/
     void fill_rat_inner (unsigned char *S, int i0, int i1, unsigned int j0, unsigned int j1, polynomial<double> const & fijd) const;
     void fill_alg(unsigned char * S, uint32_t N) const;
     void fill_rat(unsigned char * S, uint32_t N) const;
+    void fill_siqs(unsigned char * S, uint32_t N) const;
 };
 
 /*}}}*/
