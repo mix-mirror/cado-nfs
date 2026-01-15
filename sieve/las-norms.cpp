@@ -532,9 +532,9 @@ void lognorm_reference::fill(unsigned char * S, unsigned int N) const/*{{{*/
     if (J == 1u) /* J=1 => line sieve */
         fill_siqs(S, N);
     else if (fijd.degree() > 1)
-        fill_rat(S, N);
-    else
         fill_alg(S, N);
+    else
+        fill_rat(S, N);
 }
 /*}}}*/
 /* }}} */
