@@ -823,8 +823,8 @@ cado_define_test(d20_siqs_sieve
             # Note: the last 4 args (lim1, lpb1, mfb1 and q0) are not needed but
             # sievetest.sh complains if they are not present
             LAS_BINARY=${siqs_path}
-        REL_COUNT=133
-        REFERENCE_SHA1=4552474c0c4849ee3b3c7d8e591c45455fd9d533
+        REL_COUNT=135
+        REFERENCE_SHA1=b502106e1b56a45ca3aa0a2474b707c1c2bd27e6
         REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
         PROVIDE_TEMPORARY_WDIR
         SCRIPT
@@ -838,8 +838,8 @@ cado_define_test(d20_siqs_sieve
 cado_divert_test(d20_siqs_sieve tracek
         APPEND_ENVIRONMENT
             LAS_BINARY=${siqs_tracek_path}
-            REL_COUNT=21
-            REFERENCE_SHA1=2745a5a1b70bcfe14853933bfa077635ff2a5e66
+            REL_COUNT=22
+            REFERENCE_SHA1=036b2e8ccb2ea68bfe9afa1e3e1cd9d680c37268
             REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
         APPEND_ARGUMENTS
             -nq 1 -traceab 8775462862,1
