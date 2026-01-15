@@ -49,7 +49,11 @@
 #define TRACE_K 1
 #endif
 
+#ifdef SUPPORT_LARGE_Q
+int extern_trace_on_spot_ab(cxx_mpz const & a, cxx_mpz const & b) {
+#else
 int extern_trace_on_spot_ab(int64_t a, uint64_t b) {
+#endif
     return trace_on_spot_ab(a, b);
 }
 

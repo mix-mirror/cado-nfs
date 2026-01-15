@@ -4,8 +4,11 @@
 #include <cstdio>
 #include <cstdint>
 
+#include <iostream>
 #include <list>
 #include <vector>
+
+#include "fmt/ostream.h"
 
 #include "cxx_mpz.hpp"
 #include "ecm/batch.hpp"
@@ -55,7 +58,13 @@ struct cofac_standalone {
     relation get_relation(special_q const & doing) const;
     void transfer_to_cofac_list(lock_guarded_container<std::list<cofac_candidate>> & L);
     int factor_leftover_norms(nfs_work_cofac & wc);
+    friend std::ostream& operator<<(
+            std::ostream& os,
+            cofac_standalone const & cur);
 };
 
+namespace fmt {
+    template <> struct formatter<cofac_standalone>: ostream_formatter {};
+}
 
 #endif	/* CADO_LAS_COFAC_STANDALONE_HPP */

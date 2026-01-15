@@ -45,5 +45,6 @@ struct where_am_I {
  * In cases where the GOT linking saves us a megabyte of duplicated code,
  * why not go for it ? */
 int extern_trace_on_spot_ab(int64_t a, uint64_t b);
+int extern_trace_on_spot_ab(cxx_mpz const & a, cxx_mpz const & b);
 
 #endif	/* CADO_LAS_WHERE_AM_I_PROXY_HPP */

@@ -572,7 +572,9 @@ void process_bucket_region_run::cofactoring_sync (survivors_t & survivors)/*{{{*
         }
 
         if (cur.trace_on_spot())
-            verbose_fmt_print(TRACE_CHANNEL, 0, "# about to start cofactorization for ({},{})  {} {}\n", cur.a, cur.b, x, Sx[x]);
+            verbose_fmt_print(TRACE_CHANNEL, 0,
+                    "# about to start cofactorization for {} {} {}\n",
+                    cur, x, Sx[x]);
 
         /* since a,b both even were not sieved, either a or b should
          * be odd. However, exceptionally small norms, even without
@@ -637,10 +639,8 @@ void process_bucket_region_run::cofactoring_sync (survivors_t & survivors)/*{{{*
 
                 if (cur.trace_on_spot()) {
                     verbose_fmt_print(TRACE_CHANNEL, 0,
-                            "# start trial division for norm={} ",
-                            cur.norm[side]);
-                    verbose_fmt_print(TRACE_CHANNEL, 0,
-                            "on side {} for ({},{})\n", side, cur.a, cur.b);
+                            "# start trial division for norm={} on side {} "
+                            "for {}\n", cur.norm[side], side, cur);
                 }
 
                 if (wss.no_fb()) {
@@ -664,7 +664,7 @@ void process_bucket_region_run::cofactoring_sync (survivors_t & survivors)/*{{{*
                         &sides[side].purged,
                         *wss.td,
                         cur.a, cur.b,
-                        *wss.fbs);
+                        *wss.fbs, cur.trace_on_spot());
 
                 /* if q is composite, its prime factors have not been sieved.
                  * Check if they divide. They probably don't, since we
@@ -686,9 +686,8 @@ void process_bucket_region_run::cofactoring_sync (survivors_t & survivors)/*{{{*
                 pass = check_leftover_norm (cur.norm[side], ws.conf.sides[side]);
                 if (cur.trace_on_spot()) {
                     verbose_fmt_print(TRACE_CHANNEL, 0,
-                            "# checked leftover norm={} on side {} for "
-                            "({},{}): {}\n",
-                            cur.norm[side], side, cur.a, cur.b, pass);
+                            "# checked leftover norm={} on side {} for {}: {}\n",
+                            cur.norm[side], side, cur, pass);
                 }
                 rep.survivors.check_leftover_norm_on_side[side] += pass;
             }
