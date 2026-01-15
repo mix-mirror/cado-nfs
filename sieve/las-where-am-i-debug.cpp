@@ -98,6 +98,14 @@ void where_am_I::interpret_parameters(cxx_param_list & pl)
     struct trace_Nx_t Nx;
     int have_trace_ab = 0, have_trace_ij = 0, have_trace_Nx = 0;
 
+#ifdef SUPPORT_LARGE_Q
+    std::pair<cxx_mpz, cxx_mpz> r;
+    have_trace_ab = param_list_parse(pl, "traceab", r);
+    if (have_trace_ab) {
+        ab.a = r.first;
+        ab.b = r.second;
+    }
+#else
     const char *abstr = param_list_lookup_string(pl, "traceab");
     if (abstr != NULL) {
         if (sscanf(abstr, "%" SCNd64",%" SCNu64, &ab.a, &ab.b) == 2)
@@ -108,6 +116,7 @@ void where_am_I::interpret_parameters(cxx_param_list & pl)
             exit (EXIT_FAILURE);
         }
     }
+#endif
 
     const char *ijstr = param_list_lookup_string(pl, "traceij");
     if (ijstr != NULL) {
@@ -151,7 +160,7 @@ void where_am_I::begin_special_q(
     if (pl_ab) {
       trace_ab = *pl_ab;
       /* can possibly fall outside the q-lattice. We have to check for it */
-      if (convert_ab_to_ij(trace_ij.i, trace_ij.j, trace_ab.a, trace_ab.b, Q)) {
+      if (Q.from_ab_to_ij(trace_ij.i, trace_ij.j, trace_ab.a, trace_ab.b)) {
           convert_ij_to_Nx(trace_Nx.N, trace_Nx.x, trace_ij.i, trace_ij.j, logI);
       } else {
           verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Relation ({},{}) to be traced "
@@ -165,13 +174,13 @@ void where_am_I::begin_special_q(
       }
     } else if (pl_ij) {
         trace_ij = *pl_ij;
-        convert_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j, Q);
+        Q.from_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
         convert_ij_to_Nx(trace_Nx.N, trace_Nx.x, trace_ij.i, trace_ij.j, logI);
     } else if (pl_Nx) {
         trace_Nx = *pl_Nx;
         if (trace_Nx.x < ((size_t) 1 << LOG_BUCKET_REGION)) {
             convert_Nx_to_ij(trace_ij.i, trace_ij.j, trace_Nx.N, trace_Nx.x, logI);
-            convert_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j, Q);
+            Q.from_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
         } else {
             fprintf(stderr, "Error, tracing requested for x=%u but"
                     " this siever was compiled with LOG_BUCKET_REGION=%d\n",
@@ -374,7 +383,7 @@ void sieve_increase_underflow_trap(unsigned char *S, const unsigned char logp, w
     static unsigned char maxdiff = ~0;
 
     convert_Nx_to_ij(&i, &j, w->N, w->x, w->logI);
-    convert_ij_to_ab(&a, &b, i, j, *w->Q);
+    w->Q->from_ij_to_ab(&a, &b, i, j);
     if ((unsigned int) logp + *S > maxdiff)
       {
         maxdiff = logp - *S;

@@ -12,14 +12,17 @@
 /* See las-coordinates.cpp for documentation on the various coordinate
  * systems */
 
+/* The function convert_ab_to_ij (resp. convert_ij_to_ab) is special-q dependant
+ * and is implemented as the method from_ab_to_ij (resp. from_ij_to_ab) of the
+ * special-q classes in las-qlattice.[ch]pp.
+ */
+
 /*  Forward declarations of conversion functions */
 void convert_X_to_ij(int & i, unsigned int & j, uint64_t x, int logI);
 void convert_Nx_to_ij(int & i, unsigned int & j, unsigned int N, unsigned int x, int logI);
 
 void convert_ij_to_X(uint64_t & x, int i, unsigned int j, int logI);
 void convert_ij_to_Nx(unsigned int & N, unsigned int &  x, int i, unsigned int j, int logI);
-void convert_ij_to_ab(int64_t & a, uint64_t & b, int i, unsigned int j, special_q_data_base const & Q);
-int convert_ab_to_ij(int & i, unsigned int & j, int64_t a, uint64_t b, special_q_data_base const & Q);
 // code exists in las-coordinates.cpp, but is unused, so untested.
 // int convert_ab_to_X(uint64_t *x, const int64_t a, const uint64_t b, int logI, qlattice_basis const & Q);
 // int convert_ab_to_Nx(unsigned int * N, unsigned int *x, const int64_t a, const uint64_t b, int logI, qlattice_basis const & Q);
@@ -42,7 +45,7 @@ static inline void convert_X_to_ab(
     int i;
     unsigned int j;
     convert_X_to_ij(i, j, x, logI);
-    convert_ij_to_ab(a, b, i, j, Q);
+    Q.from_ij_to_ab(a, b, i, j);
 }
 
 static inline void convert_Nx_to_ab(

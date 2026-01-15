@@ -70,32 +70,12 @@ void convert_ij_to_Nx(unsigned int & N, unsigned int & x, int i, unsigned int j,
     x = xx & (uint64_t)((1 << LOG_BUCKET_REGION) - 1);
 }
 
-void convert_ij_to_ab(
-        int64_t & a,
-        uint64_t & b,
-        int i,
-        unsigned int j,
-        special_q_data_base const & Q)
-{
-    Q.from_ij_to_ab(a, b, i, j);
-}
-
-int convert_ab_to_ij(
-        int & i,
-        unsigned int & j,
-        int64_t a,
-        uint64_t b,
-        special_q_data_base const & Q)
-{
-    return Q.from_ab_to_ij(i, j, a, b);
-}
-
 #if 0 /* currently unused */
 int convert_ab_to_X(unsigned int *x, const int64_t a, const uint64_t b, int logI, qlattice_basis const & Q)
 {
     int i;
     unsigned int j;
-    if (!convert_ab_to_ij(i, j, a, b, Q)) return 0;
+    if (!Q.from_ab_to_ij(i, j, a, b)) return 0;
     convert_ij_to_X(x, a, b, logI);
     return 1;
 }
@@ -106,7 +86,7 @@ int convert_ab_to_Nx(unsigned int * N, unsigned int *x, const int64_t a, const u
 {
     int i;
     unsigned int j;
-    if (!convert_ab_to_ij(i, j, a, b, Q)) return 0;
+    if (!Q.from_ab_to_ij(i, j, a, b)) return 0;
     convert_ij_to_Nx(N, x, a, b, logI);
     return 1;
 }

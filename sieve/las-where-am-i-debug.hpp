@@ -72,7 +72,11 @@ struct where_am_I::impl {
 extern int test_divisible(where_am_I const & w);
 
 struct trace_Nx_t { unsigned int N; unsigned int x; };
+#ifdef SUPPORT_LARGE_Q
+struct trace_ab_t { cxx_mpz a; cxx_mpz b; };
+#else
 struct trace_ab_t { int64_t a; uint64_t b; };
+#endif
 struct trace_ij_t { int i; unsigned int j; };
 
 extern struct trace_Nx_t trace_Nx;

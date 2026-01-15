@@ -229,12 +229,26 @@ qlattice_basis::from_ab_to_ij(
     /* Both a,b and the coordinates of the lattice basis can be quite
      * large. However the result should be small.
      */
-    cxx_mpz za, zb, ii, jj;
+    cxx_mpz za, zb;
     mpz_set_int64(za, a);
     mpz_set_uint64(zb, b);
+    return from_ab_to_ij(i, j, za, zb);
+}
+
+int
+qlattice_basis::from_ab_to_ij(
+        int & i,
+        unsigned int & j,
+        cxx_mpz const & a,
+        cxx_mpz const & b) const
+{
+    /* Both a,b and the coordinates of the lattice basis can be quite
+     * large. However the result should be small.
+     */
+    cxx_mpz ii, jj;
     int ok = 1;
-    mpz_mul_int64(ii, za, b1); mpz_submul_int64(ii, zb, a1);
-    mpz_mul_int64(jj, zb, a0); mpz_submul_int64(jj, za, b0);
+    mpz_mul_int64(ii, a, b1); mpz_submul_int64(ii, b, a1);
+    mpz_mul_int64(jj, b, a0); mpz_submul_int64(jj, a, b0);
     /*
     int64_t ii =   a * (int64_t) b1 - b * (int64_t)a1;
     int64_t jj = - a * (int64_t) b0 + b * (int64_t)a0;
@@ -354,7 +368,20 @@ siqs_special_q_data::from_ab_to_ij(
         int64_t a,
         uint64_t b) const
 {
-    if (b != 1u) {
+    cxx_mpz za, zb;
+    mpz_set_int64(za, a);
+    mpz_set_uint64(zb, b);
+    return from_ab_to_ij(i, j, za, zb);
+}
+
+int
+siqs_special_q_data::from_ab_to_ij(
+        int & i,
+        unsigned int & j,
+        cxx_mpz const & a,
+        cxx_mpz const & b) const
+{
+    if (mpz_cmp_ui(b, 1u) != 0) {
         return 0; /* only b == 1 is sieved */
     }
 
@@ -366,7 +393,10 @@ siqs_special_q_data::from_ab_to_ij(
         const uint64_t qk = doing.prime_factors[k];
         cxx_mpz const & Rk = crt_data_modq[k];
 
-        uint64_t amodqk = a > 0 ? a % qk : qk-((-a) % qk);
+        uint64_t amodqk = mpz_tdiv_uint64(a, qk);
+        if (mpz_sgn(a) < 0) {
+            amodqk = qk - amodqk;
+        }
         if (mpz_tdiv_uint64(Rk, qk) == amodqk) {
             rj += Rk;
         } else {
@@ -377,7 +407,7 @@ siqs_special_q_data::from_ab_to_ij(
     }
 
     cxx_mpz t;
-    mpz_sub_int64(t, rj, a);
+    mpz_sub(t, rj, a);
     ASSERT(mpz_divisible_p(t, doing.p));
     mpz_divexact(t, t, doing.p);
     mpz_neg(t, t); /* t = (a-rj)/q  which is i */

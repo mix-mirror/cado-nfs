@@ -42,6 +42,12 @@ struct special_q_data_base {
             int64_t a,
             uint64_t b) const = 0;
 
+    virtual int from_ab_to_ij(
+            int & i,
+            unsigned int & j,
+            cxx_mpz const & a,
+            cxx_mpz const & b) const = 0;
+
     virtual std::ostream & print(std::ostream & os) const = 0;
 
     // Assumes ell is prime.
@@ -88,6 +94,12 @@ struct qlattice_basis : public special_q_data_base {
             int64_t a,
             uint64_t b) const final;
 
+    int from_ab_to_ij(
+            int & i,
+            unsigned int & j,
+            cxx_mpz const & a,
+            cxx_mpz const & b) const final;
+
     virtual std::ostream & print(std::ostream & os) const final;
 
     double skewed_norm0(double s) const { return a0*a0/s+b0*b0*s; }
@@ -128,6 +140,12 @@ struct siqs_special_q_data : public special_q_data_base {
             unsigned int & j,
             int64_t a,
             uint64_t b) const final;
+
+    int from_ab_to_ij(
+            int & i,
+            unsigned int & j,
+            cxx_mpz const & a,
+            cxx_mpz const & b) const final;
 
     virtual std::ostream & print(std::ostream & os) const final;
 
