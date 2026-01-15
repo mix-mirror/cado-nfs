@@ -505,7 +505,7 @@ void lognorm_reference::fill_alg(unsigned char *S, uint32_t N) const
     polynomial<double> u;
     for (unsigned int j = j0 ; j < j1 ; j++) {
         u = fijd.inverse_scale(j);
-        for(int i = i0; i < i0 + I; i++) {
+        for(int i = i0; i < i1; i++) {
             *S++ = lg2(std::fabs(u(i)), offset, modscale);
         }
     }
@@ -520,7 +520,7 @@ void lognorm_reference::fill_siqs(unsigned char *S, uint32_t N) const
     const double offset = 0x3FF00000 - LOGNORM_GUARD_BITS / modscale;
 
     for (unsigned int j = j0 ; j < j1 ; j++) {
-        for(int i = i0; i < i0 + I; i++) {
+        for(int i = i0; i < i1; i++) {
             *S++ = lg2(std::fabs(fijd(i)), offset, modscale);
         }
     }
