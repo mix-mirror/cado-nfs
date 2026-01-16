@@ -24,25 +24,25 @@ struct special_q_data_base {
 
     virtual ~special_q_data_base() = default;
 
-    virtual void from_ij_to_ab(
+    virtual void convert_ij_to_ab(
             int64_t & a,
             uint64_t & b,
             int i,
             unsigned int j) const = 0;
 
-    virtual void from_ij_to_ab(
+    virtual void convert_ij_to_ab(
             cxx_mpz & a,
             cxx_mpz & b,
             int i,
             unsigned int j) const = 0;
 
-    virtual int from_ab_to_ij(
+    virtual int convert_ab_to_ij(
             int & i,
             unsigned int & j,
             int64_t a,
             uint64_t b) const = 0;
 
-    virtual int from_ab_to_ij(
+    virtual int convert_ab_to_ij(
             int & i,
             unsigned int & j,
             cxx_mpz const & a,
@@ -76,25 +76,25 @@ struct qlattice_basis : public special_q_data_base {
         , b1(b1)
     {}
 
-    void from_ij_to_ab(
+    void convert_ij_to_ab(
             int64_t & a,
             uint64_t & b,
             int i,
             unsigned int j) const final;
 
-    void from_ij_to_ab(
+    void convert_ij_to_ab(
             cxx_mpz & a,
             cxx_mpz & b,
             int i,
             unsigned int j) const final;
 
-    int from_ab_to_ij(
+    int convert_ab_to_ij(
             int & i,
             unsigned int & j,
             int64_t a,
             uint64_t b) const final;
 
-    int from_ab_to_ij(
+    int convert_ab_to_ij(
             int & i,
             unsigned int & j,
             cxx_mpz const & a,
@@ -123,25 +123,25 @@ struct siqs_special_q_data : public special_q_data_base {
     siqs_special_q_data() = default;
     siqs_special_q_data(special_q const & doing, cxx_cado_poly const & cpoly);
 
-    void from_ij_to_ab(
+    void convert_ij_to_ab(
             int64_t & a,
             uint64_t & b,
             int i,
             unsigned int j) const final;
 
-    void from_ij_to_ab(
+    void convert_ij_to_ab(
             cxx_mpz & a,
             cxx_mpz & b,
             int i,
             unsigned int j) const final;
 
-    int from_ab_to_ij(
+    int convert_ab_to_ij(
             int & i,
             unsigned int & j,
             int64_t a,
             uint64_t b) const final;
 
-    int from_ab_to_ij(
+    int convert_ab_to_ij(
             int & i,
             unsigned int & j,
             cxx_mpz const & a,

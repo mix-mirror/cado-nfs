@@ -12,9 +12,9 @@
 /* See las-coordinates.cpp for documentation on the various coordinate
  * systems */
 
-/* The function convert_ab_to_ij (resp. convert_ij_to_ab) is special-q dependant
- * and is implemented as the method from_ab_to_ij (resp. from_ij_to_ab) of the
- * special-q classes in las-qlattice.[ch]pp.
+/* The functions convert_ab_to_ij and convert_ij_to_ab are special-q dependant
+ * and are implemented as methods of the special-q classes in
+ * las-qlattice.[ch]pp.
  */
 
 /*  Forward declarations of conversion functions */
@@ -45,7 +45,7 @@ static inline void convert_X_to_ab(
     int i;
     unsigned int j;
     convert_X_to_ij(i, j, x, logI);
-    Q.from_ij_to_ab(a, b, i, j);
+    Q.convert_ij_to_ab(a, b, i, j);
 }
 
 static inline void convert_Nx_to_ab(
@@ -72,7 +72,7 @@ static inline void convert_X_to_abmpz(
     int i;
     unsigned int j;
     convert_X_to_ij(i, j, x, logI);
-    Q.from_ij_to_ab(a, b, i, j);
+    Q.convert_ij_to_ab(a, b, i, j);
 }
 
 static inline void convert_Nx_to_abmpz(

@@ -164,7 +164,7 @@ void where_am_I::begin_special_q(
     if (pl_ab) {
       trace_ab = *pl_ab;
       /* can possibly fall outside the q-lattice. We have to check for it */
-      if (Q.from_ab_to_ij(trace_ij.i, trace_ij.j, trace_ab.a, trace_ab.b)) {
+      if (Q.convert_ab_to_ij(trace_ij.i, trace_ij.j, trace_ab.a, trace_ab.b)) {
           convert_ij_to_Nx(trace_Nx.N, trace_Nx.x, trace_ij.i, trace_ij.j, logI);
       } else {
           verbose_fmt_print(3 /* TRACE_CHANNEL */, 0, "# Relation ({},{}) to be traced "
@@ -178,13 +178,13 @@ void where_am_I::begin_special_q(
       }
     } else if (pl_ij) {
         trace_ij = *pl_ij;
-        Q.from_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
+        Q.convert_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
         convert_ij_to_Nx(trace_Nx.N, trace_Nx.x, trace_ij.i, trace_ij.j, logI);
     } else if (pl_Nx) {
         trace_Nx = *pl_Nx;
         if (trace_Nx.x < ((size_t) 1 << LOG_BUCKET_REGION)) {
             convert_Nx_to_ij(trace_ij.i, trace_ij.j, trace_Nx.N, trace_Nx.x, logI);
-            Q.from_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
+            Q.convert_ij_to_ab(trace_ab.a, trace_ab.b, trace_ij.i, trace_ij.j);
         } else {
             fprintf(stderr, "Error, tracing requested for x=%u but"
                     " this siever was compiled with LOG_BUCKET_REGION=%d\n",
@@ -387,7 +387,7 @@ void sieve_increase_underflow_trap(unsigned char *S, const unsigned char logp, w
     static unsigned char maxdiff = ~0;
 
     convert_Nx_to_ij(&i, &j, w->N, w->x, w->logI);
-    w->Q->from_ij_to_ab(&a, &b, i, j);
+    w->Q->convert_ij_to_ab(&a, &b, i, j);
     if ((unsigned int) logp + *S > maxdiff)
       {
         maxdiff = logp - *S;

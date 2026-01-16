@@ -235,7 +235,7 @@ sq_finds_relation(las_info const & las,
   unsigned int j;
   {
     int ok;
-    ok = Q.from_ab_to_ij(i, j, rel.a, rel.b);
+    ok = Q.convert_ab_to_ij(i, j, rel.a, rel.b);
     if (!must && !ok) return false;
     ASSERT_ALWAYS(ok);
   }

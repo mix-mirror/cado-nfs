@@ -170,7 +170,7 @@ qlattice_basis::qlattice_basis(special_q const & doing, double skew) :
  *      (b) = (b0 b1) * (j)
  */
 void
-qlattice_basis::from_ij_to_ab(
+qlattice_basis::convert_ij_to_ab(
         int64_t & a,
         uint64_t & b,
         int i,
@@ -190,7 +190,7 @@ qlattice_basis::from_ij_to_ab(
 }
 
 void
-qlattice_basis::from_ij_to_ab(
+qlattice_basis::convert_ij_to_ab(
         cxx_mpz & a,
         cxx_mpz & b,
         int i,
@@ -220,7 +220,7 @@ qlattice_basis::from_ij_to_ab(
  *      det = doing.p
  */
 int
-qlattice_basis::from_ab_to_ij(
+qlattice_basis::convert_ab_to_ij(
         int & i,
         unsigned int & j,
         int64_t a,
@@ -232,11 +232,11 @@ qlattice_basis::from_ab_to_ij(
     cxx_mpz za, zb;
     mpz_set_int64(za, a);
     mpz_set_uint64(zb, b);
-    return from_ab_to_ij(i, j, za, zb);
+    return convert_ab_to_ij(i, j, za, zb);
 }
 
 int
-qlattice_basis::from_ab_to_ij(
+qlattice_basis::convert_ab_to_ij(
         int & i,
         unsigned int & j,
         cxx_mpz const & a,
@@ -336,7 +336,7 @@ siqs_special_q_data::siqs_special_q_data(
 }
 
 void
-siqs_special_q_data::from_ij_to_ab(
+siqs_special_q_data::convert_ij_to_ab(
         int64_t & a,
         uint64_t & b,
         int i,
@@ -349,7 +349,7 @@ siqs_special_q_data::from_ij_to_ab(
 }
 
 void
-siqs_special_q_data::from_ij_to_ab(
+siqs_special_q_data::convert_ij_to_ab(
         cxx_mpz & a,
         cxx_mpz & b,
         int i,
@@ -362,7 +362,7 @@ siqs_special_q_data::from_ij_to_ab(
 }
 
 int
-siqs_special_q_data::from_ab_to_ij(
+siqs_special_q_data::convert_ab_to_ij(
         int & i,
         unsigned int & j,
         int64_t a,
@@ -371,11 +371,11 @@ siqs_special_q_data::from_ab_to_ij(
     cxx_mpz za, zb;
     mpz_set_int64(za, a);
     mpz_set_uint64(zb, b);
-    return from_ab_to_ij(i, j, za, zb);
+    return convert_ab_to_ij(i, j, za, zb);
 }
 
 int
-siqs_special_q_data::from_ab_to_ij(
+siqs_special_q_data::convert_ab_to_ij(
         int & i,
         unsigned int & j,
         cxx_mpz const & a,
