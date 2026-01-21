@@ -105,11 +105,11 @@ static inline int trace_on_spot_x(uint64_t x) {
         + (uint64_t)trace_Nx.x;
 }
 
-#ifdef SUPPORT_LARGE_Q
 static inline int trace_on_spot_ab(cxx_mpz const & a, cxx_mpz const & b) {
-#else
+    return a == trace_ab.a && b == trace_ab.b;
+}
+
 static inline int trace_on_spot_ab(int64_t a, uint64_t b) {
-#endif
     return a == trace_ab.a && b == trace_ab.b;
 }
 

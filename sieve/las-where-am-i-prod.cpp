@@ -23,11 +23,11 @@ struct cxx_param_list; // IWYU pragma: keep
 class nfs_work; // IWYU pragma: keep
 
 
-#ifdef SUPPORT_LARGE_Q
 int extern_trace_on_spot_ab(cxx_mpz const &, cxx_mpz const &) {
-#else
+    return 0;
+}
+
 int extern_trace_on_spot_ab(int64_t, uint64_t) {
-#endif
     return 0;
 }
 
