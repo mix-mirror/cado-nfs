@@ -7,6 +7,9 @@
  * The WHERE_AM_I_UPDATE macro itself is defined in las-where-am-i.hpp
  */
 
+#include <limits>
+
+#include "las-arith.hpp"
 #include "las-smallsieve.hpp"
 #include "macros.h"
 #include "bucket-push-update.hpp"
@@ -35,22 +38,22 @@ using preferred_sieve2357 = sieve2357<preferred_simd_type, uint8_t>;
 siqs_ssp_pdata_t::siqs_ssp_pdata_t(
         fb_entry_general const & e,
         siqs_special_q_data const & Q)
-    : p(e.q), rootp(e.p), r(0U)
+    : p(e.q)
+    , pmask((p & 1u) ? std::numeric_limits<fbprime_t>::max() : (p-1U))
+    , offset(((uint64_t (p-1u)) << LOG_BUCKET_REGION) % p)
 {
-    r = e.compute_crt_data_modp(invq, crt_data_modp, Q, true);
+    /* call to e.compute_crt_data_modp sets invq and crt_data_modp */
+    rq0 = e.compute_crt_data_modp(invq, crt_data_modp, Q, true);
 }
 
 fbroot_t
 siqs_ssp_pdata_t::transform_root(fbroot_t rp, redc_invp_t invp) const
 {
     if (UNLIKELY(!(p & 1))) { /* p power of 2 */
-        return (rp * invq - r) & (p - 1U);
+        return (rp * invq - rq0) & pmask;
     } else {
         fbroot_t t = mulmodredc_u32<true>(rp, invq, p, invp);
-        //TODO should be submod_u32, but it does not exist
-        unsigned long res = 0U;
-        ularith_submod_ul_ul(&res, t, r, p);
-        return res;
+        return submod_u32(t, rq0, p);
     }
 }
 
@@ -226,21 +229,24 @@ siqs_small_sieve_data::small_sieve_prepare_many_start_positions(
     /* 1 if logI <= logB else 2^(logI-logB) */
     unsigned int regions_per_line = 1u << C.log_regions_per_line;
 
-    res.assign(nregions+regions_per_line, std::vector<spos_t>(ssps.size(), 0));
+    res.assign(nregions+regions_per_line,
+               std::vector<siqs_pos_t>(ssps.size(), 0));
 
     if (ssdpos_many.empty()) {
         auto & ssdpos = res.front();
-        for (size_t s = 0; s < ssps.size(); ++s) {
-            ssdpos[s] = C.first_position_ordinary_prime(ssps[s], 0u);
+        ASSERT_ALWAYS(C.j0 == 0);
+        ASSERT_ALWAYS(C.i0 == -(1 << (logI-1)));
+        for(size_t s = 0; auto const & ssp: ssps) {
+            ssdpos[s] = ssp.first_position_first_line(logI);
+            s++;
         }
         for(unsigned idx = 1; idx < regions_per_line; ++idx) {
             /* complete this row */
-            for(size_t s = 0; s < ssps.size(); ++s) {
-                fbprime_t x = res[idx-1][s];
-                fbprime_t p = ssps[s].get_p();
-                fbprime_t offset = ((int64_t) (p - 1) << LOG_BUCKET_REGION) % p;
-                //TODO store offset
-                res[idx][s] = addmod_u32(x, offset, p);
+            auto const & prev = res[idx-1];
+            auto & cur = res[idx];
+            for(size_t s = 0; auto const & ssp: ssps) {
+                cur[s] = addmod_u32(prev[s], ssp.get_offset(), ssp.get_p());
+                s++;
             }
         }
     } else {
@@ -254,37 +260,40 @@ siqs_small_sieve_data::small_sieve_prepare_many_start_positions(
 
     if (C.logI >= LOG_BUCKET_REGION) { /* logI >= logB */
         for(unsigned int k = regions_per_line; k < nregions + regions_per_line;
-                                                                        ++k) {
-            /* infer from previous row of bucket regions.  */
-            /* TODO: do better (using Gray code ?) */
+                                                    k += regions_per_line) {
+            /* infer from previous bucket region  */
             ASSERT(res[k].size() == ssps.size());
-            siqs_small_sieve_base Ct(logI, first_region_index+k);
+            auto & prev_ssdpos = res[k-regions_per_line];
             auto & ssdpos = res[k];
-            for(size_t s = 0 ; s < ssps.size(); ++s) {
-                ssdpos[s] = Ct.first_position_ordinary_prime(ssps[s], 0u);
+            //XXX beware that idx+1 can be J here
+            siqs_small_sieve_base Ct(logI, first_region_index+k);
+            for(size_t s = 0; auto const & ssp: ssps) {
+                ssdpos[s] = Ct.first_position_in_region(ssp, prev_ssdpos[s]);
+                s++;
             }
 
             for(unsigned idx = 1; idx < regions_per_line; ++idx) {
                 /* complete this row */
-                for(size_t s = 0; s < ssps.size(); ++s) {
-                    fbprime_t x = res[k+idx-1][s];
-                    fbprime_t p = ssps[s].get_p();
-                    fbprime_t offset = ((int64_t) (p - 1) << LOG_BUCKET_REGION) % p;
-                    res[k+idx][s] = addmod_u32(x, offset, p);
+                auto const & prev = res[k+idx-1];
+                auto & cur = res[k+idx];
+                for(size_t s = 0; auto const & ssp: ssps) {
+                    cur[s] = addmod_u32(prev[s], ssp.get_offset(), ssp.get_p());
+                    s++;
                 }
             }
         }
     } else { /* logI < logB */
         /* here regions_per_line = 1 */
-        unsigned int k = 1;
-        for(int idx = 0; idx < nregions; ++idx, ++k) {
+        for(int k = 1; k <= nregions; ++k) {
             /* infer from previous bucket region  */
             ASSERT(res[k].size() == ssps.size());
-            /* TODO: do better (using Gray code ?) */
+            auto & prev_ssdpos = res[k-1];
             auto & ssdpos = res[k];
+            //XXX beware that k can be J here
             siqs_small_sieve_base Ct(logI, first_region_index+k);
-            for(size_t s = 0; s < ssps.size(); ++s) {
-                ssdpos[s] = Ct.first_position_ordinary_prime(ssps[s], 0u);
+            for(size_t s = 0; auto const & ssp: ssps) {
+                ssdpos[s] = Ct.first_position_in_region(ssp, prev_ssdpos[s]);
+                s++;
             }
         }
     }
@@ -294,7 +303,7 @@ siqs_small_sieve_data::small_sieve_prepare_many_start_positions(
         int N = first_region_index + k;
         siqs_small_sieve_base Ct(logI, N);
         for(size_t s = 0 ; s < ssps.size(); ++s) {
-            ASSERT(res[k][s] == Ct.first_position_ordinary_prime(ssps[s], 0u));
+            ASSERT(res[k][s] == Ct.first_position_in_region(ssps[s]));
         }
     }
 #endif
@@ -309,7 +318,7 @@ siqs_small_sieve_data::sieve_small_bucket_region(
         sublat_t const &,
         where_am_I & w) const
 {
-    std::vector<spos_t> const & ssdpos = ssdpos_many[bucket_relative_index];
+    std::vector<siqs_pos_t> const & ssdpos = ssdpos_many[bucket_relative_index];
     siqs_small_sieve SS(ssdpos, ssps, ssp, S, logI, N);
     SS.do_pattern_sieve(w);
     SS.exceptional_sieve(w);
@@ -323,11 +332,10 @@ siqs_small_sieve_data::resieve_small_bucket_region(
         unsigned int N,
         int bucket_relative_index,
         int logI,
-        sublat_t const & sl,
+        sublat_t const &,
         where_am_I & w MAYBE_UNUSED)
 {
     auto const & ssdpos = ssdpos_many[bucket_relative_index];
-    SMALLSIEVE_COMMON_DEFS();
     siqs_small_sieve_base const C(logI, N);
 
     unsigned char *S_ptr;
@@ -339,29 +347,28 @@ siqs_small_sieve_data::resieve_small_bucket_region(
         const fbprime_t p = ssps_cur.get_p();
         fbprime_t const r = ssps_cur.get_r();
         WHERE_AM_I_UPDATE(w, p, p);
-        int MAYBE_UNUSED pos = ssdpos[index];
+        siqs_pos_t prev_pos = ssdpos[index];
         S_ptr = S;
-        ASSERT(pos < (spos_t) p);
+        ASSERT(prev_pos < p);
 
-        //TODO be more efficient (gray code)
-        for (unsigned int dj = 0, j = j0; j < j1; ++dj, ++j) {
+        for (unsigned int j = C.j0; j < C.j1; ++j) {
             WHERE_AM_I_UPDATE(w, j, j);
-            int pos = C.first_position_ordinary_prime(ssps_cur, dj);
-            for (int i = pos; i < C.F() ; i += p) {
+            siqs_pos_t pos = C.first_position_in_line(ssps_cur, prev_pos, j);
+            for (siqs_pos_t i = pos; i < C.F ; i += p) {
                 if (LIKELY(S_ptr[i] == 255)) continue;
                 bucket_update_t<1, primehint_t> prime;
-                unsigned int const x = ((size_t) dj << logI) + i;
+                unsigned int const x = ((size_t) (j - C.j0) << logI) + i;
                 if (resieve_very_verbose) {
                     verbose_fmt_print(0, 1, "resieve_small_bucket_region:"
                             " root {},{} divides at x = " "{} = {} * {} + {}",
-                            p, r, x, j, I, i);
+                            p, r, x, j, C.I, i);
                 }
                 prime.p = p;
                 prime.x = x;
                 ASSERT(prime.p >= fbK.td_thresh);
                 BP->push_update(prime);
             }
-            S_ptr += I;
+            S_ptr += C.I;
         }
     }
 
@@ -373,14 +380,14 @@ siqs_small_sieve_data::resieve_small_bucket_region(
 /* Pattern-sieve primes with the is_pattern_sieved flag */
 void siqs_small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
 {
-    sieve2357base::prime_t psp[ not_nice_primes.size() + 1];
+    sieve2357base::prime_t psp[not_nice_primes.size() + 1];
 
-    for (unsigned int dj = 0; dj < j1-j0; ++dj) {
-        const size_t x0 = (size_t) dj << logI;
-        WHERE_AM_I_UPDATE(w, j, dj);
+    for (unsigned int j = j0; j < j1; ++j) {
+        const size_t x0 = (size_t) (j - j0) << logI;
+        WHERE_AM_I_UPDATE(w, j, (j - j0));
 #ifdef TRACE_K
         unsigned char orig_Sx = 0;
-        if (trace_on_range_Nx(super::N, x0, x0 + super::F())) {
+        if (trace_on_range_Nx(N, x0, x0 + F)) {
             orig_Sx = S[trace_Nx.x];
         }
 #endif
@@ -390,12 +397,13 @@ void siqs_small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
                 continue; /* Nothing to do here */
             }
             WHERE_AM_I_UPDATE(w, p, ssp.get_p());
-            //TODO be more efficient (gray code)
-            const fbprime_t pos = super::first_position_in_line(ssp, dj);
-            psp[l++] = {ssp.get_p(), pos, ssp.logp};
+            const fbprime_t pos =
+                (j == j0) ? first_position_in_region(ssp)
+                          : first_position_in_line(ssp, psp[l].idx, j);
+            psp[l++] = {ssp.get_p(), pos, ssp.get_logp()};
 
 #ifdef TRACE_K
-            if (trace_on_range_Nx(super::N, x0, x0 + super::F())) {
+            if (trace_on_range_Nx(N, x0, x0 + F)) {
                 /* We are in the correct line (fragment). */
                 const fbprime_t q = psp[l - 1].q, pos = psp[l - 1].idx;
                 const unsigned char logp = psp[l - 1].logp;
@@ -403,7 +411,7 @@ void siqs_small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
                     fmt::print("# Pattern sieve side {}, line {}"
                             " (N={}, x0={}, trace_Nx.x={}):"
                             " Adding psp[{}] = {{{}, {}, {}}}, from  {}\n",
-                        w->side, j0+dj, super::N, x0, trace_Nx.x, l - 1, q, pos, logp, ssp);
+                        w->side, j, N, x0, trace_Nx.x, l - 1, q, pos, logp, ssp);
                 }
                 if ((trace_Nx.x - x0) % q == pos) {
                     WHERE_AM_I_UPDATE(w, x, trace_Nx.x);
@@ -414,17 +422,17 @@ void siqs_small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
         }
 #ifdef TRACE_K
         unsigned char new_Sx = 0;
-        if (trace_on_range_Nx(super::N, x0, x0 + super::F())) {
+        if (trace_on_range_Nx(N, x0, x0 + F)) {
             new_Sx = S[trace_Nx.x];
             S[trace_Nx.x] = orig_Sx;
         }
 #endif
         psp[l++] = {0, 0, 0};
         preferred_sieve2357::sieve(
-            (preferred_simd_type *) (S + x0), F(), psp,
+            (preferred_simd_type *) (S + x0), F, psp,
             0, sieve2357base::update_add, w);
 #ifdef TRACE_K
-        if (trace_on_range_Nx(super::N, x0, x0 + super::F())) {
+        if (trace_on_range_Nx(N, x0, x0 + F)) {
             ASSERT_ALWAYS(new_Sx == S[trace_Nx.x]);
         }
 #endif

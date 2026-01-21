@@ -8,13 +8,17 @@
 #include <x86intrin.h>
 #endif
 
-#include "las-forwardtypes.hpp"         // spos_t
+#include "las-arith.hpp"
+#include "las-forwardtypes.hpp"
 #include "fb-types.hpp"
 #include "las-smallsieve-lowlevel.hpp"
 
 #include "sieve-methods.hpp"
 
 #include "macros.h"
+
+static_assert(std::is_same_v<siqs_pos_t, uint32_t>,
+             "siqs-smallsieve-glue.hpp assumes siqs_pos_t is uint32_t.");
 
 struct list_nil {};
 
@@ -57,23 +61,26 @@ struct siqs_small_sieve_best_code_choices {
  * it makes sense to gather them in a common object */
 struct siqs_small_sieve_base {
     int min_logI_logB;
+    siqs_pos_t F;
     int logI;
+    siqs_pos_t I;
     int N;
+    unsigned int log_lines_per_region;
     unsigned int log_regions_per_line;
     unsigned int region_rank_in_line;
     bool last_region_in_line;
     unsigned int j0;
     unsigned int j1;
     int i0;
-    inline int F() const { return 1 << min_logI_logB; }
-    inline int I() const { return 1 << logI; }
     siqs_small_sieve_base(int logI, int N)
-        : logI(logI), N(N)
+        : min_logI_logB(std::min(LOG_BUCKET_REGION, logI))
+        , F(1u << min_logI_logB)
+        , logI(logI)
+        , I(1u << logI)
+        , N(N)
+        , log_lines_per_region(LOG_BUCKET_REGION-min_logI_logB)
+        , log_regions_per_line(logI-min_logI_logB)
     {
-        unsigned int log_lines_per_region;
-        min_logI_logB         = std::min(LOG_BUCKET_REGION, logI);
-        log_lines_per_region  = (LOG_BUCKET_REGION-min_logI_logB);
-        log_regions_per_line  = (logI-min_logI_logB);
         unsigned int regions_per_line      = (1<<log_regions_per_line);
         region_rank_in_line   = (N&(regions_per_line-1));
         j0    = ((N>>log_regions_per_line)<<log_lines_per_region);
@@ -81,75 +88,159 @@ struct siqs_small_sieve_base {
         i0    = ((region_rank_in_line<<LOG_BUCKET_REGION)-(1 << (logI-1)));
     }
 
-    spos_t first_position_ordinary_prime(
-            siqs_ssp_simple_t const & ssp,
-            unsigned int dj) const
+    /* Computes the position for the first line of this region.
+     * It is defined as
+     *      rp - add((-1)^(k-th bit of g)*rk)/2 - i0
+     * where g is the Gray code of j0
+     * But r, which is already computed, is the root for j = 0 and equals to
+     *      rp - add(rk)/2
+     * So we are only computing
+     *      r + add(rk if k-th bit of g is 1) - i0
+     */
+    siqs_pos_t first_position_in_region(siqs_ssp_simple_t const & ssp) const
     {
         fbprime_t p = ssp.get_p();
         fbprime_t r = ssp.get_r(); /* it corresponds to the root for j = 0 */
-        unsigned int j = j0 + dj;
+        unsigned int g = siqs_special_q_data::gray_code_from_j(j0);
         for (auto const rk: ssp.CRT_data()) {
-            if (j & 1u) {
+            if (g & 1u) {
                 r = addmod_u32(r, rk, p);
             }
-            j >>= 1u;
+            g >>= 1u;
         }
-        int64_t x = (int64_t) r - i0;
-        x = x % (int64_t) p;
-        if (x < 0) x += p;
-        return (spos_t) x;
+        ASSERT_EXPENSIVE(g == 0u);
+        return i0 > 0 ? submod_u32(r, ((uint32_t) i0) % p, p)
+                      : addmod_u32(r, ((uint32_t) -i0) % p, p);
     }
 
-    spos_t first_position_power_of_two(
-            siqs_ssp_t const & ssp,
-            unsigned int dj) const
+    /* Computes the position for the first line of this region given the first
+     * position for the first line of the previous region using Gray code.
+     * It use the following facts:
+     *  - the difference between j0 and the j0 of the previous region is equal
+     *  to 2^log_lines_per_region (note that it can more than 1, but not 0).
+     *  - If j0 = j'0 + 2^l then their respective Gray code differs by one
+     *  bit (if l == 0) or two bits (if l > 0):
+     *      - in position k that corresponds to the least significant bit of j0;
+     *      the "sign" of the difference depends on the bit at position k+1 of
+     *      j0.
+     *      - in position l-1 (if l > 0); the "sign" of the difference depends
+     *      on the bit at position l of j0.
+     *
+     * Special case: if j0 == 0 we return prev_region_pos.
+     *
+     * This function assumes that substracting i0 was already taken into account
+     * in prev_region_pos and that the value of i0 of the current region is the
+     * same that the value of i0 for the region for which prev_region_pos was
+     * computed. In particular this function cannot be used to go from one
+     * region to another if they have the same j but a different i0.
+     */
+    siqs_pos_t first_position_in_region(
+            siqs_ssp_simple_t const & ssp,
+            siqs_pos_t prev_region_pos)
     {
-        fbprime_t pmask = ssp.get_p() - 1u;
+        if (j0 == 0) {
+            return prev_region_pos;
+        } else {
+            fbprime_t p = ssp.get_p();
+            auto const & crt_data = ssp.CRT_data();
+            unsigned int k = ularith_ctz(j0);
+            ASSERT_EXPENSIVE(k < crt_data.size());
+            siqs_pos_t pos;
+            if ((j0 >> (k+1u)) & 1u) {
+                pos = submod_u32(prev_region_pos, crt_data[k], p);
+            } else {
+                pos = addmod_u32(prev_region_pos, crt_data[k], p);
+            }
+
+            if (log_lines_per_region) {
+                if ((j0 >> log_lines_per_region) & 1u) {
+                    pos = addmod_u32(pos, crt_data[log_lines_per_region-1], p);
+                } else {
+                    pos = submod_u32(pos, crt_data[log_lines_per_region-1], p);
+                }
+            }
+            return pos;
+        }
+    }
+
+    /* Computes the first position for line j0 <= j < j1 given prev_pos, the
+     * first position for line j-1 using Gray code.
+     * The Gray code of j and j-1 differs by one bit:
+     *  - in position k that corresponds to the least significant bit of j; the
+     *  "sign" of the difference depends on the bit at position k+1 of j.
+     *
+     * Special case: if j == j0 we return prev_pos.
+     */
+    siqs_pos_t first_position_in_line(
+            siqs_ssp_simple_t const & ssp,
+            siqs_pos_t prev_pos,
+            unsigned int j) const
+    {
+        if (j == j0) {
+            return prev_pos;
+        } else {
+            fbprime_t p = ssp.get_p();
+            auto const & crt_data = ssp.CRT_data();
+            unsigned int k = ularith_ctz(j);
+            ASSERT_EXPENSIVE(k < crt_data.size());
+            siqs_pos_t pos =
+                ((j >> (k+1u)) & 1u) ? submod_u32(prev_pos, crt_data[k], p)
+                                     : addmod_u32(prev_pos, crt_data[k], p);
+            return pos;
+        }
+    }
+
+    /* Same as first_position_in_region for power of two.
+     * Only needed for siqs_ssp_t not siqs_ssp_simple_t.
+     */
+    siqs_pos_t first_position_in_region_power_of_two(
+            siqs_ssp_t const & ssp) const
+    {
+        fbprime_t pmask = ssp.get_pmask();
         fbprime_t r = ssp.get_r(); /* it corresponds to the root for j = 0 */
-        unsigned int j = j0 + dj;
+        unsigned int g = siqs_special_q_data::gray_code_from_j(j0);
         for (auto const rk: ssp.CRT_data()) {
-            if (j & 1u) {
+            if (g & 1u) {
                 r = (r + rk) & pmask;
             }
-            j >>= 1u;
+            g >>= 1u;
         }
-        int64_t x = (int64_t) r - i0;
-        x = x & pmask;
-        if (x < 0) x += ssp.get_p();
-        return (spos_t) x;
+        ASSERT_EXPENSIVE(g == 0u);
+        return i0 > 0 ? (r - ((uint32_t) i0)) & pmask
+                      : (r + ((uint32_t) -i0)) & pmask;
     }
 
-    fbroot_t first_position_in_line(
+    /* Same as first_position_in_line but for power of two.
+     * Only needed for siqs_ssp_t not siqs_ssp_simple_t.
+     */
+    siqs_pos_t first_position_in_line_power_of_two(
             siqs_ssp_t const & ssp,
-            unsigned int dj) const
+            siqs_pos_t prev_pos,
+            unsigned int j) const
     {
-        fbprime_t p = ssp.get_p();
-        fbprime_t r = ssp.get_r(); /* it corresponds to the root for j = 0 */
-        unsigned int j = j0 + dj;
-        for (auto const rk: ssp.CRT_data()) {
-            if (j & 1u) {
-                r = addmod_u32(r, rk, p);
-            }
-            j >>= 1u;
+        if (j == j0) {
+            return prev_pos;
+        } else {
+            fbprime_t pmask = ssp.get_pmask();
+            auto const & crt_data = ssp.CRT_data();
+            unsigned int k = ularith_ctz(j);
+            ASSERT_EXPENSIVE(k < crt_data.size());
+            siqs_pos_t pos =
+                ((j >> (k+1u)) & 1u) ? (prev_pos - crt_data[k]) & pmask
+                                     : (prev_pos + crt_data[k]) & pmask;
+            return pos;
         }
-        int64_t x = (int64_t) r - i0;
-        x = x % (int64_t) p;
-        if (x < 0) x += p;
-        return (spos_t) x;
     }
-
 };
 
 struct siqs_small_sieve : public siqs_small_sieve_base {
-    typedef siqs_small_sieve_base super;
-    std::vector<int> const & positions;
+    std::vector<siqs_pos_t> const & positions;
     std::vector<siqs_ssp_simple_t> const& primes;
     size_t sorted_limit;
     std::list<size_t> sorted_subranges;
     std::vector<siqs_ssp_t> const& not_nice_primes;
     unsigned char * S;
 
-    static const fbprime_t pattern2_size = 2 * sizeof(unsigned long);
     static const int test_divisibility = 0; /* very slow, but nice for debugging */
 
     /* This "index" field is actually the loop counter that is shared by
@@ -159,12 +250,12 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
     size_t index = 0;
 
     siqs_small_sieve(
-            std::vector<int> const& positions,
+            std::vector<siqs_pos_t> const& positions,
             std::vector<siqs_ssp_simple_t> const & primes,
             std::vector<siqs_ssp_t> const & not_nice_primes,
             unsigned char*S, int logI,
             unsigned int N)
-        : super(logI, N)
+        : siqs_small_sieve_base(logI, N)
         , positions(positions)
         , primes(primes)
         , not_nice_primes(not_nice_primes)
@@ -205,18 +296,6 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
     bool finished() const { return index == primes.size(); }
     bool finished_sorted_prefix() const { return index == sorted_limit; }
 
-    /* most fields from the parent class must be redeclared here if we
-     * want to use them transparently -- it's only a shorthand
-     * convenience. We don't re-expose everything though, since some are
-     * only seldom used.
-     */
-    using super::logI;
-    using super::i0;
-    using super::j0;
-    using super::j1;
-    using super::I;
-    using super::F;
-
     void handle_power_of_2(
             siqs_ssp_t const & ssp,
             where_am_I & w MAYBE_UNUSED)
@@ -229,51 +308,49 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
         if (ssp.is_pattern_sieved())
             return;
 
-        const unsigned char logp = ssp.logp;
+        const unsigned char logp = ssp.get_logp();
         unsigned char *S_ptr = S;
 
-        for (unsigned int dj = 0; dj < j1-j0; ++dj) {
-            //TODO be more efficient (gray code)
-            int pos = super::first_position_power_of_two(ssp, dj);
-            for (int i = pos; i < F(); i += p) {
-                WHERE_AM_I_UPDATE(w, x, ((size_t) dj << logI) + i);
+        siqs_pos_t pos = first_position_in_region_power_of_two(ssp);
+        for (unsigned int j = j0; j < j1; ++j) {
+            pos = first_position_in_line_power_of_two(ssp, pos, j);
+            for (siqs_pos_t i = pos; i < F; i += p) {
+                WHERE_AM_I_UPDATE(w, x, ((size_t) (j-j0) << logI) + i);
                 sieve_increase(S_ptr + i, logp, w);
             }
-            S_ptr += I();
+            S_ptr += I;
         }
     }
 
     template<typename inner_loop, int bits_off>
     bool handle_nice_prime(
             siqs_ssp_simple_t const & ssp,
-            MAYBE_UNUSED spos_t pos,
+            siqs_pos_t pos,
             where_am_I & w)
     {
         const fbprime_t p = ssp.get_p();
-        if (bits_off != 0 && (p >> (super::min_logI_logB + 1 - bits_off))) {
+        if (bits_off != 0 && (p >> (min_logI_logB + 1 - bits_off))) {
             /* time to move on to the next bit size; */
             return false;
         }
 
-        MAYBE_UNUSED const fbprime_t r = ssp.get_r();
-        WHERE_AM_I_UPDATE(w, r, r);
-        const unsigned char logp = ssp.logp;
+        WHERE_AM_I_UPDATE(w, r, ssp.get_r());
+        const unsigned char logp = ssp.get_logp();
         unsigned char * S0 = S;
-        unsigned char * S1 = S + F();
+        unsigned char * S1 = S + F;
 
-        /* we sieve over the area [S0..S0+(i1-i0)] (F() is (i1-i0)),
+        /* we sieve over the area [S0..S0+(i1-i0)] (F is (i1-i0)),
          * which may actually be just a fragment of a line. After
          * that, if (i1-i0) is different from I, we'll break anyway.
          * So whether we add I or (i1-i0) to S0 does not matter much.
          */
 
-        //TODO be more efficient (gray code)
-        for (unsigned int dj = 0, j = j0; j < j1; ++dj, ++j) {
-            WHERE_AM_I_UPDATE(w, j, dj);
-            int pos = super::first_position_ordinary_prime(ssp, dj);
+        for (unsigned int j = j0; j < j1; ++j) {
+            WHERE_AM_I_UPDATE(w, j, j - j0);
+            pos = first_position_in_line(ssp, pos, j);
             inner_loop()(S0, S1, S0 - S, pos, p, logp, w);
-            S0 += I();
-            S1 += I();
+            S0 += I;
+            S1 += I;
         }
         return true;
     }
@@ -283,21 +360,21 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
     template<typename inner_loop, int bits_off>
     inline void handle_nice_primes(where_am_I & w MAYBE_UNUSED)
     {
-        /* here, we can sieve for primes p < 2 * F() / 2^bits_off,
-         * (where F() is i1-i0 = 2^min(logI, logB)).
+        /* here, we can sieve for primes p < 2 * F / 2^bits_off,
+         * (where F is i1-i0 = 2^min(logI, logB)).
          *
          * meaning that the number of hits in a line is at least
-         * floor(F() / p) = 2^(bits_off-1)
+         * floor(F / p) = 2^(bits_off-1)
          *
-         * Furthermore, if p >= 2 * F() / 2^(bits_off+1), we can also
+         * Furthermore, if p >= 2 * F / 2^(bits_off+1), we can also
          * say that the number of hits is at most 2^bits_off
          */
 
         for( ; index < sorted_limit ; index++) {
             auto const & ssp(primes[index]);
-            spos_t pos = positions[index];
+            siqs_pos_t pos = positions[index];
             const fbprime_t p = ssp.get_p();
-            if (bits_off != 0 && (p >> (super::min_logI_logB + 1 - bits_off))) {
+            if (bits_off != 0 && (p >> (min_logI_logB + 1 - bits_off))) {
                 /* time to move on to the next bit size; */
                 return;
             }
@@ -383,7 +460,7 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
          * ssdpos table. */
         for( ; index < primes.size() ; index++) {
             auto const & ssp(primes[index]);
-            spos_t pos = positions[index];
+            siqs_pos_t pos = positions[index];
             WHERE_AM_I_UPDATE(w, p, ssp.get_p());
             handle_nice_prime<default_smallsieve_inner_loop, 0>(ssp, pos, w);
         }

@@ -149,39 +149,50 @@ struct siqs_special_q_data : public special_q_data_base {
 
     virtual std::ostream & print(std::ostream & os) const final;
 
+    static unsigned int gray_code_from_j(unsigned int j)
+    {
+        return j xor (j >> 1u);
+    }
+
     /* Given j, compute
-     *    rj = add((-1)^(k-th bit of j)*Rk for (k, Rk) in
+     *    g the gray code corresponding to j
+     *    rj = add((-1)^(k-th bit of g)*Rk for (k, Rk) in
      *                                              enumerate(crt_data_modq))
      * Note: r0 == doing.r
      */
     cxx_mpz root_from_j(unsigned int j) const
     {
+        unsigned int g = gray_code_from_j(j);
         cxx_mpz rj = 0U;
         for (auto const & Rk: crt_data_modq) {
-            if (j & 1u) {
+            if (g & 1u) {
                 mpz_sub(rj, rj, Rk);
             } else {
                 mpz_add(rj, rj, Rk);
             }
-            j >>= 1u;
+            g >>= 1u;
         }
+        ASSERT_EXPENSIVE(g == 0u);
         return rj;
     }
 
     /* Given j, compute delta_j = rj-doing.r (see above for definitions)
      *    delta_j = -2*add(Rk for (k, Rk) in enumerate(crt_data_modq)
-     *                                                  if k-th bit of j == 1)
+     *                                                  if k-th bit of g == 1)
+     *    with g the gray code corresponding to j
      * Note: As r0 == doing.r, delta_0 = 0.
      */
     cxx_mpz delta_to_r(unsigned int j) const
     {
+        unsigned int g = gray_code_from_j(j);
         cxx_mpz dj = 0U;
         for (auto const & Rk: crt_data_modq) {
-            if (j & 1u) {
+            if (g & 1u) {
                 mpz_add(dj, dj, Rk);
             }
-            j >>= 1u;
+            g >>= 1u;
         }
+        ASSERT_EXPENSIVE(g == 0u);
         mpz_mul_2exp(dj, dj, 1);
         mpz_neg(dj, dj);
         return dj;

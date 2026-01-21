@@ -385,11 +385,18 @@ siqs_special_q_data::convert_ab_to_ij(
         return 0; /* only b == 1 is sieved */
     }
 
+    /* Here we will computed j directly without computing the its gray code g,
+     * using the following facts:
+     *   the k-th bit of j = xor(l-th bit of g for l >= k)
+     *   the l-th bit of g = 0 if a % qk == Rk % qk else 1
+     *
+     * We will compute the correspond rj at the same time as it is needed to
+     * compute i = (a-rj)/q.
+     */
     j = 0u;
     cxx_mpz rj = 0u;
-    uint64_t mask = 1u;
-
-    for(unsigned int k = 0; k < nfactors(); ++k, mask <<= 1u) {
+    uint64_t mask = 1u; /* invariant: mask = 2^(k+1)-1 = 0b11..1 with k 1's */
+    for(unsigned int k = 0; k < nfactors(); ++k, mask = (mask << 1u) + 1u) {
         const uint64_t qk = doing.prime_factors[k];
         cxx_mpz const & Rk = crt_data_modq[k];
 
@@ -402,7 +409,7 @@ siqs_special_q_data::convert_ab_to_ij(
         } else {
             ASSERT((qk - mpz_tdiv_uint64(Rk, qk)) == amodqk);
             rj -= Rk;
-            j += mask;
+            j = j xor mask;
         }
     }
 

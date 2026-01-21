@@ -20,13 +20,16 @@
  *
  * (a, b)  [short name "ab"] This is the one from textbooks. We always
  *         have b>=0 (only free relations have b=0, and we don't see them
- *         here).
- * (i, j)  [short name "ij"] For a given special q, this is a point in
+ *         here). For siqs, we only have b=1.
+ * (i, j)  [short name "ij"] las case: for a given special q, this is a point in
  *         the q-lattice. Given the lattice basis given by (a0 b0 a1 b1),
  *         this corresponds to the (a,b) pair equal to
  *         i*(a0,b0)+j*(a1,b1). By construction this should lead to one
  *         of the norms having doing.p as a factor.  i is within [-I/2,
  *         I/2[, and j is within [1, J[
+ *         siqs case: (i, j) corresponds to the (a,b) pair equal to (rj+i*q, 1).
+ *         For more detail on how rj is computed from j, see the method
+ *         siqs_special_q_data::root_from_j.
  * (N, x)  [short name "Nx"] bucket number N, location x. N is within
  *         [0,nb_buckets[ and x within [0,bucket_region[ ; we have:
  *         N*bucket_region+x == (I/2+i)+j*I

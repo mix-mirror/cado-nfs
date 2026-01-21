@@ -287,6 +287,7 @@ void mpz_poly_mul_xplusa(mpz_poly_ptr g, mpz_poly_srcptr f, mpz_srcptr a);
   
 void mpz_poly_eval(mpz_ptr res, mpz_poly_srcptr f, mpz_srcptr x);
 void mpz_poly_eval_ui (mpz_ptr res, mpz_poly_srcptr f, unsigned long x);
+void mpz_poly_eval_si (mpz_ptr res, mpz_poly_srcptr f, long x);
 void mpz_poly_eval_diff_ui (mpz_ptr res, mpz_poly_srcptr f, unsigned long x);
 void mpz_poly_eval_diff (mpz_ptr res, mpz_poly_srcptr f, mpz_srcptr x);
 void mpz_poly_eval_poly(mpz_poly_ptr res, mpz_poly_srcptr f, mpz_poly_srcptr x);

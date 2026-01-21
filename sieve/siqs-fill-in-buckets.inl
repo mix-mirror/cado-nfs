@@ -45,14 +45,12 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
     BA.add_slice_index(slice_index);
     WHERE_AM_I_UPDATE(w, i, slice_index);
 
-    slice_offset_t hint = 0;
-
     int logB = LOG_BUCKET_REGIONS[LEVEL];
     typename bucket_array_t<LEVEL, TARGET_HINT>::update_t::br_index_t bmask =
         (1UL << logB) - 1;
 
-    for (auto const & e: slice) {
-        increment_counter_on_dtor<slice_offset_t> const _dummy(hint);
+    for (slice_offset_t hint = -1; auto const & e: slice) {
+        ++hint;
         if (!Q.is_coprime_to(e.p))
             continue;
         if (discard_power_for_bucket_sieving(e))
@@ -72,38 +70,44 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
         typename bucket_array_t<LEVEL, TARGET_HINT>::update_t u(0, p, hint,
                                                                 slice_index);
 
-        std::vector<siqs_largesieve::T_elt> T1s;
+        std::vector<siqs_largesieve::T_elt> T2s;
         for (unsigned char i = 0; i < e.nr_roots; ++i) {
-            ple.prepare_for_root(T1s, i, logI, 0u);
+            ple.prepare_for_root(T2s, i, logI, 0u);
             auto const pp = ple.get_pp();
-            auto it2 = ple.get_T2().rbegin();
-            auto T2rend = ple.get_T2().rend(); /* T2 does not change during iteration */
-            for (auto const & [t1, d1]: T1s) {
+            auto it2 = T2s.rbegin();
+            auto T2rend = T2s.rend(); /* T2 does not change during iteration */
+            // XXX would it be more cache friendly to do all case 1 first then
+            // all case 2. To avoid iterating over T2 first from begin to end
+            // then from end to begin for all t1 in T1.
+            for (auto const & [t1, d1]: ple.get_T1()) {
 
                 /* case t1+t2 in [0, I[ */
-                for (auto const & [t2, d2]: ple.get_T2()) {
-                    if ((t1+t2) >> logI) {
-                        break;
+                for (auto const & [t2, d2]: T2s) {
+                    uint64_t i = t1+t2;
+                    if (i >> logI) {
+                        break; /* stop when i=t1+t2 becomes larger than I */
                     }
-                    uint64_t x = ((d1 | d2) << logI) | (t1+t2);
+                    uint64_t j = d2 xor d1;
+                    uint64_t x = (j << logI) | i;
                     u.set_x(x & bmask);
                     BA.push_update(x >> logB, u, w);
                 }
 
                 /* case t1+t2 in [p, p+I[ */
-                if (it2 != T2rend && t1 + it2->first >= pp) {
-                    while (it2 != T2rend && ((t1 + it2->first - pp) >> logI)) {
-                        ++it2;
+                for (auto it = it2; it != T2rend; ++it) {
+                    auto const [t2, d2] = *it;
+                    if (t1+t2 < pp) {
+                        break; /* stop when t1+t2 becomes smaller than I */
                     }
-                    for (auto it = it2; it != T2rend; ++it) {
-                        auto const [t2, d2] = *it;
-                        if (t1+t2 < pp) {
-                            break;
-                        }
-                        uint64_t x = ((d1 | d2) << logI) | (t1+t2-pp);
-                        u.set_x(x & bmask);
-                        BA.push_update(x >> logB, u, w);
+                    uint64_t i = t1+t2-pp;
+                    if (i >> logI) {
+                        ++it2; /* can be skipped for all next t1 values */
+                        continue; /* skip if i=t1+t2-p is too large */
                     }
+                    uint64_t j = d2 xor d1;
+                    uint64_t x = (j << logI) | i;
+                    u.set_x(x & bmask);
+                    BA.push_update(x >> logB, u, w);
                 }
             }
         }

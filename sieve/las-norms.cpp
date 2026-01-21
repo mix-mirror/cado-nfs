@@ -329,15 +329,18 @@ void lognorm_base::norm(
         unsigned int j,
         siqs_special_q_data const & Q) const
 {
-    mpz_poly_homogeneous_eval_siui(x, fij, i, 1u);
+    mpz_poly_eval_si(x, fij, i);
+    /* fij(i) = ((r0+q*i)^2-D)/q
+     * We want ((rj+q*i)^2-D)/q
+     * Let dj = rj-r0
+     *  ((rj+q*i)^2-D)/q = ((r0+dj+q*i)^2-D)/q
+     *                   = ((r0+q*i)^2 - D + dj^2 + 2*dj*(r0+q*i))/q
+     *                   = fij(i) + dj*(dj+2*r0)/q + 2*dj*i
+     */
     cxx_mpz dj = Q.delta_to_r(j);
-    if (i >= 0) {
-        mpz_addmul_ui(x, dj, 2*i);
-    } else {
-        mpz_submul_ui(x, dj, 2*((unsigned int) -i));
-    }
+    mpz_addmul_si(x, dj, 2*i);
     cxx_mpz t;
-    mpz_mul_2exp(t, Q.doing.r, 1);
+    mpz_mul_2exp(t, Q.doing.r, 1u);
     mpz_add(t, t, dj);
     mpz_mul(t, t, dj);
     mpz_divexact(t, t, Q.doing.p);

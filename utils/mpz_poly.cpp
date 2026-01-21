@@ -2106,6 +2106,18 @@ void mpz_poly_eval_ui(mpz_ptr res, mpz_poly_srcptr f, unsigned long x)
     }
 }
 
+/* Set res=f(x) where x is an long. */
+void mpz_poly_eval_si(mpz_ptr res, mpz_poly_srcptr f, long x)
+{
+    int const d = f->deg;
+
+    mpz_set(res, f->_coeff[d]);
+    for (int i = d - 1; i >= 0; i--) {
+        mpz_mul_si(res, res, x);
+        mpz_add(res, res, f->_coeff[i]);
+    }
+}
+
 /* Set res=f'(x), where x is an unsigned long */
 void mpz_poly_eval_diff_ui(mpz_ptr res, mpz_poly_srcptr f, unsigned long x)
 {
