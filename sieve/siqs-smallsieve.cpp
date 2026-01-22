@@ -240,6 +240,7 @@ siqs_small_sieve_data::small_sieve_prepare_many_start_positions(
             ssdpos[s] = ssp.first_position_first_line(logI);
             s++;
         }
+        /* only for regions_per_line > 1, i.e., logI > LOG_BUCKET_REGION */
         for(unsigned idx = 1; idx < regions_per_line; ++idx) {
             /* complete this row */
             auto const & prev = res[idx-1];
@@ -258,45 +259,31 @@ siqs_small_sieve_data::small_sieve_prepare_many_start_positions(
     }
     ASSERT(res.front().size() == ssps.size());
 
-    if (C.logI >= LOG_BUCKET_REGION) { /* logI >= logB */
-        for(unsigned int k = regions_per_line; k < nregions + regions_per_line;
-                                                    k += regions_per_line) {
-            /* infer from previous bucket region  */
-            ASSERT(res[k].size() == ssps.size());
-            auto & prev_ssdpos = res[k-regions_per_line];
-            auto & ssdpos = res[k];
-            //XXX beware that idx+1 can be J here
-            siqs_small_sieve_base Ct(logI, first_region_index+k);
-            for(size_t s = 0; auto const & ssp: ssps) {
-                ssdpos[s] = Ct.first_position_in_region(ssp, prev_ssdpos[s]);
-                s++;
-            }
-
-            for(unsigned idx = 1; idx < regions_per_line; ++idx) {
-                /* complete this row */
-                auto const & prev = res[k+idx-1];
-                auto & cur = res[k+idx];
-                for(size_t s = 0; auto const & ssp: ssps) {
-                    cur[s] = addmod_u32(prev[s], ssp.get_offset(), ssp.get_p());
-                    s++;
-                }
-            }
+    for(unsigned int k = regions_per_line; k < nregions + regions_per_line;
+                                                k += regions_per_line) {
+        /* infer from previous bucket region */
+        ASSERT(res[k].size() == ssps.size());
+        auto & prev_ssdpos = res[k-regions_per_line];
+        auto & ssdpos = res[k];
+        //XXX beware that k can be J here
+        siqs_small_sieve_base Ct(logI, first_region_index+k);
+        for(size_t s = 0; auto const & ssp: ssps) {
+            ssdpos[s] = Ct.first_position_in_region(ssp, prev_ssdpos[s]);
+            s++;
         }
-    } else { /* logI < logB */
-        /* here regions_per_line = 1 */
-        for(int k = 1; k <= nregions; ++k) {
-            /* infer from previous bucket region  */
-            ASSERT(res[k].size() == ssps.size());
-            auto & prev_ssdpos = res[k-1];
-            auto & ssdpos = res[k];
-            //XXX beware that k can be J here
-            siqs_small_sieve_base Ct(logI, first_region_index+k);
+
+        /* only for regions_per_line > 1, i.e., logI > LOG_BUCKET_REGION */
+        for(unsigned idx = 1; idx < regions_per_line; ++idx) {
+            /* complete this row */
+            auto const & prev = res[k+idx-1];
+            auto & cur = res[k+idx];
             for(size_t s = 0; auto const & ssp: ssps) {
-                ssdpos[s] = Ct.first_position_in_region(ssp, prev_ssdpos[s]);
+                cur[s] = addmod_u32(prev[s], ssp.get_offset(), ssp.get_p());
                 s++;
             }
         }
     }
+
 #ifndef NDEBUG
     for(unsigned int k = 0; k < nregions + regions_per_line; k++) {
         ASSERT(res[k].size() == ssps.size());
