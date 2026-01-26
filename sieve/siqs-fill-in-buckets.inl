@@ -153,6 +153,9 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
                          plattices_dense_vector_t * /* unused */,
                          where_am_I & w)
 {
+    if (LEVEL == 3) {
+        throw std::runtime_error("Level 3 bucket sieving is not supported in SIQS");
+    }
     int const logI = ws.conf.logI;
     size_t logJ = nbits(ws.J) - 1u; /* 2^m has m+1 bits */
     ASSERT_ALWAYS(ws.J == 1u << logJ); /* J must be a power of 2 */
