@@ -8,6 +8,7 @@
 #include <tuple>
 #include <vector>
 
+#include "bucket.hpp"
 #include "las-arith.hpp"
 #include "las-qlattice.hpp"
 #include "macros.h"
@@ -95,6 +96,7 @@ class siqs_largesieve
     size_t n; /* number of factors in the special-q */
     size_t n1, n2;
     std::vector<T_elt> T1, T2;
+    slice_offset_t hint;
 
     /* Given a sorted vector (according to its first component) T, build a new
      * sorted vector (according to its first component) Tt defined as
@@ -106,7 +108,7 @@ class siqs_largesieve
             std::vector<T_elt> & Tt,
             std::vector<T_elt> const & T,
             uint32_t const r,
-            uint32_t const mask)
+            uint32_t const mask) const
     {
         Tt.reserve(T.size()); /* Tt will have the same size as T */
 
@@ -129,7 +131,7 @@ class siqs_largesieve
         std::ranges::transform(T.begin(), zp, std::back_inserter(Tt), under);
     }
 
-    void set_Ti(std::vector<T_elt> & T, size_t start, size_t end)
+    void set_Ti(std::vector<T_elt> & T, size_t start, size_t end) const
     {
         T = {{0U, 0U}};
         std::vector<T_elt> Tp, Tm;
@@ -157,11 +159,13 @@ class siqs_largesieve
     siqs_largesieve(
             siqs_special_q_data const & Q,
             FB_ENTRY_TYPE const & e,
-            size_t n)
+            size_t n,
+            slice_offset_t const hint)
         : pp(e.get_q())
         , n(n)
         , n1((n+1U)/2U)
         , n2(n-n1)
+        , hint(hint)
     {
         ASSERT_ALWAYS(2U <= n && n <= Q.nfactors());
         e.compute_crt_data_modp(invq, crt_data_modp, Q, false);
@@ -191,31 +195,48 @@ class siqs_largesieve
 
     void prepare_for_root(
             std::vector<T_elt> & T2s,
-            size_t const root_idx,
+            uint32_t const root,
             int const logI,
-            uint32_t const highest_bits)
+            uint32_t const j_high) const
     {
         T2s.clear();
-        uint32_t s = (roots[root_idx] + (1U << (logI-1))) % pp;
-        uint32_t h = highest_bits;
-        for (size_t i = n; i < crt_data_modp.size(); ++i, h>>=1) {
-            if (h & 1U) {
+        uint32_t mask = ((uint32_t) 1U << n);
+        bool is_nth_bit_set = j_high & mask;
+        mask = mask - 1U; /* mask is 0...01..1 with n 1's */
+        ASSERT_EXPENSIVE(!(j_high & mask));
+
+        uint32_t s = (root + (1U << (logI-1))) % pp;
+        uint32_t g = siqs_special_q_data::gray_code_from_j(j_high >> n);
+        for (size_t i = n; i < crt_data_modp.size(); ++i, g>>=1) {
+            if (g & 1U) {
                 s = (s + crt_data_modp[i]) % pp;
             } else {
                 s = (s + (pp - crt_data_modp[i])) % pp;
             }
         }
-
-        shift(T2s, T2, s, highest_bits << n);
+        ASSERT_EXPENSIVE(g == 0);
+        /* We do not need to put j_high in the mask because it would force us to
+         * remove it later later to compute the bucket index. But we still need
+         * to xor the mask if the nth bit of j_high is 1 in order to compute the
+         * correct lowest bits of j later.
+         */
+        shift(T2s, T2, s, (is_nth_bit_set ? mask : 0U));
     }
 
     uint32_t get_pp() const {
         return pp;
     }
 
-    std::vector<T_elt> const & get_T1() const {
-        return T1;
-    }
+    template <typename BA_t>
+    friend void fill_in_buckets_siqs_compute_hits(
+            siqs_largesieve & ple,
+            BA_t & BA,
+            int const logI,
+            int const logB,
+            uint32_t const j_high,
+            slice_index_t const slice_index,
+            std::vector<T_elt> & T2scratch,
+            where_am_I & w);
 };
 
 #endif /* CADO_SIQS_LARGESIEVE_HPP */

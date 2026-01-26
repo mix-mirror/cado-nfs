@@ -4,11 +4,13 @@
 #include <concepts>
 #include <type_traits>
 
+#include "las-plattice.hpp"
 #include "las-qlattice.hpp"
 #include "las-smallsieve.hpp"
 #include "las-todo-list.hpp"
 #include "smallsieve.hpp"
 #include "siqs-smallsieve.hpp"
+#include "siqs-largesieve.hpp"
 
 template<typename T>
 concept todo_list_class =
@@ -33,17 +35,20 @@ concept sieve_method = std::is_empty_v<T>
     && std::is_trivially_default_constructible_v<T> /* for tag dispatch */
     && todo_list_class<typename T::todo_list>
     && special_q_data_class<typename T::special_q_data>
-    && small_sieve_data_class<typename T::smallsieve>;
+    && small_sieve_data_class<typename T::smallsieve>
+    && requires { typename T::largesieve; };
 
 struct NFS {
   using todo_list = las_todo_list;
   using special_q_data = qlattice_basis;
+  using largesieve = plattice_enumerator;
   using smallsieve = las_small_sieve_data;
 };
 
 struct SIQS {
   using todo_list = siqs_todo_list;
   using special_q_data = siqs_special_q_data;
+  using largesieve = siqs_largesieve;
   using smallsieve = siqs_small_sieve_data;
 };
 

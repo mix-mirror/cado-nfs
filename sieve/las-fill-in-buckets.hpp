@@ -10,7 +10,6 @@
 #include "multityped_array.hpp"
 #ifdef SIQS_SIEVE
 #include "siqs-largesieve.hpp"
-class plattices_vector_t; // XXX temporary while LEVEL 2 bucket sieve is not implemented by siqs-largesieve.hpp
 #else
 #include "las-plattice.hpp"
 #endif
@@ -28,6 +27,25 @@ class nfs_work;
 class nfs_work_cofac;
 class thread_pool;
 struct where_am_I;
+
+class plattices_vector_t : public std::vector<ALGO::largesieve>
+{
+    /* The index here is the global index, across all fb parts */
+    slice_index_t index = -1;
+    double weight = 0;
+
+  public:
+    plattices_vector_t() = default;
+    plattices_vector_t(slice_index_t index, double weight)
+        : index(index)
+        , weight(weight)
+    {
+    }
+    /* returns a global index */
+    slice_index_t get_index() const { return index; };
+    slice_index_t get_weight() const { return weight; };
+};
+
 
 // This one is used for keeping information of middle primes.
 template<int LEVEL>
