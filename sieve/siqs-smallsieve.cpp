@@ -334,13 +334,13 @@ siqs_small_sieve_data::resieve_small_bucket_region(
         const fbprime_t p = ssps_cur.get_p();
         fbprime_t const r = ssps_cur.get_r();
         WHERE_AM_I_UPDATE(w, p, p);
-        siqs_pos_t prev_pos = ssdpos[index];
+        siqs_pos_t pos = ssdpos[index];
         S_ptr = S;
-        ASSERT(prev_pos < p);
+        ASSERT(pos < p);
 
         for (unsigned int j = C.j0; j < C.j1; ++j) {
             WHERE_AM_I_UPDATE(w, j, j);
-            siqs_pos_t pos = C.first_position_in_line(ssps_cur, prev_pos, j);
+            pos = C.first_position_in_line(ssps_cur, pos, j);
             for (siqs_pos_t i = pos; i < C.F ; i += p) {
                 if (LIKELY(S_ptr[i] == 255)) continue;
                 bucket_update_t<1, primehint_t> prime;
