@@ -932,7 +932,8 @@ do_one_special_q(
                 Q,
                 1U << ws.conf.logI, ws.J, extra);
 
-        if (!las.tree->todo->allow_composite_special_q() && Q.doing.is_prime()){
+        if (!las.tree->todo->allow_composite_special_q()
+                && !Q.doing.is_prime()){
             verbose_fmt_print(0, 1,
                     "# Warning, q={} is not prime\n",
                     Q.doing.p);
