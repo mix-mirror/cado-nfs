@@ -5577,12 +5577,12 @@ class LinAlgClTask(Task):
                                       "%d modulo %d", det, M)
                     raise Exception("Could not finish CRT computation")
 
-                self.logger.info("h multiple #%d = %d" % (i, det))
+                self.logger.info(f"h multiple #{i} = {det}")
                 if h is None:
                     h = abs(det)
                 else:
                     h = xgcd(h, det)[0]
-                self.logger.info("Current multiple of class number: %d" % h)
+                self.logger.info(f"Current multiple of class number: {h}")
 
             self.state["classnumber"] = h
 
