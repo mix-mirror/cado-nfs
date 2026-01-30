@@ -802,8 +802,8 @@ class Cado_NFS_toplevel(object):
     def set_threads_and_client_threads(self):
         """
         This function processes the --client-threads argument and sets
-        the parameters tasks.polyselect.threads and
-        tasks.sieve.las.threads accordingly. If nothing is provided, use
+        the parameters tasks.polyselect.threads, tasks.sieve.las.threads and
+        tasks.sieve.siqs.threads accordingly. If nothing is provided, use
         2 threads for each, as a default value.
 
         All other tasks are processed on the server. This function thus
@@ -840,6 +840,9 @@ class Cado_NFS_toplevel(object):
         >>> t.parameters.get_or_set_default("tasks.sieve.las.threads",0)
         2
 
+        >>> t.parameters.get_or_set_default("tasks.sieve.siqs.threads",0)
+        2
+
         >>> t.parameters.get_or_set_default("tasks.polyselect.threads",0)
         2
 
@@ -859,6 +862,9 @@ class Cado_NFS_toplevel(object):
         >>> t.parameters.get_or_set_default("tasks.sieve.las.threads",0)
         1
 
+        >>> t.parameters.get_or_set_default("tasks.sieve.siqs.threads",0)
+        1
+
         >>> t.parameters.get_or_set_default("tasks.polyselect.threads",0)
         1
 
@@ -869,6 +875,7 @@ class Cado_NFS_toplevel(object):
         steps overrides what we compute with --client-threads
         and --server-threads.
         >>> t = Cado_NFS_toplevel(args=['12345', 'tasks.sieve.las.threads=6',
+        ...                             'tasks.sieve.siqs.threads=7',
         ...                             '--client-threads', '3',
         ...                             '-p', os.path.os.devnull,
         ...                             '--server-threads', '4'])
@@ -882,6 +889,9 @@ class Cado_NFS_toplevel(object):
 
         >>> t.parameters.get_or_set_default("tasks.sieve.las.threads",0)
         6
+
+        >>> t.parameters.get_or_set_default("tasks.sieve.siqs.threads",0)
+        7
 
         >>> t.parameters.get_or_set_default("tasks.polyselect.threads",0)
         3
@@ -901,6 +911,9 @@ class Cado_NFS_toplevel(object):
         1
 
         >>> t.parameters.get_or_set_default("tasks.sieve.las.threads",0)
+        1
+
+        >>> t.parameters.get_or_set_default("tasks.sieve.siqs.threads",0)
         1
 
         >>> t.parameters.get_or_set_default("tasks.polyselect.threads",0)
@@ -933,6 +946,9 @@ class Cado_NFS_toplevel(object):
         3
 
         >>> t.parameters.get_or_set_default("tasks.sieve.las.threads",0)
+        2
+
+        >>> t.parameters.get_or_set_default("tasks.sieve.siqs.threads",0)
         2
 
         >>> t.parameters.get_or_set_default("tasks.polyselect.threads",0)
@@ -1015,7 +1031,8 @@ class Cado_NFS_toplevel(object):
         # tasks.sieve.las.threads.
         if self.args.client_threads:
             c = self.args.client_threads
-            for p in ["tasks.polyselect.threads", "tasks.sieve.las.threads"]:
+            for p in ["tasks.polyselect.threads", "tasks.sieve.las.threads",
+                      "tasks.sieve.siqs.threads"]:
                 if not pa.is_set_explicitly(p):
                     pa.set_simple(p, c)
         else:
@@ -1023,7 +1040,8 @@ class Cado_NFS_toplevel(object):
             # of having set tasks.threads or tasks.sieve.threads,
             # we want to set our default.
             t = pa.get_or_set_default("tasks.threads", 0)
-            for p in ["tasks.polyselect.threads", "tasks.sieve.las.threads"]:
+            for p in ["tasks.polyselect.threads", "tasks.sieve.las.threads",
+                      "tasks.sieve.siqs.threads"]:
                 if not pa.is_set_explicitly(p):
                     pa.set_simple(p, min(t, 2))
 
@@ -1042,7 +1060,8 @@ class Cado_NFS_toplevel(object):
 
         for p in ["tasks.threads",
                   "tasks.polyselect.threads",
-                  "tasks.sieve.las.threads"]:
+                  "tasks.sieve.las.threads",
+                  "tasks.sieve.siqs.threads"]:
             self.logger.info("%s = %s [via %s]"
                              % (p, pa.get_or_set_default(p), pa.locate(p)))
             assert pa.locate(p) == p
@@ -1366,6 +1385,7 @@ class Cado_NFS_toplevel(object):
         tasks.linalg.bwc.threads = 4
         tasks.polyselect.threads = 2
         tasks.sieve.las.threads = 2
+        tasks.sieve.siqs.threads = 2
         tasks.sqrt.threads = 1
 
         >>> del os.environ["NCPUS_FAKE"]
