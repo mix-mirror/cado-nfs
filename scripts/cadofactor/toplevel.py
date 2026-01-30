@@ -1414,7 +1414,6 @@ class Cado_NFS_toplevel(object):
 
 if __name__ == "__main__":
     import sys
-    sys.set_int_max_str_digits(0)  # to be able to print very large integer
     if len(sys.argv) == 1:
         import doctest
         doctest.testmod()

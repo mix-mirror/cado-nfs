@@ -137,6 +137,7 @@ from cadofactor.cadocommand import shellquote          # noqa: E402
 from cadofactor.cadoutils import Computation           # noqa: E402
 
 if __name__ == '__main__':
+    sys.set_int_max_str_digits(0)  # to be able to print very large integer
     # Parse command line arguments
 
     # Some command-line arguments are really parsed only here, while some
