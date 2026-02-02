@@ -3406,7 +3406,7 @@ class PolyselQSTask(Task):
     @property
     def paramnames(self):
         return self.join_params(super().paramnames,
-                                {"N": int, "computation": str})
+                                {"N": int, "computation": str, "import": None})
 
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
@@ -3414,6 +3414,10 @@ class PolyselQSTask(Task):
 
     def run(self):
         super().run()
+        if "import" in self.params:
+            self.logger.critical("It is not possible to import polynomial for "
+                                 "the Quadratic Sieve algorithm")
+            return False
 
         if "polyfilename" not in self.state:
             polyfilename = self.workdir.make_filename("poly")
@@ -3613,30 +3617,27 @@ class CheckDiscriminantTask(Task):
     def run(self):
         super().run()
 
-        fbfile = self.send_request(Request.GET_FACTORBASE_FILENAME, 0)
-        if not fbfile:
-            raise Exception("CheckDiscriminantTask(): no factor base file "
-                            "received from FactorBaseTask")
+        renumfile = self.send_request(Request.GET_RENUMBER_FILENAME)
+        if not renumfile:
+            raise Exception("CheckDiscriminantTask(): no renumber file "
+                            "received from FreeRelTask")
 
-        if self.params["gzip"]:
-            with gzip.open(str(fbfile), "rb") as f:
-                file_content = f.read()
-        else:
-            with open(str(fbfile), "rb") as f:
-                file_content = f.read()
+        open_fun = gzip.open if self.params["gzip"] else open
 
-        for line in file_content.splitlines():
-            if line.startswith(b"#"):
-                continue
-            m = re.fullmatch(rb'(\d+):.* 0', line)
-            if m is not None:
-                p = int(m.group(1))
-                if p > 2 and self.params["N"] % (p*p) == 0:
-                    msg = f"The discriminant {self.params['N']} has a square "\
-                          f"factor {p}^2 belonging to the factor base"
-                    self.logger.critical(msg)
-                    raise ValueError(msg)
-                # case p=2 is check in the __init__ of CompleteFactorization
+        with open_fun(str(renumfile), "rb") as f:
+            for line in f:
+                if line.startswith(b"#"):
+                    continue
+                m = re.fullmatch(rb'(\d+) 0\n', line)
+                if m is not None:
+                    p = int(m.group(1))
+                    if p > 2 and self.params["N"] % (p*p) == 0:
+                        msg = f"The discriminant {self.params['N']} has a " \
+                              f"square factor {p}^2 belonging to the factor " \
+                              "base"
+                        self.logger.critical(msg)
+                        return False
+                    # case p=2 is check in __init__ of CompleteFactorization
         return True
 
 
@@ -7455,7 +7456,7 @@ class CompleteFactorization(HasState,
                 self.tasks = self.tasks + (self.descent,)
         elif computation == Computation.CL:
             self.tasks = self.polysel \
-                + (self.fb, self.checkdisc, self.freerel, self.sieving,
+                + (self.fb, self.freerel, self.checkdisc, self.sieving,
                    self.dup1, self.dup2, self.filtergalois, self.purge,
                    self.merge, self.linalg, self.hfactor, self.grstruct)
         else:
