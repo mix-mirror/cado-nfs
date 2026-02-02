@@ -434,6 +434,14 @@ class imaginary_quadratic_cl_structure
 
     public:
 
+    struct too_large_pSylow: public std::exception {
+        const char * what() const noexcept override
+        {
+            return "too large pSylow";
+        }
+    };
+
+
     imaginary_quadratic_cl_structure(cxx_cado_poly const & cpoly,
                                      cxx_mpz_factored group_order,
                                      unsigned int seed,
@@ -514,20 +522,26 @@ class imaginary_quadratic_cl_structure
         return E;
     }
 
-     /* Assumes the p part of the group order fits in a unsigned int. */
-    pSylow compute_p_sylow_naive(unsigned int p, Exponent const & E) const
+    pSylow compute_p_sylow_naive(
+            cxx_mpz const & pmpz,
+            Exponent const & E,
+            unsigned int naive_pSylow_bound) const
     {
-        verbose_fmt_print(0, 1, "# Computing {}-sylow of {}\n", p, cl);
+        verbose_fmt_print(0, 1, "# Computing {}-sylow of {}\n", pmpz, cl);
 
-        cxx_mpz pmpz (p);
-        const unsigned int group_order_pval = group_order.valuation_in(p);
-        const unsigned int exp_pval = E.exponent.valuation_in(p);
-        unsigned long p_group_order = 1U;
-        for (unsigned int i = 0; i < group_order_pval; ++i, p_group_order *= p);
+        const unsigned int group_order_pval = group_order.valuation_in(pmpz);
+        const unsigned int exp_pval = E.exponent.valuation_in(pmpz);
+        cxx_mpz pe, p_group_order;
+        mpz_pow_ui(pe, pmpz, exp_pval);
+        if (pe >= naive_pSylow_bound) {
+            throw too_large_pSylow();
+        }
+        unsigned long p_exponent = mpz_get_ui(pe);
+        mpz_pow_ui(p_group_order, pmpz, group_order_pval);
 
         /* Compute cofac such that exponent = p^exp_pval * cofac */
-        cxx_mpz cofac = E.exponent.value();
-        mpz_remove(cofac, cofac, pmpz);
+        cxx_mpz cofac;
+        mpz_divexact_ui(cofac, E.exponent.value(), p_exponent);
         verbose_fmt_print(0, 2, "# cofac = {}\n", cofac);
 
         /* G will contains all elements of the p-Sylow group (all elements whose
@@ -536,13 +550,13 @@ class imaginary_quadratic_cl_structure
         std::unordered_set<imaginary_quadratic_form> G;
 
         /* Use E.g (an element whose order is the exponent) to start to fill G:
-         * E.g^cofact is an element of order p_group_order.
+         * E.g^cofact is an element of order p_exponent.
          */
         auto const ge = E.g^cofac;
-        verbose_fmt_print(0, 3, "# using form {} of order {}^{}\n", ge, p,
+        verbose_fmt_print(0, 3, "# using form {} of order {}^{}\n", ge, pmpz,
                                                                     exp_pval);
         auto f = ge;
-        for (unsigned long i = 0U; i < p_group_order; ++i) {
+        for (unsigned long i = 0U; i < p_exponent; ++i) {
             G.emplace(f);
             f = f*ge;
         }
@@ -554,6 +568,8 @@ class imaginary_quadratic_cl_structure
         for (unsigned long q = 2; q < B; q = getprime_mt(pi)) {
             if (G.size() == p_group_order) {
                 break; /* early abort if we have all forms of order p^i */
+            } else if (G.size() > naive_pSylow_bound) {
+                throw too_large_pSylow();
             }
 
             unsigned long r = primeform_b_coeff(q);
@@ -570,7 +586,7 @@ class imaginary_quadratic_cl_structure
                 std::unordered_set<imaginary_quadratic_form> H;
                 unsigned long ord = 1U;
                 auto f = g;
-                for (; ord <= p_group_order; ++ord) {
+                for (; ord <= p_exponent; ++ord) {
                     if (f.is_one()) {
                         break;
                     } else if (!G.contains(f)) {
@@ -580,6 +596,7 @@ class imaginary_quadratic_cl_structure
                     }
                     f = f*g;
                 }
+                ASSERT_ALWAYS(f.is_one());
                 verbose_fmt_print(0, 2, "# order={}\n", ord);
                 G.merge(H);
                 verbose_fmt_print(0, 2, "# G contains {} elements\n", G.size());
@@ -590,7 +607,7 @@ class imaginary_quadratic_cl_structure
             }
         }
 
-        pSylow S(p, {});
+        pSylow S(pmpz, {});
         S.compute_groups(G, exp_pval, ge);
 
         prime_info_clear(pi);
@@ -613,39 +630,35 @@ imaginary_quadratic_cl_structure::pSylow_groups(Exponent const & E,
 {
     std::vector<imaginary_quadratic_cl_structure::pSylow> S;
     for (size_t i = 0; i < group_order.nfactors(); ++i) {
-        cxx_mpz const & pmpz = group_order.prime(i);
+        cxx_mpz const & p = group_order.prime(i);
         const unsigned int group_order_pval = group_order.valuation(i);
-        const unsigned int exp_pval = E.exponent.valuation_in(pmpz);
+        const unsigned int exp_pval = E.exponent.valuation_in(p);
+        ASSERT_ALWAYS(exp_pval <= group_order_pval);
 
         verbose_fmt_print(0, 2, "# group order has valuation {} in {}\n"
                                 "# exponent has valuation {} in {}\n",
-                                group_order_pval, pmpz, exp_pval, pmpz);
+                                group_order_pval, p, exp_pval, p);
 
         if (exp_pval == 0)
             continue; /* skip this prime if no valuation in the exponent */
 
         /* Compute cofac such that exponent = p^exp_pval * cofac */
         cxx_mpz cofac = E.exponent.value();
-        mpz_remove(cofac, cofac, pmpz);
+        mpz_remove(cofac, cofac, p);
         verbose_fmt_print(0, 2, "# cofac = {}\n", cofac);
 
-        if (0 < exp_pval && exp_pval < group_order_pval) {
-            cxx_mpz pe;
-            mpz_pow_ui(pe, pmpz, group_order.valuation(i));
-
-            if (pe < naive_pSylow_bound) {
-                unsigned int p = mpz_get_ui(pmpz);
-                auto psylow = compute_p_sylow_naive(p, E);
+        if (exp_pval < group_order_pval) {
+            try {
+                auto psylow = compute_p_sylow_naive(p, E, naive_pSylow_bound);
                 verbose_fmt_print(0, 1, "{}-Sylow: {}\n", p, psylow);
                 S.emplace_back(std::move(psylow));
-            } else {
-                verbose_fmt_print(0, 1, "{}-Sylow: too large, skipped\n",
-                                        pmpz);
+            } catch (too_large_pSylow const &) {
+                verbose_fmt_print(0, 1, "{}-Sylow: too large, skipped\n", p);
                 continue;
             }
-        } else { /* exp_pval == group_order or exp_pval = 0 */
-            pSylow psylow {pmpz, {{exp_pval, E.g^cofac}}};
-            verbose_fmt_print(0, 1, "{}-Sylow: {}\n", pmpz, psylow);
+        } else { /* exp_pval == group_order */
+            pSylow psylow {p, {{exp_pval, E.g^cofac}}};
+            verbose_fmt_print(0, 1, "{}-Sylow: {}\n", p, psylow);
             S.emplace_back(std::move(psylow));
         }
 
@@ -656,7 +669,7 @@ imaginary_quadratic_cl_structure::pSylow_groups(Exponent const & E,
         if (actual_pval != group_order_pval) {
             verbose_fmt_print(0, 1, "# Warning: for p={}, from parameters "
                                     "expected valuation of p in the group "
-                                    "order to be {} , got {} instead\n", pmpz,
+                                    "order to be {} , got {} instead\n", p,
                                     group_order_pval, actual_pval);
         }
 
