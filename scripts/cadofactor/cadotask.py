@@ -5530,12 +5530,14 @@ class LinAlgClTask(Task):
                     workdir = self.workdir.make_dirname(subdir=dirname)
                     workdir.mkdir(parent=True)
                     wdir = workdir.realpath()
-                    self.state["ran_already"] += "," + dirname
+                    if not self.state["ran_already"]:
+                        self.state["ran_already"] = dirname
+                    else:
+                        self.state["ran_already"] += "," + dirname
 
                     (stdoutpath, stderrpath) = self.make_std_paths(
                                                     dirname,
-                                                    do_increment=h is not None)
-                    # TODO Test if already_ran, if yes read the data back
+                                                    do_increment=False)
                     p = cadoprograms.BWC(determinant=True,
                                          matrix=matrix,
                                          wdir=wdir,
