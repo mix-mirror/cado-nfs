@@ -673,10 +673,18 @@ void process_bucket_region_run::cofactoring_sync (survivors_t & survivors)/*{{{*
                  * valuations are not desired here.
                  */
                 if ((side == Q.doing.side) && (!Q.doing.is_prime())) {
-                    for (const auto &x : Q.doing.prime_factors) {
-                        if (mpz_divisible_uint64_p(cur.norm[side], x)) {
-                            mpz_divexact_uint64(cur.norm[side], cur.norm[side], x);
-                            cur.factors[side].push_back(x);
+                    for (const auto &p : Q.doing.prime_factors) {
+                        while (mpz_divisible_uint64_p(cur.norm[side], p)) {
+                            mpz_divexact_uint64(cur.norm[side], cur.norm[side], p);
+                            cur.factors[side].push_back(p);
+#ifdef TRACE_K
+                            if (cur.trace_on_spot()) {
+                                verbose_fmt_print(TRACE_CHANNEL, 0,
+                                    "# N = {}, x = {}, dividing out prime p = "
+                                    "{} (coming from special-q), norm = {}\n",
+                                    N, x, p, cur.norm[side]);
+                            }
+#endif
                         }
                     }
                 }
