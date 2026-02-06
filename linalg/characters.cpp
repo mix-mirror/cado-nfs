@@ -76,39 +76,40 @@
 
 #include "cado.h" // IWYU pragma: keep
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <climits>
 #include <cinttypes>
-#include <cstdint>                    // for uint64_t, int64_t, uint32_t
+#include <cstdint>
+
+#include <algorithm>
 #include <numeric>
-#include <sys/stat.h>
-#include <utility>                     // for swap
+#include <utility>
 #include <vector>
 
-#include <gmp.h>                       // for mpz_t, mp_limb_t, mpz_sgn, mpz...
+#include <sys/stat.h>
+
+#include <gmp.h>
+#include "fmt/base.h"
 
 #include "gmp_aux.h"
 #include "bblas_gauss.h"
 #include "blockmatrix.hpp"
-#include "cado_poly.h"  // cado_poly_ptr
-#include "filter_io.h"  // earlyparsed_relation_ptr
-#include "fix-endianness.h" // fwrite32_little
-#include "gzip.h"       // fopen_maybe_compressed
+#include "cado_poly.h"
+#include "filter_io.h"
+#include "fix-endianness.h"
+#include "gzip.h"
 #include "macros.h"
-#include "misc.h"       // has_suffix
+#include "misc.h"
 #include "arith/mod_ul.h"
-#include "mpz_poly.h"   // mpz_poly_ptr
-#include "params.h"     // param_list
-#include "purgedfile.h" // purgedfile_read_firstline
-#include "rootfinder.h" // mpz_poly_roots_ulong
-#include "submatrix_range.hpp"  // for submatrix_range
-#include "timing.h"                    // for wct_seconds, print_timing_and_...
+#include "mpz_poly.h"
+#include "params.h"
+#include "purgedfile.h"
+#include "rootfinder.h"
+#include "submatrix_range.hpp"
+#include "timing.h"
 #include "version_info.h"
-
-#include "fmt/base.h"
 
 
 typedef struct {
@@ -166,7 +167,7 @@ static uint64_t eval_64chars(
         decltype(std::declval<typename cfg::rel_t>()->a) a,
         decltype(std::declval<typename cfg::rel_t>()->b) b,
         alg_prime_t const * chars,
-        cado_poly_srcptr cpoly)
+        cxx_cado_poly const & cpoly)
 {
     /* FIXME: do better. E.g. use 16-bit primes, and a look-up table. Could
      * beat this. */
@@ -252,15 +253,15 @@ static uint64_t eval_64chars(
 static std::vector<alg_prime_t>
 create_characters(
         std::vector<int> const & nchars,
-        cado_poly cpoly,
-        unsigned long *lpb)
+        cxx_cado_poly const & cpoly,
+        const unsigned long *lpb)
 {
     unsigned long p;
     int ret;
     cxx_mpz pp;
     std::vector<unsigned long> roots;
 
-    int nchars_tot = std::accumulate(nchars.begin(), nchars.end(), 0);
+    const int nchars_tot = std::accumulate(nchars.begin(), nchars.end(), 0);
     ASSERT_ALWAYS(nchars_tot > 0);
 
     int const nchars2 = iceildiv(nchars_tot, 64) * 64;
@@ -329,7 +330,7 @@ create_characters(
 }
 
 static std::vector<alg_prime_t>
-create_sign_characters_only(cado_poly cpoly)
+create_sign_characters_only(cxx_cado_poly const & cpoly)
 {
     std::vector<alg_prime_t> chars(iceildiv(cpoly->nb_polys, 64) * 64);
 
@@ -353,7 +354,7 @@ typedef struct
 {
     std::vector<alg_prime_t> const & chars;
     blockmatrix & res;
-    cado_poly_ptr cpoly;
+    cxx_cado_poly const * cpoly;
 } chars_data_t;
 
 template<filter_io_config cfg>
@@ -363,7 +364,7 @@ thread_chars(void * context_data, typename cfg::rel_ptr rel)
     chars_data_t *data = (chars_data_t *) context_data;
     std::vector<alg_prime_t> const & chars = data->chars;
     blockmatrix & res = data->res;
-    cado_poly_ptr cpoly = data->cpoly;
+    auto const & cpoly = * data->cpoly;
 
     for(size_t cg = 0 ; cg < chars.size() ; cg+=64) {
         uint64_t w = eval_64chars<cfg>(rel->a, rel->b, chars.data()+cg, cpoly);
@@ -378,7 +379,7 @@ template<filter_io_config cfg>
 blockmatrix big_character_matrix(
         std::vector<alg_prime_t> chars,
         const char * purgedname,
-        cado_poly_ptr cpoly,
+        cxx_cado_poly const & cpoly,
         int nthreads)
 {
     uint64_t nrows, ncols;
@@ -392,7 +393,7 @@ blockmatrix big_character_matrix(
      */
     fmt::print(stderr, "Reading {} pairs from {} and computing {} characters\n",
                        nrows, purgedname, chars.size());
-    chars_data_t data = {.chars = chars, .res=res, .cpoly=cpoly};
+    chars_data_t data = {.chars = chars, .res=res, .cpoly=&cpoly};
     std::vector<std::string> fic { purgedname };
     typename cfg::description_t desc[2] = {
         { thread_chars<cfg>, &data, nthreads, }, { nullptr, nullptr, 0, },
@@ -660,7 +661,7 @@ int main(int argc, char const * argv[])
 {
     const char * heavyblockname = NULL;
     int nchars, nratchars = 0;
-    cado_poly cpoly;
+    cxx_cado_poly cpoly;
     const char *purgedname = NULL;
     const char *indexname = NULL;
     const char *outname = NULL;
@@ -678,8 +679,7 @@ int main(int argc, char const * argv[])
       fprintf (stderr, " %s", argv[i]);
     fprintf (stderr, "\n");
 
-    param_list pl;
-    param_list_init(pl);
+    cxx_param_list pl;
     declare_usage(pl);
 
     argc--,argv++;
@@ -701,8 +701,6 @@ int main(int argc, char const * argv[])
     outname = param_list_lookup_string(pl, "out");
     heavyblockname = param_list_lookup_string(pl, "heavyblock");
     bw_kernel_file = param_list_lookup_string(pl, "ker");
-
-    cado_poly_init (cpoly);
 
     const char * tmp;
 
@@ -879,9 +877,6 @@ int main(int argc, char const * argv[])
                 k.ncols_padded() - dim);
     }
     // blockmatrix_free(k);
-
-    cado_poly_clear(cpoly);
-    param_list_clear(pl);
 
     /* print total time and memory usage */
     print_timing_and_memory (stdout, cpu0, wct0);
