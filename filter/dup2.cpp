@@ -47,44 +47,47 @@
 */
 
 #include "cado.h"     // IWYU pragma: keep
-#include <cerrno>    // for errno
-#include <cinttypes> // for PRIu64, PRId64, PRIx64, PRIu32
-#include <cstddef>   // for ptrdiff_t
-#include <cstdint>   // for uint64_t, uint32_t, int64_t
-#include <cstdio>    // for fprintf, stderr, NULL, asprintf, feof, FILE
-#include <cstdlib>   // for exit, free, malloc, abort, EXIT_FAILURE
-#include <cstring>   // for strlen, strdup, memset, memcpy, strerror
+#include <cerrno>
+#include <cinttypes>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
 #include <memory>
 
 #ifdef HAVE_MINGW
-#include <fcntl.h> /* for _O_BINARY */
+#include <fcntl.h>
 #endif
-#include "cado_poly.h"      // for cado_poly_read, cxx_cado_poly
-#include "filter_config.h"  // for CA_DUP2, CB_DUP2
-#include "filter_io.h"      // for earlyparsed_relation_s, filter_rels_desc...
-#include "gmp_aux.h"        // for uint64_nextprime
-#include "gzip.h"           // for fclose_maybe_compressed, fopen_maybe_com...
-#include "macros.h"         // for ASSERT_ALWAYS, MAYBE_UNUSED, UNLIKELY
-#include "misc.h"           // for filelist_clear, filelist_from_file
-#include "params.h"         // for cxx_param_list, param_list_decl_usage
-#include "portability.h"    // strdup  // IWYU pragma: keep
-#include "relation-tools.h" // for u64toa16, d64toa16, relation_compute_r
-#include "renumber.hpp"     // for renumber_t
-#include "renumber_proxy.h" // for renumber_proxy_t
-#include "typedefs.h"       // for prime_t, index_t, p_r_values_t, weight_t
-#include "verbose.h"        // for verbose_decl_usage, verbose_interpret_pa...
 
 #include "fmt/base.h"
 
+#include "cado_poly.h"
+#include "filter_config.h"
+#include "filter_io.h"
+#include "gmp_aux.h"
+#include "gzip.h"
+#include "macros.h"
+#include "misc.h"
+#include "params.h"
+#include "portability.h"
+#include "relation-tools.h"
+#include "renumber.hpp"
+#include "typedefs.h"
+#include "verbose.h"
+#include "portability.h"   // strdup       // IWYU pragma: keep
+
 #define DEBUG 0
+
+/* TODO: get rid of this gazillion globals! */
 
 char const * argv0; /* = argv[0] */
 
 /* Renumbering table to convert from (p,r) to an index */
-renumber_proxy_t renumber_tab;
+static renumber_t renumber_tab;
 
 static uint32_t * H;   /* H contains the hash table */
 static uint64_t K = 0; /* Size of the hash table */
@@ -136,10 +139,10 @@ static inline void sanity_check(uint64_t i, Ta a, Tb b)
 
 static inline void print_warning_size()
 {
-    uint64_t nodup = nrels_tot - ndup_tot;
-    double full_table = 100.0 * (double)nodup / (double)K;
+    const uint64_t nodup = nrels_tot - ndup_tot;
+    const double full_table = 100.0 * double_ratio(nodup, K);
     fprintf(stderr, "Warning, hash table is %1.0f%% full (avg cost %1.2f)\n",
-            full_table, cost / (double)nrels_tot);
+            full_table, double_ratio(cost, nrels_tot));
     if (full_table >= 99.0) {
         fprintf(stderr, "Error, hash table is full\n");
         exit(1);
@@ -166,14 +169,15 @@ static inline void print_relation(FILE * file, typename cfg::rel_t rel)
     p = u64toa16(p, rel->b);
     *p++ = ':';
 
+    /* write everything with trailing commas, and strip the last one in
+     * the end.  */
     for (unsigned int i = 0; i < rel->nb; i++) {
         if (rel->primes[i].e > 0) {
             op = p;
             p = u64toa16(p, (uint64_t)rel->primes[i].h);
             *p++ = ',';
-            ptrdiff_t t = p - op;
-            for (unsigned int j = (unsigned int)((rel->primes[i].e) - 1); j--;
-                 p += t)
+            const ptrdiff_t t = p - op;
+            for (int j = 1 ; j < rel->primes[i].e ; j++, p += t)
                 memcpy(p, op, t);
             nonvoidside |= ((uint64_t)1) << rel->primes[i].side;
         }
@@ -192,8 +196,8 @@ static inline void print_relation(FILE * file, typename cfg::rel_t rel)
      * for free relations, of course).
      */
 
-    if (number_of_additional_columns(renumber_tab)) {
-        size_t n = renumber_table_get_nb_polys(renumber_tab);
+    if (renumber_tab.number_of_additional_columns()) {
+        size_t n = renumber_tab.get_nb_polys();
         if (n == 2) {
             /* Possible cases when we have two sides:
              *  - both are monic, there is no J ideal
@@ -207,10 +211,8 @@ static inline void print_relation(FILE * file, typename cfg::rel_t rel)
             p = u64toa16(p, (uint64_t)0);
             *p++ = ',';
         } else {
-            auto sides = std::make_unique<int[]>(n);
-            renumber_table_get_sides_of_additional_columns(renumber_tab, sides.get(),
-                                                           &n);
-            for (index_t idx = 0; idx < n; idx++) {
+            auto sides = renumber_tab.get_sides_of_additional_columns();
+            for (size_t idx = 0; idx < sides.size(); idx++) {
                 int side = sides[idx];
                 if ((nonvoidside & (((uint64_t)1) << side))) {
                     p = u64toa16(p, (uint64_t)idx);
@@ -328,11 +330,11 @@ static inline void compute_index_rel(typename cfg::rel_t rel)
     unsigned int i;
     p_r_values_t r;
     prime_t * pr = rel->primes;
-    weight_t len = rel->nb; // rel->nb can be modified by bad ideals
+    const weight_t len = rel->nb; // rel->nb can be modified by bad ideals
 
     for (i = 0; i < len; i++) {
         if (pr[i].e > 0) {
-            if (pr[i].side != renumber_table_get_rational_side(renumber_tab)) {
+            if (pr[i].side != renumber_tab.get_rational_side()) {
 #if DEBUG >= 1
                 // Check for this bug : [#15897] [las] output "ideals" that are
                 // not prime
@@ -350,9 +352,9 @@ static inline void compute_index_rel(typename cfg::rel_t rel)
                 r = 0; // on the rational side we need not compute r, which is m
                        // mod p.
 
-            p_r_values_t p = pr[i].p;
-            int side = pr[i].side;
-            renumber_t const & R = *((renumber_t const *) renumber_tab->x);
+            const p_r_values_t p = pr[i].p;
+            const int side = pr[i].side;
+            renumber_t const & R = renumber_tab;
             renumber_t::p_r_side const prside { p, r, side };
             if (R.is_bad(prside)) {
                 auto [ first_index, exps ] = R.indices_from_p_a_b(
@@ -410,6 +412,8 @@ static inline void compute_index_rel(typename cfg::rel_t rel)
  * is *oname_tmp, and later on upon successful completion, that file must
  * be renamed to *oname. Otherwise disaster may occur, as there is a slim
  * possibility that *oname == infilename on return.
+ *
+ * TODO: rewrite with std::string
  */
 static void get_outfilename_from_infilename(char const * infilename,
                                             char const * outfmt,
@@ -427,7 +431,7 @@ static void get_outfilename_from_infilename(char const * infilename,
 
 #define chkrcp(x)                                                              \
     do {                                                                       \
-        int rc = x;                                                            \
+        const int rc = x;                                                      \
         ASSERT_ALWAYS(rc >= 0);                                                \
     } while (0)
     if (outdir) {
@@ -452,8 +456,8 @@ static void get_outfilename_from_infilename(char const * infilename,
 
 static void dup_print_stat(char const * s, uint64_t nrels, uint64_t ndup)
 {
-    uint64_t nrem = nrels - ndup;
-    double pdup = 100.0 * ((double)ndup) / ((double)nrels);
+    const uint64_t nrem = nrels - ndup;
+    const double pdup = 100.0 * double_ratio(ndup, nrels);
     fprintf(stderr,
             "%s: nrels=%" PRIu64 " dup=%" PRIu64 " (%.2f%%) rem=%" PRIu64 "\n",
             s, nrels, ndup, pdup, nrem);
@@ -563,7 +567,7 @@ int check_whether_file_is_renumbered(char const * filename)
 
     /* Look for first non-comment line */
     while (1) {
-        char * ret = fgets(s, 1024, f_tmp);
+        const char * ret = fgets(s, 1024, f_tmp);
         if (ret == NULL) {
             /* fgets returns NULL when the end of file occurs or when there is
                an error */
@@ -600,7 +604,7 @@ int check_whether_file_is_renumbered(char const * filename)
 }
 
 template<filter_io_config cfg>
-void
+static void
 filter_new_rels(
         std::vector<std::string> const & files_new,
         char const * outdir,
@@ -614,6 +618,7 @@ filter_new_rels(
     fmt::print(stderr, "Reading new files (using {} auxiliary threads for "
                        "roots mod p):\n", desc[0].n);
 
+    /* TODO: use std::string for filename mangling */
     for (std::string const & p: files_new) {
         FILE * output = NULL;
         char *oname, *oname_tmp;
@@ -696,11 +701,8 @@ int main(int argc, char const * argv[])
 {
     argv0 = argv[0];
 
-    param_list pl;
-    cado_poly cpoly;
-
-    param_list_init(pl);
-    cado_poly_init(cpoly);
+    cxx_param_list pl;
+    cxx_cado_poly cpoly;
 
     declare_usage(pl);
     argv++, argc--;
@@ -783,8 +785,8 @@ int main(int argc, char const * argv[])
 
     set_antebuffer_path(argv0, path_antebuffer);
 
-    renumber_table_init(renumber_tab, cpoly);
-    renumber_table_read_from_file(renumber_tab, renumberfilename, is_for_dl);
+    renumber_tab = renumber_t(cpoly);
+    renumber_tab.read_from_file(renumberfilename, is_for_dl);
 
     /* sanity check: since we allocate two 64-bit words for each, instead of
        one 32-bit word for the hash table, taking K/100 will use 2.5% extra
@@ -793,11 +795,8 @@ int main(int argc, char const * argv[])
     fmt::print(stderr, "[checking true duplicates on sample of {} cells]\n",
             sanity_ab.size());
 
-    H = (uint32_t *)malloc(K * sizeof(uint32_t));
-    if (H == NULL) {
-        fprintf(stderr, "Error, cannot allocate hash table\n");
-        exit(1);
-    }
+    auto Hmem = std::make_unique<uint32_t[]>(K);
+    H = Hmem.get();
     memset(H, 0, K * sizeof(uint32_t));
     fprintf(stderr,
             "Allocated hash table of %" PRIu64 " entries (%" PRIu64 "MiB)\n", K,
@@ -811,14 +810,14 @@ int main(int argc, char const * argv[])
         fprintf(stderr, "Constructing the two filelists...\n");
         char const ** files =
             filelist ? filelist_from_file(basepath, filelist, 0) : argv;
-        for (char const ** p = files; *p; p++)
+        for (const auto * p = files; *p; p++)
             nb_files++;
 
         /* separate already processed files
          * check if f_tmp is in raw format a,b:...:... or
          *            in renumbered format a,b:...
          */
-        for (char const ** p = files; *p; p++) {
+        for (const auto * p = files; *p; p++) {
             /* always strdup these, so that we can safely call
              * filelist_clear in the end */
             if (check_whether_file_is_renumbered(*p)) {
@@ -861,8 +860,8 @@ int main(int argc, char const * argv[])
     fprintf(stderr,
             "At the end: hash table is %1.2f%% full\n"
             "            hash table cost: %1.2f per relation\n",
-            100.0 * (double)(nrels_tot - ndup_tot) / (double)K,
-            1.0 + cost / (double)nrels_tot);
+            100.0 * double_ratio(nrels_tot - ndup_tot, K),
+            1.0 + double_ratio(cost, nrels_tot));
     fprintf(stderr,
             "  [found %lu true duplicates on sample of %lu relations]\n",
             sanity_collisions, sanity_checked);
@@ -884,11 +883,6 @@ int main(int argc, char const * argv[])
                     nrels_tot, nrels_expected);
         }
     }
-
-    renumber_table_clear(renumber_tab);
-    free(H);
-    cado_poly_clear(cpoly);
-    param_list_clear(pl);
 
     return 0;
 }
