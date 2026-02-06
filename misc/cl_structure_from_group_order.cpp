@@ -1,29 +1,36 @@
 #include "cado.h" // IWYU pragma: keep
 
 #include <ctime>
+#include <climits>
+
+#include <exception>
+#include <functional>
 #include <ostream>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <tuple>
 #include <unordered_set>
+#include <utility>
 #include <vector>
-#include <stdexcept>
 
 #include <gmp.h>
 
+#include "fmt/format.h"
 #include "fmt/ranges.h" // used to print std::vector<> // IWYU pragma: keep
+#include "fmt/ostream.h"
 
+#include "cado_poly.h"
+#include "cxx_mpz.hpp"
+#include "gmp_aux.h"
 #include "getprime.h"
 #include "imaginary_quadratic_class_groups.hpp"
-#include "params.h"     // param_list
-#include "roots_mod.h"
-#include "cado_poly.h"
-#include "verbose.h"
-#include "prime_power_factorization.hpp"
-#include "cxx_mpz.hpp"
+#include "macros.h"
 #include "mpz_poly.h"
-
-#include <functional>
+#include "params.h"     // param_list
+#include "prime_power_factorization.hpp"
+#include "roots_mod.h"
+#include "verbose.h"
 
 /* boost::hash_combine
  * Copyright 2005-2014 Daniel James.
@@ -168,7 +175,7 @@ class cxx_mpz_factored
         for (size_t i = 0; i < nfactors(); ++i) {
             if (P[i] == p) {
                 vals[i] += incr;
-                for (unsigned int j = 0u; j < incr; ++j) {
+                for (unsigned int j = 0U; j < incr; ++j) {
                     mpz_mul(v, v, P[i]);
                 }
                 return vals[i];
@@ -250,11 +257,11 @@ class imaginary_quadratic_cl_structure
             }
         } else {
             uint64_t rr[2];
-            unsigned long Dmodp = mpz_fdiv_ui(cl.discriminant(), p);
+            const unsigned long Dmodp = mpz_fdiv_ui(cl.discriminant(), p);
             if (!Dmodp) { /* D is 0 mod p */
                 return Dmod2 ? p : 0U;
             }
-            unsigned int nr = roots_mod_uint64(rr, Dmodp, 2, p, randgen);
+            const unsigned int nr = roots_mod_uint64(rr, Dmodp, 2, p, randgen);
             /* nr is 0 or 2 as the case of 1 square root was already handled */
             if (nr == 0U) {
                 return ULONG_MAX; /* no roots mod p */
@@ -270,7 +277,7 @@ class imaginary_quadratic_cl_structure
                                  imaginary_quadratic_form f) const
     {
         cxx_mpz const & pi = group_order.prime(i);
-        unsigned int ei = group_order.valuation(i);
+        const unsigned int ei = group_order.valuation(i);
         for (unsigned int j = 0; j <= ei; ++j) {
             if (f.is_one()) {
                 v[i] = j;
@@ -340,7 +347,7 @@ class imaginary_quadratic_cl_structure
                             imaginary_quadratic_form const & ge)
         {
             ASSERT_ALWAYS(mpz_fits_uint_p(pmpz));
-            unsigned int p = mpz_get_ui(pmpz);
+            const unsigned int p = mpz_get_ui(pmpz);
             std::vector<std::set<imaginary_quadratic_form>> by_order;
             by_order.resize(exponent_pval+1);
             std::vector<unsigned int> power_of_p {1U};
@@ -536,7 +543,7 @@ class imaginary_quadratic_cl_structure
         if (pe >= naive_pSylow_bound) {
             throw too_large_pSylow();
         }
-        unsigned long p_exponent = mpz_get_ui(pe);
+        const unsigned long p_exponent = mpz_get_ui(pe);
         mpz_pow_ui(p_group_order, pmpz, group_order_pval);
 
         /* Compute cofac such that exponent = p^exp_pval * cofac */
