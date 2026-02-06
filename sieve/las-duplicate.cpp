@@ -453,7 +453,7 @@ relation_is_duplicate(relation const& rel,
 
     /* If the special-q does not fit in an unsigned long, we assume it's not a
      * duplicate and just move on.
-     * Note: these conditions means that this function will always return false
+     * Note: these conditions mean that this function will always return false
      * for SIQS. FIXME
      */
     if (doing.is_prime() && !mpz_fits_uint64_p(doing.p)) {

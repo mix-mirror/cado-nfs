@@ -246,7 +246,7 @@ double bucket_array_t<LEVEL, HINT>::average_full() const
     size_t a = 0;
     for (unsigned int i = 0; i < n_bucket; ++i)
         a += nb_of_updates(i);
-    return (double)a / (bucket_start[n_bucket] - bucket_start[0]);
+    return double_ratio(a, bucket_start[n_bucket] - bucket_start[0]);
 }
 
 template <int LEVEL, typename HINT>

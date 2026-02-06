@@ -1,12 +1,12 @@
 #include "cado.h" // IWYU pragma: keep
 
-#include <cmath>       // for frexp, ldexp
+#include <cmath>
 #include <cstdint>
+
 #include <ranges>
+#include <ostream>
 
-#include <ostream>      // for operator<<, basic_ostream, char_traits, ostream
-
-#include <gmp.h>        // for mpz_t, mpz_clear, mpz_mul, mpz_mul_2exp, mpz_...
+#include <gmp.h>
 
 #include "gmp_aux.h"
 #include "las-qlattice.hpp"
