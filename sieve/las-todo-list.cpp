@@ -3,7 +3,6 @@
 #include <cctype>
 #include <cerrno>
 #include <climits>
-#include <cstdarg>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -83,7 +82,7 @@ todo_list_base::todo_list_base(cxx_cado_poly const & cpoly, cxx_param_list & pl)
      * las_todo_feed, but this is an admittedly contrived way to work */
     const char * filename = param_list_lookup_string(pl, "todo");
     if (filename) {
-        todo_list_fd.reset(new std::ifstream(filename));
+        todo_list_fd = std::make_unique<std::ifstream>(filename);
         if (todo_list_fd->fail()) {
             fprintf(stderr, "%s: %s\n", filename, strerror(errno));
             /* There's no point in proceeding, since it would really change
@@ -294,7 +293,7 @@ las_todo_list::las_todo_list(cxx_cado_poly const & cpoly, cxx_param_list & pl)
                 exit(EXIT_FAILURE);
             }
             std::vector<cxx_mpz> roots = mpz_poly_roots(cpoly->pols[sqside], q0, fac_q, rstate);
-            if (std::find(roots.begin(), roots.end(), rho) == roots.end()) {
+            if (std::ranges::find(roots, rho) == roots.end()) {
                 fprintf(stderr, "Error: rho is not a root modulo q0\n");
                 exit(EXIT_FAILURE);
             }
@@ -675,7 +674,7 @@ special_q siqs_todo_list::special_q_from_index(cxx_mpz const & idx,
         f = get_qfac_prime(f);
         mpz_mul_ui(scratch_q, scratch_q, f);
     }
-    return special_q(scratch_q, -1, sqside, scratch_vec);
+    return { scratch_q, -1, sqside, scratch_vec };
 }
 
 uint64_t siqs_todo_list::get_qfac_prime(uint64_t i) {
