@@ -641,6 +641,21 @@ cado_divert_test(test_init_norms rsa220
     AVOID_CONCURRENT 2
 )
 
+cado_divert_test(test_init_norms rsa220_I17
+    ARGUMENTS
+        -poly ${CMAKE_CURRENT_SOURCE_DIR}/rsa220.poly
+        -I 17 -lpb0 34 -lpb1 34 -mfb0 68 -mfb1 102
+        -q0 4000000000
+        -q1 4001000000
+        -random-sample 10
+        -random-seed 0
+        -sqside 1
+        -t 2
+        --hush-max-jitter 1
+        --abort-on-jitter 1,5
+    AVOID_CONCURRENT 2
+)
+
 cado_divert_test(test_init_norms bug21518
     ARGUMENTS
     -poly ${CMAKE_CURRENT_SOURCE_DIR}/c160_21518.poly
