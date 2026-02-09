@@ -773,6 +773,7 @@ parameters/factor/params.c80
 parameters/factor/params.c85
 parameters/factor/params.c90
 parameters/factor/params.c95
+parameters/factor/params.qs.c40
 parameters/factor/params.qs.c60
 parameters/misc/cpubinding.conf
 parameters/polynomials/F9.poly

@@ -140,6 +140,26 @@ cado_define_test(full_c30
             TIMEOUT 360
             )
 
+        # Test for factorization computation using QS
+        cado_define_test(full_c40_qs
+            SCRIPT
+            ${CMAKE_CURRENT_SOURCE_DIR}/provide-wdir.sh  --arg workdir
+            ${CADO_NFS_BINARY_DIR}/cado-nfs.py
+            -qs -t 2
+            slaves.downloadretry=1
+            1513082186477365836608886586480243097453
+            TARGET_DEPENDENCIES full_dependencies_base
+            siqs
+            merge replay filter_galois
+            bwc_full_gf2
+            characters sqrt
+            AVOID_CONCURRENT 16
+            ENVIRONMENT OMP_DYNAMIC=true OMP_NUM_THREADS=16
+                        OMP_THREAD_LIMIT=16
+            TIMEOUT 360
+        )
+
+
         if(HAVE_GMPECM)
             # Test for CL computation with 20-digit discriminant
             # It requires the factor binary which requires gmp-ecm

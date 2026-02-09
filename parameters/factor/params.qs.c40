@@ -7,22 +7,22 @@
 # General parameters
 ###########################################################################
 
-name = c60
+name = c40
 
 ###########################################################################
 # Sieve
 ###########################################################################
 
-tasks.I = 14
-tasks.lim0 = 50000
-tasks.lpb0 = 20
-tasks.sieve.mfb0 = 42
+tasks.I = 13
+tasks.lim0 = 7500
+tasks.lpb0 = 15
+tasks.sieve.mfb0 = 30
 tasks.sieve.qrange = 25
 tasks.qmin = 1 # cannot be 0 as it it interpreted as a special value
 
-tasks.sieve.qfac_min = 750
-tasks.sieve.qfac_max = 1024
-tasks.sieve.qfac_nfac = 10
+tasks.sieve.qfac_min = 900
+tasks.sieve.qfac_max = 1200
+tasks.sieve.qfac_nfac = 6
 
 tasks.sieve.ncurves0 = 2
 
