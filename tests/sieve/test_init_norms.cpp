@@ -354,7 +354,7 @@ int main(int argc0, char const * argv0[])
 
         /* do a correctness check */
         for(int const side : sides) {
-            unsigned int const N = (check_bucket >= 0) ? check_bucket : (unsigned int) gmp_urandomm_ui(rstate, iceildiv(I*J, B));     
+            unsigned int const N = (check_bucket >= 0) ? check_bucket : (unsigned int) gmp_urandomm_ui(rstate, iceildiv(((uint64_t) I)*J, B));
             for(size_t c = 0 ; c < impls.size() ; c++) {
                 lognorms[c][side]->fill(S[c], N);
                 if (c == 0) continue;
@@ -418,7 +418,7 @@ int main(int argc0, char const * argv0[])
                 rstate2 = rstate;
                 double t = -wct_seconds();
                 for(int i = 0 ; i < nfills_speed_test ; i++) {
-                    lognorms[c][side]->fill(S[c], gmp_urandomm_ui(rstate2, iceildiv(I*J, B)));
+                    lognorms[c][side]->fill(S[c], gmp_urandomm_ui(rstate2, iceildiv(((uint64_t) I)*J, B)));
                 }
                 printf("# Side %d, lognorm %s code: %.3f microseconds per bucket region\n", 
                         side,
