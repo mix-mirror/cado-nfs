@@ -883,6 +883,7 @@ cado_define_test(d100_siqs_sieve
             -qfac-min 1693 -qfac-nfac 14 -qidx0 3 -allow-compsq
             -v -v
         TARGET_DEPENDENCIES siqs
+        TIMEOUT 40
         )
 
 cado_divert_test(d100_siqs_sieve logI_larger_than_logB
