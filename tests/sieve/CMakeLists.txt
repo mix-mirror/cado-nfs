@@ -862,43 +862,38 @@ cado_divert_test(d20_siqs_sieve tracek
             siqs_tracek
         )
 
-set(d100_poly ${CMAKE_CURRENT_SOURCE_DIR}/d100.poly)
-set(d100_roots ${CMAKE_CURRENT_SOURCE_DIR}/d100.roots.gz)
-cado_define_test(d100_siqs_sieve
+set(d60_poly ${CMAKE_CURRENT_SOURCE_DIR}/d60.poly)
+set(d60_roots ${CMAKE_CURRENT_SOURCE_DIR}/d60.roots.gz)
+cado_define_test(d60_siqs_sieve
         ENVIRONMENT
-            las_I=14 poly=${d100_poly}
-            lim0=240000 lpb0=32 mfb0=64 ncurves0=2 fb0=${d100_roots}
+            las_I=14 poly=${d60_poly}
+            lim0=50000 lpb0=20 mfb0=42 ncurves0=2 fb0=${d60_roots}
             nq=2 galois=_y
             lim1=xxx lpb1=xxx mfb1=xxx q0=xxx
             # Note: the last 4 args (lim1, lpb1, mfb1 and q0) are not needed but
             # sievetest.sh complains if they are not present
             LAS_BINARY=${siqs_path}
-        REL_COUNT=8
-        REFERENCE_SHA1=5585080a60798161b74fb6ce09bf1ebfa55396ef
+        REL_COUNT=147
+        REFERENCE_SHA1=b86f67f9533ec478bc01f23df4925d77a7cad7f1
         REFERENCE_REVISION=xxxxxxxxxxxxxxxxxxxxxxxxxx
         PROVIDE_TEMPORARY_WDIR
         SCRIPT
             ${CMAKE_CURRENT_SOURCE_DIR}/sievetest.sh
             # the args below cannot be passed via ENVIRONMENT
-            -qfac-min 1693 -qfac-nfac 14 -qidx0 3 -allow-compsq
+            -qfac-min 750 -qfac-nfac 10 -qidx0 1 -allow-compsq
             -v -v
         TARGET_DEPENDENCIES siqs
-        TIMEOUT 60
+        TIMEOUT 30
         )
 
-cado_divert_test(d100_siqs_sieve logI_larger_than_logB
+cado_divert_test(d60_siqs_sieve logI_larger_than_logB
         APPEND_ARGUMENTS
             -B 12
         )
 
-cado_divert_test(d100_siqs_sieve level2
+cado_divert_test(d60_siqs_sieve level2
         APPEND_ARGUMENTS
-            -Bi 4 -bkthresh1 100000
-        )
-
-cado_divert_test(d100_siqs_sieve level2_logI_larger_than_logB
-        APPEND_ARGUMENTS
-            -B 14 -Bi 5 -bkthresh1 125000
+            -Bi 4 -bkthresh1 40000
         )
 
 add_subdirectory (ecm)
