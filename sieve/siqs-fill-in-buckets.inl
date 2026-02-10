@@ -18,10 +18,6 @@ static task_result * make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
     auto & V(param->V);
     auto const & slice(param->slice);
 
-    fmt::println(stderr, "\n~~~DEV~ {} LEVEL={} J={} logB={} logI={} #slice={}",
-                         __func__, LEVEL, ws.J, LOG_BUCKET_REGIONS[LEVEL],
-                         ws.conf.logI, slice.size());
-
     auto const index0 = ws.sides[param->side].fbs->get_part(LEVEL).first_slice_index;
     auto const index = slice.get_index();
     auto const relative_index = index - index0;
