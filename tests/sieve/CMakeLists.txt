@@ -896,6 +896,40 @@ cado_divert_test(d60_siqs_sieve level2
             -Bi 4 -bkthresh1 40000
         )
 
+cado_divert_test(d60_siqs_sieve print_todo
+        APPEND_ENVIRONMENT
+            nq=5
+        REL_COUNT=
+        REFERENCE_SHA1=dd6dd9ade9e3e910109903e932b2bf254a987b47
+        APPEND_ARGUMENTS
+            -print-todo-list
+)
+
+cado_divert_test(d60_siqs_sieve_print_todo thr2
+        APPEND_ARGUMENTS -t 2
+)
+
+cado_divert_test(d60_siqs_sieve_print_todo thr3
+        APPEND_ARGUMENTS -t 3
+)
+
+cado_divert_test(d60_siqs_sieve print_todo_random
+        APPEND_ENVIRONMENT
+            nq= q1=xxx
+        REL_COUNT=
+        REFERENCE_SHA1=3886c1df6782605246a82539f7d3f505502a4dc3
+        APPEND_ARGUMENTS
+            -print-todo-list -qidx1 100 -random-sample 10 -seed 42
+)
+
+cado_divert_test(d60_siqs_sieve_print_todo_random thr2
+        APPEND_ARGUMENTS -t 2
+)
+
+cado_divert_test(d60_siqs_sieve_print_todo_random thr3
+        APPEND_ARGUMENTS -t 3
+)
+
 add_subdirectory (ecm)
 add_subdirectory (strategies)
 if(strategies_variant STREQUAL "strategies_old")

@@ -568,6 +568,18 @@ siqs_todo_list::siqs_todo_list(cxx_cado_poly const & cpoly, cxx_param_list & pl)
         return;
     }
 
+    if (param_list_lookup_string(pl, "qidx1") != nullptr
+            && param_list_lookup_string(pl, "nq") != nullptr) {
+        /* if both nq and qidx1 were given, we should have qidx1=qidx0+nq */
+        cxx_mpz tmp;
+        mpz_add_ui(tmp, qidx0, nq_max);
+        if (tmp != qidx1) {
+            fmt::print(stderr, "Error: incompatible '-nq {}' / '-qidx1 {}' for "
+                               "qidx0={}\n", nq_max, qidx1, qidx0);
+            exit(EXIT_FAILURE);
+        }
+    }
+
     cxx_gmp_randstate rstate;
 
     if (mpz_cmp_si(qidx1, -1) == 0) {
@@ -720,6 +732,7 @@ std::unique_ptr<todo_list_base> siqs_todo_list::create_sub_todo_list(
         os << tmp;
         param_list_add_key(pl2, "qidx1", os.str().c_str(), PARAMETER_FROM_CMDLINE);
     }
+    param_list_remove_key(pl2, "nq");
 
     return todo_list_base::create<siqs_todo_list>(cpoly, pl2);
 }
