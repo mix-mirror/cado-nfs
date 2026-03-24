@@ -99,7 +99,6 @@ polyselect/rotate_all.c
 polyselect/rotation_bound.sage
 polyselect/size_optimization.sage
 polyselect/sopt.c
-polyselect/template-header.c
 polyselect/twocubics.c
 polyselect/twoquadratics.c
 polyselect/twoquadratics.sage
