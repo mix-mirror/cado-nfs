@@ -119,6 +119,19 @@ void search_survivors_in_line_sse2_oneside(unsigned char * const SS,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max,
         std::vector<uint32_t> &survivors);
+void search_survivors_in_line_ss2_siqs(
+        unsigned char * SS,
+        unsigned char bound,
+        unsigned int length,
+        std::vector<uint16_t> &survivors);
+#endif
+
+#ifdef HAVE_AVX2
+void search_survivors_in_line_avx2_siqs(
+        unsigned char * SS,
+        unsigned char bound,
+        unsigned int length,
+        std::vector<uint16_t> &survivors);
 #endif
 
 #endif	/* CADO_LAS_UNSIEVE_HPP */

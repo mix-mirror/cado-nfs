@@ -663,11 +663,30 @@ void search_survivors_in_line(
     }
 }
 
-template void search_survivors_in_line(
+template<>
+void search_survivors_in_line<1>(
         std::array<unsigned char * const, 1> SS,
         const std::array<unsigned char, 1> bound,
         unsigned int length,
-        std::vector<uint16_t> &survivors);
+        std::vector<uint16_t> &survivors)
+{
+#if defined(HAVE_AVX2)
+    search_survivors_in_line_avx2_siqs(SS[0], bound[0], length, survivors);
+#elif defined(HAVE_SSE2)
+    search_survivors_in_line_ss2_siqs(SS[0], bound[0], length, survivors);
+#else
+  unsigned char * S = SS[0];
+  unsigned char const B = bound[0];
+  for (unsigned int x = 0; x < length; ++x, ++S) {
+      bool ok = *S <= B;
+      *S = !ok ? 255u : *S;
+      if (ok) {
+          survivors.push_back(x);
+      }
+  }
+#endif
+}
+
 template void search_survivors_in_line(
         std::array<unsigned char * const, 2> SS,
         const std::array<unsigned char, 2> bound,

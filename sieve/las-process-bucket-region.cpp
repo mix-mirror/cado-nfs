@@ -457,6 +457,9 @@ process_bucket_region_run::survivors_t process_bucket_region_run::search_survivo
         for (size_t i_surv = old_size; i_surv < temp_sv.size(); i_surv++)
             temp_sv[i_surv] += offset;
     }
+
+    /* This used to be called convert_survivors */
+    return { begin(temp_sv), end(temp_sv) };
 #else
     unsigned int const length = 1u << LOG_BUCKET_REGION;
     if (S.size() > 1 && S[0] && S[1]) {
@@ -473,10 +476,9 @@ process_bucket_region_run::survivors_t process_bucket_region_run::search_survivo
         };
         search_survivors_in_line(SS, bounds, length, temp_sv);
     }
-#endif
 
-    /* This used to be called convert_survivors */
-    return { begin(temp_sv), end(temp_sv) };
+    return temp_sv; /* Let's hope NRVO will remove the copy */
+#endif
 }/*}}}*/
 void process_bucket_region_run::purge_buckets(int side, survivors_t const & survivors MAYBE_UNUSED)/*{{{*/
 {

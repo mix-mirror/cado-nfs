@@ -1101,6 +1101,7 @@ sieve/las-threads.hpp
 sieve/las-todo-list.cpp
 sieve/las-todo-list.hpp
 sieve/las-trialdiv.cpp
+sieve/las-unsieve-avx2.cpp
 sieve/las-unsieve-sse2.cpp
 sieve/las-unsieve.cpp
 sieve/las-unsieve.hpp

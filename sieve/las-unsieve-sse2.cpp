@@ -562,3 +562,34 @@ search_survivors_in_line_sse2_oneside(unsigned char * const SS,
       search_survivors_in_line1_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
               td_max, survivors);
 }
+
+void
+search_survivors_in_line_ss2_siqs(
+        unsigned char * SS,
+        unsigned char bound,
+        unsigned int length,
+        std::vector<uint16_t> &survivors)
+{
+    __m128i const B = _mm_xor_si128(_mm_set1_epi8(bound), sign_conversion);
+    const unsigned int x_step = sizeof(__m128i);
+
+    for (unsigned int x_start = 0; x_start < length; x_start += x_step)
+    {
+        /* Do bounds check using SSE pattern, set non-survivors in SS[0] array
+           to 255 */
+        __m128i * ptrS = (__m128i *)(SS + x_start);
+        __m128i const s = *ptrS;
+        __m128i m = _mm_cmpgt_epi8(B, _mm_xor_si128(s, sign_conversion));
+        unsigned int bitmask = (unsigned int) _mm_movemask_epi8(m);
+        m = _mm_xor_si128(m, ff);
+        *ptrS = _mm_or_si128(s, m);
+
+        for (unsigned int x = x_start; UNLIKELY(bitmask != 0); ++x) {
+            unsigned int const tz = ularith_ctz(bitmask);
+            x += tz;
+            bitmask >>= tz + 1u;
+
+            survivors.push_back(x);
+        }
+    }
+}
