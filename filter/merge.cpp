@@ -42,8 +42,10 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA.
 #include <cstdint>
 #include <cstring>
 
+#include <string>
+
 #include "filter_config.h"
-#include "filter_io_old.hpp"
+#include "filter_io.hpp"
 #ifdef FOR_DL
 #include "gcd.h"
 #endif
@@ -148,13 +150,9 @@ buffer_clear (buffer_struct_t *Buf, int nthreads)
 static void
 declare_usage(cxx_param_list & pl)
 {
-  param_list_decl_usage(pl, "mat", "input purged file");
   param_list_decl_usage(pl, "out", "output history file");
-  param_list_decl_usage(pl, "skip", "number of heavy columns to bury (default "
-                                    CADO_STRINGIZE(DEFAULT_MERGE_SKIP) ")");
   param_list_decl_usage(pl, "target_density", "stop when the average row density exceeds this value"
                             " (default " CADO_STRINGIZE(DEFAULT_MERGE_TARGET_DENSITY) ")");
-  param_list_decl_usage(pl, "force-posix-threads", "force the use of posix threads, do not rely on platform memory semantics");
   param_list_decl_usage(pl, "path_antebuffer", "path to antebuffer program");
   param_list_decl_usage(pl, "t", "number of threads");
   param_list_decl_usage(pl, "v", "verbose mode");
@@ -206,81 +204,119 @@ sort_relation (index_t *row, unsigned int n)
 }
 #endif
 
-/* callback function called by filter_rels */
-static void *
-insert_rel_into_table (void *context_data, earlyparsed_relation_ptr rel)
-{
-  filter_matrix_t *mat = (filter_matrix_t *) context_data;
-  unsigned int j = 0;
-  typerow_t buf[UMAX(weight_t)]; /* rel->nb is of type weight_t */
-
-  for (unsigned int i = 0; i < rel->nb; i++)
-  {
-    index_t h = rel->primes[i].h;
-    /* we no longer touch mat->wt, mat->rem_ncols, and mat->tot_weight
-     * from here ; see compute_weights
+struct purged_file_reader {
+    /* mat: not owned. this structure stinks, but it's for later.
      */
-    if (h < mat->skip)
-        continue; /* we skip (bury) the first 'skip' indices */
+    filter_matrix_t * mat;
+    std::string purgedname;
+    bool filter_rels_force_posix_threads = false;
+    unsigned int skip = DEFAULT_MERGE_SKIP;
+    static void declare_usage(cxx_param_list & pl) {
+        pl.declare_usage("mat", "input purged file");
+        pl.declare_usage("skip", "number of heavy columns to bury (default "
+                                    CADO_STRINGIZE(DEFAULT_MERGE_SKIP) ")");
+        pl.declare_usage("force-posix-threads", "force the use of posix threads, do not rely on platform memory semantics");
+    }
+
+    static void configure_switches(cxx_param_list & pl) {
+        pl.configure_switch("force-posix-threads");
+    }
+    purged_file_reader(filter_matrix_t * mat, cxx_param_list & pl)
+        : mat(mat)
+        , purgedname(pl.parse_mandatory<std::string>("mat"))
+        , filter_rels_force_posix_threads(pl.parse<bool>("force-posix-threads"))
+    {
+        pl.parse("skip", skip);
+    }
+
+    template<typename relation_type>
+    void insert_rel_into_table(relation_type & rel)
+    {
+        unsigned int j = 0;
+        typerow_t buf[UMAX(weight_t)]; /* rel->nb is of type weight_t */
+
+        for (auto & pe : rel.primes) {
+            index_t h = pe.h;
+            /* we no longer touch mat->wt, mat->rem_ncols, and mat->tot_weight
+             * from here ; see compute_weights
+             */
+            if (h < mat->skip)
+                continue; /* we skip (bury) the first 'skip' indices */
 #ifdef FOR_DL
-    exponent_t e = rel->primes[i].e;
-    /* For factorization, they should not be any multiplicity here.
-       For DL we do not want to count multiplicity in mat->wt */
-    buf[++j] = (ideal_merge_t) {.id = h, .e = e};
+            exponent_t e = pe.e;
+            /* For factorization, they should not be any multiplicity here.
+               For DL we do not want to count multiplicity in mat->wt */
+            buf[++j] = (ideal_merge_t) {.id = h, .e = e};
 #else
-    ASSERT(rel->primes[i].e == 1);
-    buf[++j] = h;
+            ASSERT(pe.e == 1);
+            buf[++j] = h;
 #endif
-  }
+        }
 
 #ifdef FOR_DL
-  buf[0].id = j;
+        buf[0].id = j;
 #else
-  buf[0] = j;
+        buf[0] = j;
 #endif
 
-  /* sort indices to ease row merges */
+        /* sort indices to ease row merges */
 #ifndef FOR_DL
-  sort_relation (&(buf[1]), j);
+        sort_relation (&(buf[1]), j);
 #else
-  qsort (&(buf[1]), j, sizeof(typerow_t), cmp_typerow_t);
+        qsort (&(buf[1]), j, sizeof(typerow_t), cmp_typerow_t);
 #endif
 
-  mat->rows[rel->num] = heap_alloc_row(rel->num, j);
-  compressRow (mat->rows[rel->num], buf, j);  /* sparse.c, simple copy loop... */
+        mat->rows[rel.num] = heap_alloc_row(rel.num, j);
+        compressRow (mat->rows[rel.num], buf, j);  /* sparse.c, simple copy loop... */
+    }
 
-  return NULL;
-}
+    template<typename locking_layer, typename relation_type>
+    size_t filter() {
+        using L = locking_layer;
+        using R = relation_type;
+        return filter_rels<L, R>()({purgedname}, nullptr, nullptr,
+                [&](R & rel) { insert_rel_into_table(rel); });
+    }
 
+    template<typename relation_type>
+    size_t filter() {
+        using R = relation_type;
+        if (filter_rels_force_posix_threads) {
+            using L = cado::filter_io_details::ifb_locking_posix;
+            return filter<L, R>();
+        } else {
+            using L = cado::filter_io_details::ifb_locking_posix;
+            return filter<L, R>();
+        }
+    }
 
-static void
-filter_matrix_read (filter_matrix_t *mat, const char *purgedname)
-{
-  uint64_t nread;
-  char const * fic[2] = {purgedname, NULL};
+    /* first check if purgedname is seekable. if yes, we can do multithread
+     * I/O */
+    int can_go_parallel() const
+    {
+        FILE * f = fopen_maybe_compressed(purgedname.c_str(), "r");
+        ASSERT_ALWAYS(f != NULL);
+        int t = fseek(f, 0, SEEK_END) == 0;
+        fclose_maybe_compressed (f, purgedname.c_str());
+        return t;
+    }
 
-  /* first check if purgedname is seekable. if yes, we can do multithread
-   * I/O */
-  int can_go_parallel;
-  {
-      FILE * f = fopen_maybe_compressed(purgedname, "r");
-      ASSERT_ALWAYS(f != NULL);
-      can_go_parallel = fseek(f, 0, SEEK_END) == 0;
-      fclose_maybe_compressed (f, purgedname);
-  }
-
-  if (!can_go_parallel) {
-      fprintf(stderr, "# cannot seek in %s, using single-thread I/O\n", purgedname);
-      /* read all rels */
-      nread = filter_rels (fic, (filter_rels_callback_t) &insert_rel_into_table,
-              mat, EARLYPARSE_NEED_INDEX_SORTED, NULL, NULL);
-  } else {
-      nread = read_purgedfile_in_parallel(mat, purgedname);
-  }
-
-  ASSERT_ALWAYS(nread == mat->nrows);
-  mat->rem_nrows = nread;
-}
+    void read() {
+        size_t nread;
+        if (can_go_parallel()) {
+            nread = read_purgedfile_in_parallel(mat, purgedname.c_str());
+        } else {
+            using relation_type =
+                cado::relation_building_blocks::primes_block<
+                prime_type_for_indexed_relations,
+                cado::relation_building_blocks::ab_block<
+                    uint64_t, 16>>;
+            nread = filter<relation_type>();
+        }
+        ASSERT_ALWAYS(nread == mat->nrows);
+        mat->rem_nrows = nread;
+    }
+};
 
 /* check the matrix rows are sorted by increasing index */
 /* this should not be needed at all, now that we ask filter_rels to
@@ -1414,15 +1450,14 @@ int main(int argc, char const * argv[])
     double tt;
     double cpu0 = seconds ();
     double wct0 = wct_seconds ();
+
     cxx_param_list pl;
+
     declare_usage(pl);
+    purged_file_reader::declare_usage(pl);
 
+    purged_file_reader::configure_switches(pl);
     param_list_configure_switch (pl, "-v", &merge_verbose);
-    param_list_configure_switch(pl, "force-posix-threads", &filter_rels_force_posix_threads);
-
-#ifdef HAVE_MINGW
-    _fmode = _O_BINARY;     /* Binary open for all files */
-#endif
 
     param_list_process_command_line(pl, &argc, &argv, false);
 
@@ -1430,28 +1465,22 @@ int main(int argc, char const * argv[])
     param_list_print_command_line (stdout, pl);
     fflush(stdout);
 
-    const char *purgedname = param_list_lookup_string (pl, "mat");
     const char *outname = param_list_lookup_string (pl, "out");
     const char *path_antebuffer = param_list_lookup_string(pl, "path_antebuffer");
 
     param_list_parse_int (pl, "t", &nthreads);
-#ifdef HAVE_OPENMP
-    omp_set_num_threads (nthreads);
-#endif
+
+    purged_file_reader pf(mat, pl);
 
     if (param_list_parse_int (pl, "incr", &cbound_incr) == 0)
       cbound_incr = CBOUND_INCR_DEFAULT;
 
-    param_list_parse_uint (pl, "skip", &skip);
-
-    param_list_parse_double (pl, "target_density", &target_density);
+    pl.parse("target_density", target_density);
 
     /* Some checks on command line arguments */
     if (param_list_warn_unused(pl))
       pl.fail("Error, unused parameters are given\n");
 
-    if (purgedname == NULL)
-      pl.fail("Error, missing -mat command line argument\n");
 
     if (outname == NULL)
       pl.fail("Error, missing -out command line argument\n");
@@ -1474,8 +1503,7 @@ int main(int argc, char const * argv[])
 #endif
 
     /* Read number of rows and cols on first line of purged file */
-    purgedfile_read_firstline (purgedname, &(mat->nrows), &(mat->ncols));
-
+    purgedfile_read_firstline (pf.purgedname.c_str(), &(mat->nrows), &(mat->ncols));
     sanity_check_matrix_sizes(mat);
 
     /* initialize the matrix structure */
@@ -1483,12 +1511,9 @@ int main(int argc, char const * argv[])
 
     /* Read all rels and fill-in the mat structure */
     tt = seconds ();
-    filter_matrix_read (mat, purgedname);
+    pf.read();
+
     printf ("Time for filter_matrix_read: %2.2lfs\n", seconds () - tt);
-
-
-
-
 
     check_matrix (mat);
 
