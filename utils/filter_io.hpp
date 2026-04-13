@@ -118,14 +118,14 @@ namespace cado::relation_building_blocks {
     template<typename ab_type, unsigned int base>
         struct ab_block
         { /* {{{ */
-            using a_type = std::make_signed_t<ab_type>;
-            using b_type = std::make_unsigned_t<ab_type>;
+            using a_type = cado::make_signed_t<ab_type>;
+            using b_type = cado::make_unsigned_t<ab_type>;
 
             /* all relations have a number */
             size_t num = 0;
 
-            std::make_unsigned_t<ab_type> a;
-            std::make_signed_t<ab_type> b;
+            a_type a;
+            b_type b;
             int active_sides[2] = { 0, 1 };
 
             /* {{{ parse */
@@ -154,7 +154,7 @@ namespace cado::relation_building_blocks {
                     c = *it++;
                 }
 
-                std::make_unsigned_t<ab_type> w;
+                cado::make_unsigned_t<ab_type> w;
 
                 for (w = 0 ; (v = ugly[c]) < base; w += v, c = *it++) {
                     if constexpr ((base & (base - 1)) == 0) {
@@ -997,8 +997,14 @@ namespace cado::filter_io_details {
             : sync_point(nthreads_total)
             , rels(std::make_unique<relation_type[]>(SIZE_BUF_REL))
         {
-            std::fill_n(completed, n, csize_t(0));
-            std::fill_n(scheduled, n, csize_t(0));
+            // fill_n doesn't work with atomics, at least not with apple
+            // clang 17.
+            // std::fill_n(completed, n, csize_t(0));
+            // std::fill_n(scheduled, n, csize_t(0));
+            for(size_t i = 0 ; i < n ; i++) {
+                completed[i] = 0;
+                scheduled[i] = 0;
+            }
         }/*}}}*/
 
         /* compared to the "original" inflight_rels_buffer type, this version
