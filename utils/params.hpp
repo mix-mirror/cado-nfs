@@ -771,6 +771,8 @@ struct parameter_base {
     /* when implicit conversions don't work, we have parameter_value() */
     T const & parameter_value() const { return value; }
     T & parameter_value() { return value; }
+    bool is_default() const { return value == get_default_value(); }
+    bool is_provided() const { return !is_default(); }
     using parameter_type = T;
 };
 } /* namespace cado::params */
