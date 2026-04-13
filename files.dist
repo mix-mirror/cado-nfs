@@ -1723,6 +1723,8 @@ utils/fd_streambuf.cpp
 utils/fd_streambuf.hpp
 utils/filelist.cpp
 utils/filelist.hpp
+utils/filter_io.cpp
+utils/filter_io.hpp
 utils/filter_io.tex
 utils/filter_io_old.cpp
 utils/filter_io_old.hpp
