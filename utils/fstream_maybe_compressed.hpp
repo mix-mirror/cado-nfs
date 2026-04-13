@@ -41,24 +41,32 @@ class streambase_maybe_compressed : virtual public std::ios {
 template <class charT, class Traits = std::char_traits<charT> >
 class basic_ifstream_maybe_compressed : public streambase_maybe_compressed, public std::basic_istream<charT, Traits> {
 public:
-    explicit basic_ifstream_maybe_compressed(std::string const & name)
-        : streambase_maybe_compressed(name, std::ios::in)
+    basic_ifstream_maybe_compressed(std::string const & name,
+            std::ios_base::openmode mode)
+        : streambase_maybe_compressed(name, mode)
         , std::basic_istream<charT, Traits>(buf)
     {}
-    void open(std::string const & name) {
-        streambase_maybe_compressed::open(name, std::ios::in);
+    explicit basic_ifstream_maybe_compressed(std::string const & name)
+        : basic_ifstream_maybe_compressed(name, std::ios::in)
+    {}
+    void open(std::string const & name, std::ios_base::openmode mode = std::ios::in) {
+        streambase_maybe_compressed::open(name, mode);
     }
 };
 
 template <class charT, class Traits = std::char_traits<charT> >
 class basic_ofstream_maybe_compressed : public streambase_maybe_compressed, public std::basic_ostream<charT, Traits> {
 public:
-    explicit basic_ofstream_maybe_compressed(std::string const & name)
-        : streambase_maybe_compressed(name, std::ios::out)
+    basic_ofstream_maybe_compressed(std::string const & name,
+            std::ios_base::openmode mode)
+        : streambase_maybe_compressed(name, mode)
         , std::basic_ostream<charT, Traits>(buf)
     {}
-    void open(std::string const & name) {
-        streambase_maybe_compressed::open(name, std::ios::out);
+    explicit basic_ofstream_maybe_compressed(std::string const & name)
+        : basic_ofstream_maybe_compressed(name, std::ios::out)
+    {}
+    void open(std::string const & name, std::ios_base::openmode mode = std::ios::out) {
+        streambase_maybe_compressed::open(name, mode);
     }
 };
 
