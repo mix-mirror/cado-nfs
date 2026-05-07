@@ -564,7 +564,7 @@ search_survivors_in_line_sse2_oneside(unsigned char * const SS,
 }
 
 void
-search_survivors_in_line_ss2_siqs(
+search_survivors_in_line_sse2_siqs(
         unsigned char * SS,
         unsigned char bound,
         unsigned int length,

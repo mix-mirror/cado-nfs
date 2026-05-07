@@ -119,7 +119,7 @@ void search_survivors_in_line_sse2_oneside(unsigned char * const SS,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max,
         std::vector<uint32_t> &survivors);
-void search_survivors_in_line_ss2_siqs(
+void search_survivors_in_line_sse2_siqs(
         unsigned char * SS,
         unsigned char bound,
         unsigned int length,

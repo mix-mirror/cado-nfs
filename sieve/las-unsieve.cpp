@@ -673,7 +673,7 @@ void search_survivors_in_line<1>(
 #if defined(HAVE_AVX2)
     search_survivors_in_line_avx2_siqs(SS[0], bound[0], length, survivors);
 #elif defined(HAVE_SSE2)
-    search_survivors_in_line_ss2_siqs(SS[0], bound[0], length, survivors);
+    search_survivors_in_line_sse2_siqs(SS[0], bound[0], length, survivors);
 #else
   unsigned char * S = SS[0];
   unsigned char const B = bound[0];
