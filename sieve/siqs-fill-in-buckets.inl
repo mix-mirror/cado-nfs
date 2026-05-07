@@ -36,10 +36,9 @@ static task_result * make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
         if (discard_power_for_bucket_sieving(e))
             continue;
 
-        siqs_largesieve ple(Q, e, logB_minus_logI, i_entry);
-        ASSERT_ALWAYS((ple.get_pp() >> logI) != 0); /* p must be > I */
+        ASSERT_ALWAYS((e.get_q() >> logI) != 0); /* p must be > I */
 
-        result.push_back(ple);
+        result.emplace_back(Q, e, logB_minus_logI, i_entry);
     }
     /* This is moved, not copied. Note that V is a reference. */
     V[relative_index] = std::move(result);
@@ -61,14 +60,13 @@ static task_result * make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
  * fill_in_buckets_toplevel.
  */
 template <typename BA_t>
-void fill_in_buckets_siqs_compute_hits(
+static inline void fill_in_buckets_siqs_compute_hits(
         siqs_largesieve & ple,
         BA_t & BA,
         int const logI,
         int const logB,
         uint32_t const j_high,
         slice_index_t const slice_index,
-        std::vector<siqs_largesieve::T_elt> & T2scratch,
         MAYBE_UNUSED where_am_I & w)
 {
     auto const pp = ple.pp;
@@ -77,15 +75,18 @@ void fill_in_buckets_siqs_compute_hits(
     typename BA_t::update_t::br_index_t const bmask = (1UL << logB) - 1U;
     typename BA_t::update_t u(0, pp, ple.hint, slice_index);
 
-    for (uint32_t root: ple.roots) {
-        ple.prepare_for_root(T2scratch, root, logI, j_high);
+    uint32_t mask = ple.prepare_for_root_mask(j_high);
+    uint32_t s = ple.prepare_for_root_precomp(logI, j_high);
+
+    for (unsigned int i = 0; i < ple.nroots; ++i) {
+        auto T2s = ple.prepare_for_root(ple.roots[i], s, mask);
 
         /* First type of hit: t1+t2 in [0, I[. As T1 and T2 are sorted in
          * increasing order, we loop over T1, then T2 and break the inner
          * loop once t1+t2 >= I. So number of iteration is #hits+#T1.
          */
-        for (auto const & [t1, d1]: ple.T1) {
-            for (auto const & [t2, d2]: T2scratch) {
+        for (auto const [t2, d2]: T2s) {
+            for (auto const [t1, d1]: ple.T1) {
                 uint64_t i = t1+t2;
                 if (i >> logI) {
                     break; /* stop when i=t1+t2 becomes larger than I */
@@ -104,28 +105,29 @@ void fill_in_buckets_siqs_compute_hits(
          * from this value and break the inner loop once t1+t2 < p.
          * Starting from the second value of t1, we look for t2i using the
          * previous recorded value.
-         * So number of iteration is #hits+#T2.
+         * So number of iteration is #hits+#T1+(a term bounded by #T2).
          */
-        /* T2scratch does not change during iteration */
-        auto it2 = T2scratch.rbegin();
-        auto T2rend = T2scratch.rend();
-        for (auto const & [t1, d1]: ple.T1) {
-           for (auto it = it2; it != T2rend; ++it) {
-               auto const [t2, d2] = *it;
-               if (t1+t2 < pp) {
-                   break; /* stop when t1+t2 becomes smaller than I */
-               }
-               uint64_t i = t1+t2-pp;
-               if (i >> logI) {
-                   ++it2; /* can be skipped for all next t1 values */
-                   continue; /* skip if i=t1+t2-p is too large */
-               }
-               uint64_t j = d2 xor d1;
-               uint64_t x = (j << logI) | i;
-               u.set_x(x & bmask);
-               BA.push_update(x >> logB, u, w);
-           }
-       }
+        /* T1 does not change during iteration */
+        auto it1 = ple.T1.rbegin();
+        auto T1rend = ple.T1.rend();
+        for (auto const [t2, d2]: T2s) {
+            for (auto it = it1; it != T1rend; ++it) {
+                auto const [t1, d1] = *it;
+                auto t12 = t1+t2;
+                if (t12 < pp) {
+                    break; /* stop when t1+t2 becomes smaller than p */
+                }
+                uint64_t i = t12-pp;
+                if (i >> logI) {
+                    ++it1; /* can be skipped for all next t1 values */
+                    continue; /* skip if i=t1+t2-p is too large */
+                }
+                uint64_t j = d2 xor d1;
+                uint64_t x = (j << logI) | i;
+                u.set_x(x & bmask);
+                BA.push_update(x >> logB, u, w);
+            }
+        }
     }
 }
 
@@ -169,7 +171,9 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
 
     int logB = LOG_BUCKET_REGIONS[LEVEL];
 
-    std::vector<siqs_largesieve::T_elt> T2s;
+    std::size_t memsize = siqs_largesieve::memory_required(Q, logJ);
+    std::byte data[memsize];
+    std::span<std::byte> mem(data, memsize);
 
     for (slice_offset_t hint = -1; auto const & e: slice) {
         ++hint;
@@ -179,10 +183,10 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
             continue;
 
         ASSERT_ALWAYS((e.get_q() >> logI) != 0); /* p must be > I */
-        siqs_largesieve ple(Q, e, logJ, hint);
+        siqs_largesieve ple(Q, e, logJ, hint, mem);
 
         fill_in_buckets_siqs_compute_hits(ple, BA, logI, logB, 0U, slice_index,
-                                          T2s, w);
+                                          w);
     }
     orig_BA = std::move(BA);
 }
@@ -216,14 +220,12 @@ fill_in_buckets_lowlevel(
 
     int logB = LOG_BUCKET_REGIONS[LEVEL];
 
-    std::vector<siqs_largesieve::T_elt> T2s;
-
     ASSERT_ALWAYS(logB >= logI);
     uint32_t const j_high = first_region0_index << (logB - logI);
 
     for (auto & ple: plattices_vector) {
         fill_in_buckets_siqs_compute_hits(ple, BA, logI, logB, j_high,
-                                          slice_index, T2s, w);
+                                          slice_index, w);
     }
     orig_BA = std::move(BA);
 }

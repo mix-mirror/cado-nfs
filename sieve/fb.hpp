@@ -11,6 +11,7 @@
 #include <list>
 #include <map>
 #include <mutex>
+#include <span>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -180,10 +181,11 @@ class fb_entry_general
     /* Set invq to 2^(word size)/q mod p
      * Set crt_data_modp to [(mulby2?2:1)*Rk/q modp for Rk in Q.crt_data_modq]
      * Return add([Rk/q modp for Rk in Q.crt_data_modq])
+     * Assumes the span crt_data_modp has size at least Q.crt_data_modq.size()
      */
     fbprime_t compute_crt_data_modp(
             fbprime_t & invq,
-            std::vector<fbprime_t> & crt_data_modp,
+            std::span<fbprime_t> crt_data_modp,
             siqs_special_q_data const & Q,
             bool mulby2) const;
     double weight() const { return 1. / q * nr_roots; }
@@ -280,7 +282,7 @@ template <int Nr_roots> class fb_entry_x_roots
     /* see same method in fb_entry_general */
     fbprime_t compute_crt_data_modp(
             fbprime_t & invq,
-            std::vector<fbprime_t> & crt_data_modp,
+            std::span<fbprime_t> crt_data_modp,
             siqs_special_q_data const & Q,
             bool mulby2) const;
 };
