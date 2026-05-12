@@ -40,6 +40,7 @@ siqs_ssp_pdata_t::siqs_ssp_pdata_t(
         siqs_special_q_data const & Q)
     : p(e.q)
     , pmask((p & 1u) ? std::numeric_limits<fbprime_t>::max() : (p-1U))
+    , crt_data_modp(Q.crt_data_modq.size())
     , offset(((uint64_t (p-1u)) << LOG_BUCKET_REGION) % p)
 {
     /* call to e.compute_crt_data_modp sets invq and crt_data_modp */
