@@ -25,7 +25,7 @@ search_survivors_in_line_avx2_siqs(
         unsigned int length,
         std::vector<uint16_t> &survivors)
 {
-    __m256i const B = _mm256_xor_si256(_mm256_set1_epi8(bound), sign_conversion);
+    __m256i const B = _mm256_xor_si256(_mm256_set1_epi8(bound+1), sign_conversion);
     const unsigned int x_step = sizeof(__m256i);
 
     for (unsigned int x_start = 0; x_start < length; x_start += x_step)

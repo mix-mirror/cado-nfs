@@ -570,7 +570,7 @@ search_survivors_in_line_sse2_siqs(
         unsigned int length,
         std::vector<uint16_t> &survivors)
 {
-    __m128i const B = _mm_xor_si128(_mm_set1_epi8(bound), sign_conversion);
+    __m128i const B = _mm_xor_si128(_mm_set1_epi8(bound+1), sign_conversion);
     const unsigned int x_step = sizeof(__m128i);
 
     for (unsigned int x_start = 0; x_start < length; x_start += x_step)
