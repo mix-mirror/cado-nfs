@@ -60,7 +60,7 @@ static task_result * make_lattice_bases(worker_thread * worker MAYBE_UNUSED,
  * fill_in_buckets_toplevel.
  */
 template <typename BA_t>
-static inline void fill_in_buckets_siqs_compute_hits(
+void fill_in_buckets_siqs_compute_hits(
         siqs_largesieve & ple,
         BA_t & BA,
         int const logI,
