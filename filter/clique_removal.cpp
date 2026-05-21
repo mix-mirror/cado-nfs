@@ -89,6 +89,12 @@ void purge_matrix::print_clique_removal_weight_function()
  * a 0-row component. It indicates that the same component was found
  * earlier.
  *
+ * An important property is that the connected components are (of course)
+ * disjoint. The deletion of a connected component uses (and "consumes",
+ * in a way) the sum2[] array entries for column indices that are in this
+ * connected component, but those entries _cannot_ relate to entries in
+ * another component, by definition.
+ *
  * XXX
  * there's a design decision regarding the underlying type for the
  * row_buffer. Namely:
@@ -107,16 +113,27 @@ void purge_matrix::print_clique_removal_weight_function()
 template <weight_function F>
 auto purge_matrix::compute_connected_component_with_set(size_t i0,
         std::vector<size_t> const & sum2,
+        std::vector<size_t> & buf,
         F const & f) const
     -> std::pair<size_t, connected_component>
 {
-    std::set<size_t> buf;
-    buf.insert(i0);
+    /* We want a set for the log-time presence test, but the list of
+     * anchors to look for must still be processed linearly. Having only
+     * a set, and adding the new anchors to it, would have a catastrophic
+     * effect since recursion on all smaller-row-index anchors would be
+     * skipped.
+     */
+    buf.clear();
+    buf.push_back(i0);
+
+    std::set<size_t> H;
+    H.insert(i0);
 
     float w = 0.; /* initial weight */
 
     /* Loop on all connected rows */
-    for (auto const i : buf) {
+    for (size_t k = 0; k < buf.size(); k++) {
+        auto const i = buf[k];
         auto const * p = rows[i];
 
         /* Loop on all columns of the current row */
@@ -124,27 +141,20 @@ auto purge_matrix::compute_connected_component_with_set(size_t i0,
             index_t const h = *q;
             weight_t const wh = column_weights[h];
             w += f(wh);
-            /* When we just _compute_ the connected components, we don't
-             * have to check that sum2[h] != 0, since it's pretty much
-             * guaranteed. Such isn't the case when we delete the
-             * connected components, since wh==2 can appear for columns
-             * that used to be heavier before. We don't have sum2 data
-             * for them.
+            /* See the next function for comments about this test and the
+             * following ASSERT.
              */
             if (UNLIKELY(wh == 2 && sum2[h])) {
-                /* TODO: this assert is actually not useful. By
-                 * construction we always have sums of two things
-                 * in this table. We could even make sum2 be a
-                 * table of XORs, if we want.
-                 */
                 ASSERT_ALWAYS(i <= sum2[h]);
                 size_t const i1 = sum2[h] - i;
                 /* See if the connected component was found earlier.  */
                 if (i1 < i0)
                     return {0, {}};
 
-                if (std::ranges::find(buf, i1) == buf.end())
-                    buf.insert(i1);
+                if (std::ranges::find(H, i1) == H.end()) {
+                    H.insert(i1);
+                    buf.push_back(i1);
+                }
             }
         }
     }
@@ -173,12 +183,18 @@ auto purge_matrix::compute_connected_component(size_t i0,
             index_t const h = *q;
             weight_t const wh = column_weights[h];
             w += f(wh);
-            /* When we just _compute_ the connected components, we don't
-             * have to check that sum2[h] != 0, since it's pretty much
-             * guaranteed. Such isn't the case when we delete the
-             * connected components, since wh==2 can appear for columns
-             * that used to be heavier before. We don't have sum2 data
-             * for them.
+            /* Note that this function, compute_connected_components, is
+             * used both for what its name says, namely computing the
+             * connected components (the following intent being to sort
+             * the components), but also to compute them once again but
+             * just with the goal of deleting the component right away.
+             *
+             * In the former situation, the check sum2[h] != 0 is
+             * redundant, since it's in fact guaranteed (this first
+             * "compute components" pass in readonly). Such isn't the
+             * case in the latter case, since wh==2 can appear for
+             * columns that used to be heavier before. We don't have sum2
+             * data for them.
              */
             if (UNLIKELY(wh == 2 && sum2[h])) {
                 /* TODO: this assert is actually not useful. By
@@ -203,8 +219,9 @@ auto purge_matrix::compute_connected_component(size_t i0,
                  * the set version, which has better complexity, if we
                  * ever detect that some long components exist.
                  */
-                if (buf.size() >= ccc_quadratic_abort)
-                    return compute_connected_component_with_set(i0, sum2, f);
+                if (buf.size() >= ccc_quadratic_abort) {
+                    return compute_connected_component_with_set(i0, sum2, buf, f);
+                }
 
                 if (std::ranges::find(buf, i1) == buf.end())
                     buf.push_back(i1);

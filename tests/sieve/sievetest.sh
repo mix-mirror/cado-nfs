@@ -18,6 +18,9 @@ if [ "$CADO_DEBUG" ] ; then
 fi
 set -e
 
+# we don't want locale-variability of /bin/sort
+export LANG=C LC_CTYPE=C LC_COLLATE=C
+
 # Print and run a command
 run() {
   echo "Running: $*"
@@ -25,6 +28,8 @@ run() {
 }
 
 WORKDIR=${wdir:?missing}
+
+: ${LAS_BINARY=${PROJECT_BINARY_DIR?missing}/sieve/las}
 
 if ! [ -x "${LAS_BINARY:?missing}" ] ; then
   echo "Las binary \$LAS_BINARY = ${LAS_BINARY} is not an executable file" >&2
