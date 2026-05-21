@@ -323,16 +323,13 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
     }
 
     template<typename inner_loop, int bits_off>
-    bool handle_nice_prime(
+    void handle_nice_prime(
             siqs_ssp_simple_t const & ssp,
             siqs_pos_t pos,
             where_am_I & w)
     {
         const fbprime_t p = ssp.get_p();
-        if (bits_off != 0 && (p >> (min_logI_logB + 1 - bits_off))) {
-            /* time to move on to the next bit size; */
-            return false;
-        }
+        ASSERT_EXPENSIVE(!bits_off || !(p >> (min_logI_logB + 1 - bits_off)));
 
         WHERE_AM_I_UPDATE(w, r, ssp.get_r());
         const unsigned char logp = ssp.get_logp();
@@ -352,7 +349,249 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
             S0 += I;
             S1 += I;
         }
-        return true;
+    }
+
+#ifdef HAVE_SSE41
+    template<typename inner_loop, int bits_off>
+    inline void handle_nice_primes_sse2_unroll2(where_am_I & w MAYBE_UNUSED)
+    {
+        static_assert(std::is_same_v<siqs_pos_t, uint32_t>,
+                "siqs_pos_t must be an uint32_t for the sse2 code to be valid");
+        for( ; index + 7 < sorted_limit ; index+=8) {
+            auto const & ssp0(primes[index]);
+            auto const & ssp1(primes[index+1]);
+            auto const & ssp2(primes[index+2]);
+            auto const & ssp3(primes[index+3]);
+            auto const & ssp4(primes[index+4]);
+            auto const & ssp5(primes[index+5]);
+            auto const & ssp6(primes[index+6]);
+            auto const & ssp7(primes[index+7]);
+
+            const fbprime_t p0 = ssp0.get_p();
+            const fbprime_t p1 = ssp1.get_p();
+            const fbprime_t p2 = ssp2.get_p();
+            const fbprime_t p3 = ssp3.get_p();
+            const fbprime_t p4 = ssp4.get_p();
+            const fbprime_t p5 = ssp5.get_p();
+            const fbprime_t p6 = ssp6.get_p();
+            const fbprime_t p7 = ssp7.get_p();
+
+            if (bits_off != 0 && (p7 >> (min_logI_logB + 1 - bits_off))) {
+                return;
+            }
+
+            __m128i pl = _mm_setr_epi32(p0, p1, p2, p3);
+            __m128i ph = _mm_setr_epi32(p4, p5, p6, p7);
+            __m128i posl = _mm_loadu_si128((__m128i *) (positions.data() + index));
+            __m128i posh = _mm_loadu_si128((__m128i *) (positions.data() + index + 4u));
+
+            const unsigned char logp0 = ssp0.get_logp();
+            const unsigned char logp1 = ssp1.get_logp();
+            const unsigned char logp2 = ssp2.get_logp();
+            const unsigned char logp3 = ssp3.get_logp();
+            const unsigned char logp4 = ssp4.get_logp();
+            const unsigned char logp5 = ssp5.get_logp();
+            const unsigned char logp6 = ssp6.get_logp();
+            const unsigned char logp7 = ssp7.get_logp();
+
+            unsigned char * S0 = S;
+            unsigned char * S1 = S + F;
+
+            /* we sieve over the area [S0..S0+(i1-i0)] (F is (i1-i0)),
+             * which may actually be just a fragment of a line. After
+             * that, if (i1-i0) is different from I, we'll break anyway.
+             * So whether we add I or (i1-i0) to S0 does not matter much.
+             */
+            for (unsigned int j = j0; j < j1; ++j) {
+                WHERE_AM_I_UPDATE(w, j, j - j0);
+
+                if (j > j0) {
+                    unsigned int const k = ularith_ctz(j);
+                    ASSERT_EXPENSIVE(k < ssp0.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp1.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp2.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp3.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp4.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp5.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp6.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp7.CRT_data().size());
+                    __m128i rl = _mm_setr_epi32(ssp0.CRT_data()[k],
+                                                ssp1.CRT_data()[k],
+                                                ssp2.CRT_data()[k],
+                                                ssp3.CRT_data()[k]);
+                    __m128i rh = _mm_setr_epi32(ssp4.CRT_data()[k],
+                                                ssp5.CRT_data()[k],
+                                                ssp6.CRT_data()[k],
+                                                ssp7.CRT_data()[k]);
+                    if ((j >> (k+1u)) & 1u) {
+                        posl = submod_s32_sse(posl, rl, pl);
+                        posh = submod_s32_sse(posh, rh, ph);
+                    } else {
+                        posl = addmod_s32_sse(posl, rl, pl);
+                        posh = addmod_s32_sse(posh, rh, ph);
+                    }
+                }
+
+                WHERE_AM_I_UPDATE(w, p, p0);
+                WHERE_AM_I_UPDATE(w, r, ssp0.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posl, 0), p0, logp0, w);
+
+                WHERE_AM_I_UPDATE(w, p, p1);
+                WHERE_AM_I_UPDATE(w, r, ssp1.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posl, 1), p1, logp1, w);
+
+                WHERE_AM_I_UPDATE(w, p, p2);
+                WHERE_AM_I_UPDATE(w, r, ssp2.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posl, 2), p2, logp2, w);
+
+                WHERE_AM_I_UPDATE(w, p, p3);
+                WHERE_AM_I_UPDATE(w, r, ssp3.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posl, 3), p3, logp3, w);
+
+                WHERE_AM_I_UPDATE(w, p, p4);
+                WHERE_AM_I_UPDATE(w, r, ssp4.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posh, 0), p4, logp4, w);
+
+                WHERE_AM_I_UPDATE(w, p, p5);
+                WHERE_AM_I_UPDATE(w, r, ssp5.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posh, 1), p5, logp5, w);
+
+                WHERE_AM_I_UPDATE(w, p, p6);
+                WHERE_AM_I_UPDATE(w, r, ssp6.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posh, 2), p6, logp6, w);
+
+                WHERE_AM_I_UPDATE(w, p, p7);
+                WHERE_AM_I_UPDATE(w, r, ssp7.get_r());
+                inner_loop()(S0, S1, S0 - S, _mm_extract_epi32(posh, 3), p7, logp7, w);
+
+                S0 += I;
+                S1 += I;
+            }
+        }
+    }
+#endif
+
+    template<typename inner_loop, int bits_off>
+    inline void handle_nice_primes_unroll8(where_am_I & w MAYBE_UNUSED)
+    {
+        for( ; index + 7 < sorted_limit ; index+=8) {
+            auto const & ssp0(primes[index]);
+            siqs_pos_t pos0 = (positions[index]);
+            auto const & ssp1(primes[index+1]);
+            siqs_pos_t pos1 = (positions[index+1]);
+            auto const & ssp2(primes[index+2]);
+            siqs_pos_t pos2 = (positions[index+2]);
+            auto const & ssp3(primes[index+3]);
+            siqs_pos_t pos3 = (positions[index+3]);
+            auto const & ssp4(primes[index+4]);
+            siqs_pos_t pos4 = (positions[index+4]);
+            auto const & ssp5(primes[index+5]);
+            siqs_pos_t pos5 = (positions[index+5]);
+            auto const & ssp6(primes[index+6]);
+            siqs_pos_t pos6 = (positions[index+6]);
+            auto const & ssp7(primes[index+7]);
+            siqs_pos_t pos7 = (positions[index+7]);
+
+            const fbprime_t p0 = ssp0.get_p();
+            const fbprime_t p1 = ssp1.get_p();
+            const fbprime_t p2 = ssp2.get_p();
+            const fbprime_t p3 = ssp3.get_p();
+            const fbprime_t p4 = ssp4.get_p();
+            const fbprime_t p5 = ssp5.get_p();
+            const fbprime_t p6 = ssp6.get_p();
+            const fbprime_t p7 = ssp7.get_p();
+
+            if (bits_off != 0 && (p7 >> (min_logI_logB + 1 - bits_off))) {
+                return;
+            }
+
+            const unsigned char logp0 = ssp0.get_logp();
+            const unsigned char logp1 = ssp1.get_logp();
+            const unsigned char logp2 = ssp2.get_logp();
+            const unsigned char logp3 = ssp3.get_logp();
+            const unsigned char logp4 = ssp4.get_logp();
+            const unsigned char logp5 = ssp5.get_logp();
+            const unsigned char logp6 = ssp6.get_logp();
+            const unsigned char logp7 = ssp7.get_logp();
+
+            unsigned char * S0 = S;
+            unsigned char * S1 = S + F;
+
+            /* we sieve over the area [S0..S0+(i1-i0)] (F is (i1-i0)),
+             * which may actually be just a fragment of a line. After
+             * that, if (i1-i0) is different from I, we'll break anyway.
+             * So whether we add I or (i1-i0) to S0 does not matter much.
+             */
+            for (unsigned int j = j0; j < j1; ++j) {
+                WHERE_AM_I_UPDATE(w, j, j - j0);
+
+                if (j > j0) {
+                    unsigned int const k = ularith_ctz(j);
+                    ASSERT_EXPENSIVE(k < ssp0.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp1.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp2.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp3.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp4.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp5.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp6.CRT_data().size());
+                    ASSERT_EXPENSIVE(k < ssp7.CRT_data().size());
+                    if ((j >> (k+1u)) & 1u) {
+                        pos0 = submod_u32(pos0, ssp0.CRT_data()[k], p0);
+                        pos1 = submod_u32(pos1, ssp1.CRT_data()[k], p1);
+                        pos2 = submod_u32(pos2, ssp2.CRT_data()[k], p2);
+                        pos3 = submod_u32(pos3, ssp3.CRT_data()[k], p3);
+                        pos4 = submod_u32(pos4, ssp4.CRT_data()[k], p4);
+                        pos5 = submod_u32(pos5, ssp5.CRT_data()[k], p5);
+                        pos6 = submod_u32(pos6, ssp6.CRT_data()[k], p6);
+                        pos7 = submod_u32(pos7, ssp7.CRT_data()[k], p7);
+                    } else {
+                        pos0 = addmod_u32(pos0, ssp0.CRT_data()[k], p0);
+                        pos1 = addmod_u32(pos1, ssp1.CRT_data()[k], p1);
+                        pos2 = addmod_u32(pos2, ssp2.CRT_data()[k], p2);
+                        pos3 = addmod_u32(pos3, ssp3.CRT_data()[k], p3);
+                        pos4 = addmod_u32(pos4, ssp4.CRT_data()[k], p4);
+                        pos5 = addmod_u32(pos5, ssp5.CRT_data()[k], p5);
+                        pos6 = addmod_u32(pos6, ssp6.CRT_data()[k], p6);
+                        pos7 = addmod_u32(pos7, ssp7.CRT_data()[k], p7);
+                    }
+                }
+
+                WHERE_AM_I_UPDATE(w, p, p0);
+                WHERE_AM_I_UPDATE(w, r, ssp0.get_r());
+                inner_loop()(S0, S1, S0 - S, pos0, p0, logp0, w);
+
+                WHERE_AM_I_UPDATE(w, p, p1);
+                WHERE_AM_I_UPDATE(w, r, ssp1.get_r());
+                inner_loop()(S0, S1, S0 - S, pos1, p1, logp1, w);
+
+                WHERE_AM_I_UPDATE(w, p, p2);
+                WHERE_AM_I_UPDATE(w, r, ssp2.get_r());
+                inner_loop()(S0, S1, S0 - S, pos2, p2, logp2, w);
+
+                WHERE_AM_I_UPDATE(w, p, p3);
+                WHERE_AM_I_UPDATE(w, r, ssp3.get_r());
+                inner_loop()(S0, S1, S0 - S, pos3, p3, logp3, w);
+
+                WHERE_AM_I_UPDATE(w, p, p4);
+                WHERE_AM_I_UPDATE(w, r, ssp4.get_r());
+                inner_loop()(S0, S1, S0 - S, pos4, p4, logp4, w);
+
+                WHERE_AM_I_UPDATE(w, p, p5);
+                WHERE_AM_I_UPDATE(w, r, ssp5.get_r());
+                inner_loop()(S0, S1, S0 - S, pos5, p5, logp5, w);
+
+                WHERE_AM_I_UPDATE(w, p, p6);
+                WHERE_AM_I_UPDATE(w, r, ssp6.get_r());
+                inner_loop()(S0, S1, S0 - S, pos6, p6, logp6, w);
+
+                WHERE_AM_I_UPDATE(w, p, p7);
+                WHERE_AM_I_UPDATE(w, r, ssp7.get_r());
+                inner_loop()(S0, S1, S0 - S, pos7, p7, logp7, w);
+
+                S0 += I;
+                S1 += I;
+            }
+        }
     }
 
     /* This function is responsible for small-sieving primes of a
@@ -369,6 +608,12 @@ struct siqs_small_sieve : public siqs_small_sieve_base {
          * Furthermore, if p >= 2 * F / 2^(bits_off+1), we can also
          * say that the number of hits is at most 2^bits_off
          */
+
+#ifdef HAVE_SSE41
+        handle_nice_primes_sse2_unroll2<inner_loop, bits_off>(w);
+#else
+        handle_nice_primes_unroll8<inner_loop, bits_off>(w);
+#endif
 
         for( ; index < sorted_limit ; index++) {
             auto const & ssp(primes[index]);

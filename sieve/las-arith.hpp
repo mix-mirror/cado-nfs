@@ -458,4 +458,30 @@ batchinvredc_u32 (uint32_t *r, const uint32_t *a, const size_t n,
 
 fbprime_t is_prime_power(fbprime_t q);
 
+#ifdef HAVE_SSE41
+#include <x86intrin.h>
+
+/* Requires 0 < m < 2^31, 0 <= a < m and 0 <= b <= m, then r == a+b (mod m) and
+ * r < m
+ */
+static inline __m128i
+addmod_s32_sse(const __m128i a, const __m128i b, const __m128i m)
+{
+  __m128i s = _mm_add_epi32(a, b);
+  __m128i r = _mm_sub_epi32(s, m);
+  return _mm_blendv_epi8(r, s, _mm_cmplt_epi32(r, _mm_setzero_si128()));
+}
+
+/* Requires 0 < m < 2^31, 0 <= a < m and 0 <= b <= m, then r == a-b (mod m) and
+ * r < m
+ */
+static inline __m128i
+submod_s32_sse(const __m128i a, const __m128i b, const __m128i m)
+{
+  __m128i r = _mm_sub_epi32(a, b);
+  __m128i s = _mm_add_epi32(r, m);
+  return _mm_blendv_epi8(r, s, _mm_cmplt_epi32(r, _mm_setzero_si128()));
+}
+#endif
+
 #endif	/* CADO_LAS_ARITH_HPP */
