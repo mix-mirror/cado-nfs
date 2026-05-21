@@ -188,7 +188,8 @@ void fill_in_buckets_prepare_plattices(
          * It would be nice to have a way to notify that all threads here are
          * done with their job.
          */
-        precomp_plattice.assign(P.nslices(), plattices_vector_t());
+        precomp_plattice.clear();
+        precomp_plattice.resize(P.nslices());
         make_lattice_bases_parameters_base<T::level> const model {side, ws, Q, precomp_plattice};
         P.slices.foreach([&](auto const & sl) {
                 for(auto const & s : sl) {
