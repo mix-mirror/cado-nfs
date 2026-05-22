@@ -285,13 +285,13 @@ siqs_small_sieve_data::small_sieve_prepare_many_start_positions(
         }
     }
 
-#ifndef NDEBUG
+#ifdef WANT_ASSERT_EXPENSIVE
     for(unsigned int k = 0; k < nregions + regions_per_line; k++) {
-        ASSERT(res[k].size() == ssps.size());
+        ASSERT_EXPENSIVE(res[k].size() == ssps.size());
         int N = first_region_index + k;
         siqs_small_sieve_base Ct(logI, N);
         for(size_t s = 0 ; s < ssps.size(); ++s) {
-            ASSERT(res[k][s] == Ct.first_position_in_region(ssps[s]));
+            ASSERT_EXPENSIVE(res[k][s] == Ct.first_position_in_region(ssps[s]));
         }
     }
 #endif
