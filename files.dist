@@ -805,7 +805,7 @@ polyselect/polyselect_main_queue.hpp
 polyselect/polyselect_match.cpp
 polyselect/polyselect_match.hpp
 polyselect/polyselect_norms.cpp
-polyselect/polyselect_norms.h
+polyselect/polyselect_norms.hpp
 polyselect/polyselect_poly_header.c
 polyselect/polyselect_poly_header.h
 polyselect/polyselect_primes_table.c
@@ -1199,6 +1199,11 @@ tests/filter/c30_sm_small_ell.poly
 tests/filter/c30_sm_small_ell.purged
 tests/filter/create_fake_relation_file.cpp
 tests/filter/create_purge_test_file.py
+tests/filter/dup1_stress_30138.data/c40.1-25.gz
+tests/filter/dup1_stress_30138.data/c40.25-50.gz
+tests/filter/dup1_stress_30138.data/c40.50-75.gz
+tests/filter/dup1_stress_30138.data/c40.75-100.gz
+tests/filter/dup1_stress_30138.data/dup1_stress_30138.files
 tests/filter/heavy_torture_test_purge.sh
 tests/filter/p40_30004.poly
 tests/filter/p40_30004.rels.gz
@@ -1304,6 +1309,7 @@ tests/omp_get_max_threads.c
 tests/pipe_to_sage.sh
 tests/polyselect/CMakeLists.txt
 tests/polyselect/Makefile
+tests/polyselect/bench_lognorm.cpp
 tests/polyselect/c80msieve.sample
 tests/polyselect/gfpkdlpolyselect_test.cpp
 tests/polyselect/ropt.rsa250.txt
@@ -1516,6 +1522,7 @@ tests/utils/arithxx/CMakeLists.txt
 tests/utils/arithxx/test_lucas.cpp
 tests/utils/arithxx/test_mod.cpp
 tests/utils/arithxx/test_modint.cpp
+tests/utils/bench_double_poly_roots.cpp
 tests/utils/buggy.poly
 tests/utils/numbertheory/CMakeLists.txt
 tests/utils/numbertheory/Makefile
@@ -1689,8 +1696,8 @@ utils/cado_pipe_streambuf.cpp
 utils/cado_pipe_streambuf.hpp
 utils/cado_poly.cpp
 utils/cado_poly.hpp
-utils/cado_popen.c
-utils/cado_popen.h
+utils/cado_popen.cpp
+utils/cado_popen.hpp
 utils/cado_subrange_streambuf.hpp
 utils/cado_type_traits.hpp
 utils/clonable-exception.hpp
@@ -1729,7 +1736,6 @@ utils/embedded/fmt/std.h
 utils/embedded/fmt/xchar.h
 utils/extra_complex_overloads.hpp
 utils/fakempi.h
-utils/fd_streambuf.cpp
 utils/fd_streambuf.hpp
 utils/filelist.cpp
 utils/filelist.hpp
