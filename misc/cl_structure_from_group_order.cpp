@@ -332,7 +332,7 @@ class imaginary_quadratic_cl_structure
             }
             exponent.lcm(v);
             auto r = g^(cxx_mpz_factored(exponent.primes(), exp_g).value());
-            g = r * f^(cxx_mpz_factored(exponent.primes(), exp_f).value());
+            g = r * (f^(cxx_mpz_factored(exponent.primes(), exp_f).value()));
         }
     };
 
@@ -540,7 +540,7 @@ class imaginary_quadratic_cl_structure
         const unsigned int exp_pval = E.exponent.valuation_in(pmpz);
         cxx_mpz pe, p_group_order;
         mpz_pow_ui(pe, pmpz, exp_pval);
-        if (pe >= naive_pSylow_bound) {
+        if (pe > naive_pSylow_bound) {
             throw too_large_pSylow();
         }
         const unsigned long p_exponent = mpz_get_ui(pe);
@@ -687,9 +687,9 @@ struct command_line
 
     uint64_t bound = 0;
     unsigned int seed;
-    unsigned int pSylow_bound = 40000U; /* allow naive pSylow computations up
-                                         * to 2^15, 3^10, 5^6, 7^5, 11^4, 13^4,
-                                         * 17^3, ..., 31^3, 37^2, ..., 199^2
+    unsigned int pSylow_bound = 65536u; /* allow naive pSylow computations up
+                                         * to 2^16, 3^10, 5^6, 7^5, 11^4, 13^4,
+                                         * 17^3, ..., 37^3, 41^2, ..., 251^2
                                          */
     int verbosity_level = 1; /* each -v on command line increases it by 1 */
 
@@ -706,7 +706,7 @@ struct command_line
         pl.declare_usage("pSylow-bound", "Use naive pSylow computation"
                                                   " if the p-part of the group "
                                                   "order is below this bound "
-                                                  "(default: 40000).");
+                                                  "(default: 65536).");
         pl.declare_usage("v", "enable verbose output");
         verbose_decl_usage(pl);
     }
