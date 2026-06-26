@@ -5547,7 +5547,7 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
         return self.join_params(super().paramnames,
                                 {"m": [int], "n": [int], "threads": [int],
                                  "force_wipeout": False, "stop_after_neq": 2,
-                                 "nmatrices": 1})
+                                 "nmatrices": 1, "moduli_nbits": 64})
 
     Steps = ("prep", "secure", "krylov", "lingen_pz", "acollect",
              "det_from_lingen")
@@ -5594,6 +5594,10 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
         self.state.setdefault("run_counter", 0)
         if self.params["nmatrices"] not in range(1, 101):
             raise ValueError("parameter nmatrices should be in [1,100]")
+        # There is no reason to have moduli_nbits less than 64, but it works
+        # with smaller moduli (just need to be careful and exclude the prime 2)
+        if self.params["moduli_nbits"] < 3:
+            raise ValueError("parameter moduli_nbits should be >= 3")
 
     def run(self):
         super().run()
@@ -5697,7 +5701,8 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
     def need_more_wus(self):
         return f"h{self.i}" not in self.state
 
-    def next_valid_prime(self, default=2**63):
+    def next_valid_prime(self):
+        default = 2**(self.params["moduli_nbits"]-1)
         ell = next_prime(self.state.get(f"prime{self.i}", default))
         M = self.state.get(f"M{self.i}", 1)
         while M % ell == 0:  # skip prime not coprime to M

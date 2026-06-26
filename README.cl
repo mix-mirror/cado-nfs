@@ -53,8 +53,10 @@ create a file params.qs.dNNN in the parameters/cl directory.
 
 **** Known issues
 
-Linear algebra is performed using CRT with 64-bit modulus. It implies that
-p1 and/or pz should be present in BWC_GFP_ARITHMETIC_BACKENDS (e.g.,
-BWC_GFP_ARITHMETIC_BACKENDS="p1;pz"). If only pz is present, linear algebra will
-be slower.
+Linear algebra is performed using CRT with, by default, 64-bit modulus. It
+implies that p1 and/or pz should be present in BWC_GFP_ARITHMETIC_BACKENDS
+(e.g., BWC_GFP_ARITHMETIC_BACKENDS="p1;pz"). If only pz is present, linear
+algebra will be slower.
+Larger moduli can be used (by setting the parameter tasks.linalg.moduli_nbits).
+In this case, make sure to have the appropriate backend compiled (p2, p3, ...).
 Widths up to 15 words are compiled by default.
