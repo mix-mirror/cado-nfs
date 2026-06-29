@@ -667,8 +667,13 @@ misc/factor.hpp
 misc/indexed_relations_to_density.cpp
 misc/smooth_detect.cpp
 misc/smooth_detect.hpp
+parameters/cl/params.qs.d100
+parameters/cl/params.qs.d100.Kleinjung
 parameters/cl/params.qs.d20
 parameters/cl/params.qs.d60
+parameters/cl/params.qs.d70
+parameters/cl/params.qs.d80
+parameters/cl/params.qs.d90
 parameters/dlp/Joux-Lercier/params.p100
 parameters/dlp/Joux-Lercier/params.p30
 parameters/dlp/Joux-Lercier/params.p35

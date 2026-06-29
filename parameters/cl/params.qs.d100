@@ -10,26 +10,27 @@
 # General parameters
 ###########################################################################
 
-name = d60
+name = d100
 
 ###########################################################################
 # Sieve
 ###########################################################################
 
 tasks.I = 14
-tasks.lim0 = 50000
-tasks.lpb0 = 20
-tasks.sieve.mfb0 = 42
+tasks.lim0 = 800000
+tasks.lpb0 = 24
+tasks.sieve.mfb0 = 48
 
-tasks.sieve.qfac_nfac = 8
+tasks.sieve.qfac_nfac = 14
 tasks.sieve.qfac_min = 1700
-tasks.sieve.qfac_max = 2000
-tasks.sieve.qrange = 100
+tasks.sieve.qfac_max = 2100
+
+tasks.sieve.qrange = 250
 tasks.qmin = 1
 
-tasks.sieve.ncurves0 = 2
+tasks.sieve.ncurves0 = 15
 
-tasks.sieve.rels_wanted = 60000
+tasks.sieve.rels_wanted = 450000
 
 ###########################################################################
 # Filtering
