@@ -49,9 +49,8 @@ tasks.sieve.qfac_max = 2900
 # Number of special-q's per elementary sieving task
 tasks.sieve.qrange = 250
 
-# tasks.qmin cannot be 0 as it is interpreted as a special value.
-# There is no real reason to have tasks.qmin != 1.
-tasks.qmin = 1
+# There is no real reason to have tasks.qmin != 0.
+# tasks.qmin = 0
 
 tasks.sieve.ncurves0 = 12
 

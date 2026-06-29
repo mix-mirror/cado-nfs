@@ -3973,16 +3973,7 @@ class SievingTask(ClientServerTask, DoesImport, FilesCreator, HasStatistics):
         self._nsides = int(nsides)
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
-        qmin = self.params["qmin"]
-        if "qnext" in self.state:
-            self.state["qnext"] = max(self.state["qnext"], qmin)
-        else:
-            # qmin = 0 is a magic value (undefined)
-            if qmin > 0:
-                self.state["qnext"] = qmin
-            else:
-                sqside = self.params["sqside"]
-                self.state["qnext"] = int(self.params[f"lim{sqside}"]/2)
+        self.set_initial_qnext(self.params["qmin"])
 
         self.state.setdefault("rels_found", 0)
         self.logger.info("param rels_wanted is %d", self.params["rels_wanted"])
@@ -4005,6 +3996,17 @@ class SievingTask(ClientServerTask, DoesImport, FilesCreator, HasStatistics):
 
     def enough_work_received(self):
         return self.get_nrels() >= self.state["rels_wanted"]
+
+    def set_initial_qnext(self, qmin):
+        if "qnext" in self.state:
+            self.state["qnext"] = max(self.state["qnext"], qmin)
+        else:
+            # qmin = 0 is a magic value (undefined)
+            if qmin > 0:
+                self.state["qnext"] = qmin
+            else:
+                sqside = self.params["sqside"]
+                self.state["qnext"] = int(self.params[f"lim{sqside}"]/2)
 
     def reached_qmax(self):
         if "qmax" not in self.params:
@@ -4285,6 +4287,10 @@ class QuadraticSievingTask(SievingTask):
                                 {"qfac_nfac": int,
                                  "qfac_min": int,
                                  "qfac_max": [int]})
+
+    def set_initial_qnext(self, qmin):
+        qnext = self.state.get("qnext", 0)
+        self.state["qnext"] = max(qnext, qmin)
 
 
 class Duplicates1Task(Task, FilesCreator, HasStatistics):

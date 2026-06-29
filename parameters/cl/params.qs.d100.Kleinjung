@@ -29,7 +29,6 @@ tasks.sieve.qfac_min = 1693 # lower bound of the ai-range
 tasks.sieve.qfac_max = 2082 # upper bound of the ai-range
 
 tasks.sieve.qrange = 250
-tasks.qmin = 1
 
 tasks.sieve.ncurves0 = 15
 

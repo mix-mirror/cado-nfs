@@ -29,7 +29,6 @@ tasks.sieve.qfac_nfac = 6
 tasks.sieve.qfac_min = 900
 tasks.sieve.qfac_max = 1200
 tasks.sieve.qrange = 100
-tasks.qmin = 1
 
 tasks.sieve.ncurves0 = 2
 
