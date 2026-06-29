@@ -3,31 +3,36 @@
 ###########################################################################
 # See parameters/factor/params.c90 for an example which contains some
 # documentation.
-# See parameters/cl/params.qs.d90 and parameters/factor/params.qs.c90 for
-# examples which contains some documentation specific to the QS algorithm.
+# See parameters/cl/params.d90 for an example which contains some
+# documentation specific to the QS algorithm for for class groups.
+#
+# Undocumented parameters have the same meaning as in NFS or QS for class
+# groups.
 
 ###########################################################################
 # General parameters
 ###########################################################################
 
-name = c80
+name = c90
 
 ###########################################################################
 # Sieve
 ###########################################################################
 
-tasks.I = 12
-tasks.lim0 = 100000
-tasks.lpb0 = 19
-tasks.sieve.mfb0 = 38
+tasks.I = 14
+tasks.lim0 = 400000
+tasks.lpb0 = 23
+tasks.sieve.mfb0 = 46
 
 tasks.sieve.qfac_nfac = 12
-tasks.sieve.qfac_min = 1024
-tasks.sieve.qfac_max = 2048
-tasks.sieve.qrange = 100
-tasks.qmin = 1
+tasks.sieve.qfac_min = 2400
+tasks.sieve.qfac_max = 2900
+tasks.sieve.qrange = 250
 
-tasks.sieve.ncurves0 = 2
+tasks.qmin = 1
+tasks.sieve.ncurves0 = 12
+
+tasks.sieve.rels_wanted = 300000
 
 ###########################################################################
 # Filtering
@@ -37,7 +42,7 @@ tasks.filter.purge.keep = 128
 tasks.filter.target_density = 170.0
 
 ###########################################################################
-# Linear algebra
+# Linalg
 ###########################################################################
 
 tasks.linalg.bwc.interleaving = 0
@@ -48,4 +53,6 @@ tasks.linalg.n = 64
 # Characters
 ###########################################################################
 
+# In the case of QS for factorization, the number of characters must be 1.
+# The only needed character corresponds to the sign of the relation.
 tasks.linalg.characters.nchar = 1

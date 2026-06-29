@@ -10,24 +10,26 @@
 # General parameters
 ###########################################################################
 
-name = c80
+name = c70
 
 ###########################################################################
 # Sieve
 ###########################################################################
 
-tasks.I = 12
-tasks.lim0 = 100000
-tasks.lpb0 = 19
-tasks.sieve.mfb0 = 38
+tasks.I = 15
+tasks.lim0 = 150000
+tasks.lpb0 = 21
+tasks.sieve.mfb0 = 42
 
-tasks.sieve.qfac_nfac = 12
-tasks.sieve.qfac_min = 1024
-tasks.sieve.qfac_max = 2048
+tasks.sieve.qfac_nfac = 10
+tasks.sieve.qfac_min = 950
+tasks.sieve.qfac_max = 1250
 tasks.sieve.qrange = 100
 tasks.qmin = 1
 
-tasks.sieve.ncurves0 = 2
+tasks.sieve.ncurves0 = 5
+
+tasks.sieve.rels_wanted = 50000
 
 ###########################################################################
 # Filtering

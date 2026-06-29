@@ -1,7 +1,10 @@
 ###########################################################################
 #     Parameter file for Cado-NFS
 ###########################################################################
-# See params/params.c90 for an example which contains some documentation.
+# See parameters/factor/params.c90 for an example which contains some
+# documentation.
+# See parameters/cl/params.qs.d90 and parameters/factor/params.qs.c90 for
+# examples which contains some documentation specific to the QS algorithm.
 
 ###########################################################################
 # General parameters
@@ -17,20 +20,22 @@ tasks.I = 14
 tasks.lim0 = 50000
 tasks.lpb0 = 20
 tasks.sieve.mfb0 = 42
-tasks.sieve.qrange = 25
-tasks.qmin = 1 # cannot be 0 as it is interpreted as a special value
 
-tasks.sieve.qfac_min = 750
-tasks.sieve.qfac_max = 1024
-tasks.sieve.qfac_nfac = 10
+tasks.sieve.qfac_nfac = 8
+tasks.sieve.qfac_min = 1700
+tasks.sieve.qfac_max = 2000
+tasks.sieve.qrange = 25
+tasks.qmin = 1
 
 tasks.sieve.ncurves0 = 2
+
+tasks.sieve.rels_wanted = 30000
 
 ###########################################################################
 # Filtering
 ###########################################################################
 
-tasks.filter.purge.keep = 32
+tasks.filter.purge.keep = 128
 tasks.filter.target_density = 170.0
 
 ###########################################################################
