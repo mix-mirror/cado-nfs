@@ -3479,7 +3479,7 @@ class PolyselQSTask(Task):
 
     @property
     def programs(self):
-        return ()
+        return ((cadoprograms.Alpha, ("poly"), {}),)
 
     @property
     def paramnames(self):
@@ -3521,6 +3521,12 @@ class PolyselQSTask(Task):
                     "polyfilename": polyfilename.get_wdir_relative()
                     }
             self.state.update(update)
+            p = cadoprograms.Alpha(poly=polyfilename, **self.progparams[0])
+            message = self.submit_command(p, None)
+            if message.get_exitcode(0) != 0:
+                self.logger.warning("alpha computation failed")
+            else:
+                self.logger.info(message.read_stdout(0).decode().strip())
         return True
 
     def get_poly(self):

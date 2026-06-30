@@ -782,6 +782,7 @@ parameters/misc/cpubinding.conf
 parameters/polynomials/F9.poly
 polyselect/CMakeLists.txt
 polyselect/Makefile
+polyselect/alpha.cpp
 polyselect/area.cpp
 polyselect/area.hpp
 polyselect/auxiliary.cpp

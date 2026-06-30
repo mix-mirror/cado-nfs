@@ -99,3 +99,8 @@ install(TARGETS skewness RUNTIME DESTINATION ${LIBSUFFIX}/polyselect)
 add_executable (score score.cpp)
 target_link_libraries (score polyselect_common utils)
 install(TARGETS score RUNTIME DESTINATION ${LIBSUFFIX}/polyselect)
+
+# alpha
+add_executable (alpha alpha.cpp)
+target_link_libraries (alpha polyselect_common utils)
+install(TARGETS alpha RUNTIME DESTINATION ${LIBSUFFIX}/polyselect)

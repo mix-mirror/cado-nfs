@@ -927,6 +927,18 @@ class Score(Program):
         super().__init__(locals(), **kwargs)
 
 
+class Alpha(Program):
+    binary = "alpha"
+    name = binary
+    subdir = "polyselect"
+
+    def __init__(self, *,
+                 poly: Parameter(is_input_file=True),
+                 B: Parameter(checktype=int) = None,
+                 **kwargs):
+        super().__init__(locals(), **kwargs)
+
+
 class MakeFB(Program):
     """
     >>> p = MakeFB(poly="foo.poly", lim=1, skip_check_binary_exists=True)
