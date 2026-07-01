@@ -5608,8 +5608,11 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
             raise ValueError("parameter nmatrices should be in [1,100]")
         # There is no reason to have moduli_nbits less than 64, but it works
         # with smaller moduli (just need to be careful and exclude the prime 2)
-        if self.params["moduli_nbits"] < 3:
-            raise ValueError("parameter moduli_nbits should be >= 3")
+        if self.params["moduli_nbits"] < 2:
+            raise ValueError("parameter moduli_nbits should be >= 2")
+        default = 2**(self.params["moduli_nbits"]-1)
+        for i in range(self.params["nmatrices"]):
+            self.state.setdefault(f"prime{i}", default)
 
     def run(self):
         super().run()
@@ -5648,33 +5651,23 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
             run_counter = self.state["run_counter"]
             self.state["run_counter"] = run_counter + 1
 
-            h = 0
-            for self.i, matrix in enumerate(matrices):
-                self.logger.info(f"Starting linalg for matrix #{self.i}")
-                if self.need_more_wus():
-                    bwc["matrix"] = matrix
-                    matrix = pathlib.Path(matrix)
-                    bwc["rwmatrix"] = matrix.with_suffix(f".rw{matrix.suffix}")
-                    bwc["cwmatrix"] = matrix.with_suffix(f".cw{matrix.suffix}")
-
-                    while self.need_more_wus():
-                        ell = self.next_valid_prime()
-                        identifier = f"{run_counter}{self.i:02d}-{ell}"
+            while self.need_more_wus():
+                for i, matrix in enumerate(matrices):
+                    if self.need_more_wus(i):
+                        ell = self.next_valid_prime(i)
+                        identifier = f"{run_counter}{i:02d}-{ell}"
                         dirname = f"bwc.{identifier}"
                         p = cadoprograms.BWC(wdir=dirname, prime=ell, **bwc,
-                                             **self.progparams[0])
+                                             **matrix, **self.progparams[0])
                         self.submit_command(p, identifier, commit=False)
-                        self.state.update({f"prime{self.i}": ell}, commit=True)
+                        self.state.update({f"prime{i}": ell}, commit=True)
 
-                    self.logger.info(
-                            f"Cancelling remaining workunits for h{self.i}")
-                    self.wuar.cancel_all_available()
+            self.logger.info("Cancelling remaining workunits")
+            self.wuar.cancel_all_available()
 
-                det = self.state[f"h{self.i}"]
-                self.logger.info(f"h multiple #{self.i} = {det}")
-                h = xgcd(h, det)[0]
-                self.logger.info(f"Current multiple of class number: {h}")
-
+            h = 0
+            for i in range(self.params["nmatrices"]):
+                h = xgcd(h, self.state[f"h{i}"])[0]
             self.state["classnumber"] = h
 
         h = self.state["classnumber"]
@@ -5697,12 +5690,15 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
             if not mergedfile.isfile():
                 self.logger.critical(f"Missing merged file {mergedfile}.")
                 return []
-            matrices.append(mergedfile.realpath())
+            matrix = pathlib.Path(mergedfile.realpath())
+            rw = matrix.with_suffix(f".rw{matrix.suffix}")
+            cw = matrix.with_suffix(f".cw{matrix.suffix}")
+            matrices.append({"matrix": matrix, "rwmatrix": rw, "cwmatrix": cw})
         return matrices
 
     def clear_state(self):
         todel = set()
-        K = ("nmatrices", "classnumber")
+        K = ("classnumber", )
         V = ("det", "M", "neq", "h", "prime", "nprimes")
         R = tuple(rf"{pre}\d+" for pre in V)
         for k in self.state:
@@ -5710,25 +5706,25 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
                 todel.add(k)
         self.state.clear(todel, commit=True)
 
-    def need_more_wus(self):
-        return f"h{self.i}" not in self.state
+    def need_more_wus(self, i=None):
+        if i is not None:
+            return f"h{i}" not in self.state
+        else:
+            nmat = self.params["nmatrices"]
+            return any(self.need_more_wus(i) for i in range(nmat))
 
-    def next_valid_prime(self):
-        default = 2**(self.params["moduli_nbits"]-1)
-        ell = next_prime(self.state.get(f"prime{self.i}", default))
-        M = self.state.get(f"M{self.i}", 1)
+    def next_valid_prime(self, i):
+        ell = next_prime(self.state[f"prime{i}"])
+        M = self.state.get(f"M{i}", 1)
         while M % ell == 0:  # skip prime not coprime to M
             ell = next_prime(ell)
         return ell
 
     def get_achievement(self):
-        if self.i == 0:
-            return 0.
-        else:
-            np0 = self.state.get("nprimes0")
-            npi = self.state.get(f"nprimes{self.i}", 0)
-            nm = self.params["nmatrices"]
-            return (min(npi/np0, 1.0)+self.i)/nm
+        # Mostly useless but doing better requires a (tight) bound on the size
+        # of the determinant.
+        nmat = self.params["nmatrices"]
+        return 1.-sum(self.need_more_wus(i) for i in range(nmat))/nmat
 
     def get_wusize(self, wuid):
         (_, _, identifier, _) = self.split_wuname(wuid)
@@ -5779,6 +5775,10 @@ class LinAlgClTask(ClientServerTask, HasStatistics):
                                      "linalg successfully done modulo "
                                      f"{update[f'nprimes{i}']} primes for "
                                      f"h{i}")
+                    if f"h{i}" in update:
+                        np = update[f"nprimes{i}"]
+                        self.logger.info(f"h multiple #{i} = {abs(new_det)}"
+                                         f" (computed using {np} primes)")
                     return True
             else:
                 self.logger.error(f"Could not parse output {filename}")
