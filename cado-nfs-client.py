@@ -942,7 +942,18 @@ class WorkunitProcessor(object):
             filepath = os.path.join(self.settings["WORKDIR"], f['filename'])
             logging.info("Attaching file %s [fid=%s] to upload", filepath, fid)
             basename = os.path.split(filepath)[1]
-            files[basename] = open(filepath, 'rb')
+            try:
+                files[basename] = open(filepath, 'rb')
+            except FileNotFoundError:
+                # If the output file is missing and the command failed, the
+                # exception is ignored as some output files may be missing due
+                # to the error. An empty file is sent instead.
+                if self.errorcode:
+                    logging.warn(f"{filepath} is missing (because the command "
+                                  "failed ?). Sending empty file instead.")
+                    files[basename] = BytesIO(b'')
+                else:
+                    raise  # output file should exist in this case
             fileinfo[basename] = dict(WUid=self.workunit.get_id(),
                                       key=fid)
 
