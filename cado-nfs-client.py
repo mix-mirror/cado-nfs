@@ -930,7 +930,7 @@ class WorkunitProcessor(object):
                     clientid=self.settings["CLIENTID"])
         if self.errorcode:
             data["errorcode"] = self.errorcode
-        if self.failedcommand:
+        if self.failedcommand is not None:
             data["failedcommand"] = self.failedcommand
 
         files = {}
