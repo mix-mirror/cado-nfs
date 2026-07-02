@@ -31,7 +31,10 @@ tasks.sieve.qrange = 250
 
 tasks.sieve.ncurves0 = 12
 
-tasks.sieve.rels_wanted = 300000
+# A stragegy to find a good value of rels_wanted for a given size is the
+# following. First use tasks.sieve.rels_wanted=1, and look in cxxx.log
+# for the final value of rels_wanted.
+tasks.sieve.rels_wanted = 155000
 
 ###########################################################################
 # Filtering

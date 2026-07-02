@@ -28,7 +28,7 @@ tasks.sieve.qrange = 100
 
 tasks.sieve.ncurves0 = 5
 
-tasks.sieve.rels_wanted = 50000
+tasks.sieve.rels_wanted = 45000
 
 ###########################################################################
 # Filtering
