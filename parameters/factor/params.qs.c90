@@ -3,8 +3,8 @@
 ###########################################################################
 # See parameters/factor/params.c90 for an example which contains some
 # documentation.
-# See parameters/cl/params.d90 for an example which contains some
-# documentation specific to the QS algorithm for for class groups.
+# See parameters/cl/params.qs.d90 for an example which contains some
+# documentation specific to the QS algorithm for class groups.
 #
 # Undocumented parameters have the same meaning as in NFS or QS for class
 # groups.
