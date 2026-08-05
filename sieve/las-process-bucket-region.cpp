@@ -320,7 +320,7 @@ template<bool with_hints> void process_bucket_region_run::apply_buckets_inner(in
     using my_shorthint_t = hints_proxy<with_hints>::s;
     {
         auto const & BA_ins = wss.bucket_arrays<1, my_shorthint_t>();
-        verbose_fmt_print(0, 3,
+        verbose_fmt_print(0, 4,
                 "# apply 1s buckets ({} groups of {} buckets, taking bucket {}/{})"
                 " to region {}\n",
                 BA_ins.size(), BA_ins[0].n_bucket,
@@ -340,7 +340,7 @@ template<bool with_hints> void process_bucket_region_run::apply_buckets_inner(in
     /* Apply downsorted buckets, if necessary. */
     if (ws.toplevel > 1) {
         auto const & BA_ins = wss.bucket_arrays<1, my_longhint_t>();
-        verbose_fmt_print(0, 3,
+        verbose_fmt_print(0, 4,
                 "# apply 1l buckets ({} groups of {} buckets)"
                 " to region {}\n",
                 BA_ins.size(), BA_ins[0].n_bucket,

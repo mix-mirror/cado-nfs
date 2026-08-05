@@ -69,7 +69,7 @@ T & reservation_array<T, false>::inner_reserve()
     auto [ ratio, i ] = available_buckets.top();
     available_buckets.pop();
 
-    verbose_fmt_print(0, 3, "# Bucket {} is {:.0f}% full\n",
+    verbose_fmt_print(0, 4, "# Bucket {} is {:.0f}% full\n",
             i, ratio * 100.);
 
     /* We used to have a mechanism that detected the situation where no
