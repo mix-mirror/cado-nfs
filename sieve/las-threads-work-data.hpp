@@ -17,13 +17,13 @@
 #include "las-norms.hpp"
 #include "las-plattice.hpp"
 #include "las-siever-config.hpp"
-#include "las-smallsieve.hpp"
 #include "las-threads.hpp"
 #include "special-q.hpp"
 #include "las-special-q-task.hpp"
 #include "lock_guarded_container.hpp"
 #include "multityped_array.hpp"
-#include "siqs-smallsieve.hpp"
+#include "smallsieve.hpp"
+#include "sieve-methods.hpp"
 
 class las_memory_accessor; // IWYU pragma: keep
 class nfs_aux; // IWYU pragma: keep
@@ -33,8 +33,6 @@ struct las_info; // IWYU pragma: keep
 struct trialdiv_data; // IWYU pragma: keep
 struct unsieve_data; // IWYU pragma: keep
 template <int LEVEL, hint_type HINT> class bucket_array_t; // IWYU pragma: keep
-
-#define NUMBER_OF_BAS_FOR_THREADS(n)    ((n) == 1 ? 1 : ((n) + 2))
 
 /*
  * This structure holds the key algorithmic data that is used in las. It
@@ -51,10 +49,9 @@ template <int LEVEL, hint_type HINT> class bucket_array_t; // IWYU pragma: keep
  *  - Allocated space for one structure may be reused for another
  *    special-q.
  *
- * We have here nb_threads threads that will work with nb_threads+1 (or 1
- * if nb_threads==1 anyway) reservation_arrays in each data member of the
- * two reservation_groups in the groups[] data member. This +1 is here to
- * allow work to spread somewhat more evenly.
+ * We have here nb_threads threads that will work with nr_workspaces ==
+ * number_of_bas_for_threads(nb_threads) reservation_arrays in each data
+ * member of the two reservation_groups in the groups[] data member.
  *
  * Thread-private memory areas such as bucket regions are allocated in
  * the thread_data fields.
@@ -63,11 +60,15 @@ class nfs_work {
     public:
     las_info const & las;
     las_memory_accessor & local_memory;
-    private:
 
+    static constexpr int number_of_bas_for_threads(int n) {
+        /* This +2 is here to allow work to spread somewhat more evenly.
+         * */
+        return n == 1 ? 1 : (n + 2);
+    }
+
+    /* This field should actually be a const member of reservation_group */
     const int nr_workspaces;
-
-    public:
 
     bkmult_specifier bk_multiplier;
 
@@ -165,9 +166,10 @@ class nfs_work {
          * unfortunately.
          */
         template<sieve_method Algo>
+
         side_data(int nr_arrays, Algo)
             : group(nr_arrays)
-            , ssd(new Algo::smallsieve())
+            , ssd(std::make_unique<typename Algo::smallsieve>())
         {
         }
 

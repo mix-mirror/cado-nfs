@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+#include "fmt/format.h"
+
 #include "bucket.hpp"
 #include "fb-types.hpp"
 #include "las-auxiliary-data.hpp"
@@ -17,10 +19,16 @@
 #include "las-config.hpp"
 #include "las-downsort.hpp"
 #include "las-fill-in-buckets.hpp"
+
+
+#include "las-threads.hpp"
+
 #include "las-globals.hpp"
 #include "las-process-bucket-region.hpp"
 #include "las-report-stats.hpp"
 #include "las-siever-config.hpp"
+#include "las-smallsieve.hpp"   // IWYU pragma: keep
+                                // SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE
 #include "las-threads-work-data.hpp"
 #include "las-where-am-i-proxy.hpp"
 #include "macros.h"

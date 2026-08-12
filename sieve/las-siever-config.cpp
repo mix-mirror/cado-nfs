@@ -196,10 +196,6 @@ bool siever_config::parse_default(siever_config & sc, cxx_param_list & pl, int n
  *
  * XXX NOTE XXX : the scale field is set to 0 by this function.
  *
- * XXX NOTE XXX : the nr_workspaces field is set to 0 by this function,
- * because the caller is expected to set that instead.
- *
- *
  */
 fb_factorbase::key_type siever_config::instantiate_thresholds(int side) const
 {

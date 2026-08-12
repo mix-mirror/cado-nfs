@@ -345,7 +345,7 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
     ASSERT_ALWAYS(1 <= toplevel && toplevel <= MAX_TOPLEVEL);
     */
 
-    int const nba = NUMBER_OF_BAS_FOR_THREADS(nthreads);
+    int const nba = nfs_work::number_of_bas_for_threads(nthreads);
 
     std::array<double, MAX_TOPLEVEL + 1> ms, ss;
     std::array<round_me, MAX_TOPLEVEL + 1> rs;

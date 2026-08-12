@@ -22,7 +22,7 @@
  *
  * This is capped to nb_buckets
  */
-#define SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE 1024
+static constexpr int SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE = 1024;
 
 
 class small_sieve_data {

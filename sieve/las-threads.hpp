@@ -210,8 +210,8 @@ class reservation_group {
     RAs_t RAs;
 
     template <std::size_t... Is>
-        reservation_group(int nr_bucket_arrays, std::index_sequence<Is...>)
-            : RAs(((void)Is, nr_bucket_arrays)...) {}
+        reservation_group(int nr_workspaces, std::index_sequence<Is...>)
+            : RAs(((void)Is, nr_workspaces)...) {}
 
 public:
     template <int LEVEL, typename HINT>
@@ -230,14 +230,14 @@ public:
      * balancing). This is controlled by the nr_workspaces field in
      * nfs_work.  For longhint, the parallelization scheme is a bit
      * different, hence we specify directly here the number of threads that
-     * will fill these bucket arrays by downsosrting. Older code had that
+     * will fill these bucket arrays by downsorting. Older code had that
      * downsorting single-threaded.
      */
 
     /* call the private ctor to initialize all RA members */
-    explicit reservation_group(int nr_bucket_arrays)
+    explicit reservation_group(int nr_workspaces)
         : reservation_group(
-              nr_bucket_arrays,
+              nr_workspaces,
               std::make_index_sequence<std::tuple_size_v<RAs_t>>{}
     ) {}
 

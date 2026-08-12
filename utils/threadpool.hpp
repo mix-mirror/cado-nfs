@@ -278,6 +278,9 @@ public:
                     std::rethrow_exception(ex_ptr);
             } catch (const T& e) {
                 res.push_back(e);
+            } catch (const std::runtime_error& e) {
+                /* better throw as soon as we can */
+                std::rethrow_exception(ex_ptr);
             } catch (...) {
                 remaining.push(std::move(ex_ptr));
             }

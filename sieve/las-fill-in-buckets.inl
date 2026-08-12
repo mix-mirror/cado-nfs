@@ -6,6 +6,7 @@
 #include "fb-types.hpp"
 #include "fb.hpp"
 #include "las-plattice.hpp"
+#include "las-auxiliary-data.hpp"
 #include "las-qlattice.hpp"
 #include "threadpool.hpp"
 #include "las-threads-work-data.hpp"
