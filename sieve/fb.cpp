@@ -13,7 +13,8 @@
 #include <iomanip>
 #include <istream>
 #include <ostream>
-#include <queue>
+#include <future>
+#include <deque>
 #include <sstream>
 #include <stdexcept>
 #include <streambuf>
@@ -46,7 +47,7 @@
 #include "mpz_poly.h"
 #include "multityped_array.hpp"
 #include "params.hpp"
-#include "threadpool.hpp"
+import threadpool;
 #include "timing.h"
 #include "verbose.hpp"
 #include "utils_cxx.hpp"

@@ -18,7 +18,7 @@
 #include "mpz_poly.h"
 #include "cxx_mpz.hpp"
 #include "verbose.hpp"
-#include "threadpool.hpp"
+import threadpool;
 
 int never_discard = 0;      /* only enabled for las_descent */
 

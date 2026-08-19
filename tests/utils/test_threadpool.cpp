@@ -6,6 +6,7 @@
 
 #include <thread>
 #include <deque>
+#include <future>
 #include <string>
 #include <utility>
 
@@ -14,7 +15,7 @@
 #include "fmt/std.h"
 
 #include "tests_common.h"
-#include "threadpool.hpp"
+import threadpool;
 
 // coverity[root_function]
 int main(int argc, char const * argv[])

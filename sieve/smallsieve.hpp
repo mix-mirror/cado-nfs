@@ -7,7 +7,7 @@
 #include "fb.hpp"
 #include "las-forwardtypes.hpp"
 #include "las-qlattice.hpp"
-#include "threadpool.hpp"
+import threadpool;
 #include "fb-types.hpp"
 #include "macros.h"
 

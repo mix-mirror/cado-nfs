@@ -5,7 +5,7 @@
 #include "fb.hpp"
 #include "las-plattice.hpp"
 #include "las-qlattice.hpp"
-#include "threadpool.hpp"
+import threadpool;
 #include "las-threads-work-data.hpp"
 
 template <int LEVEL, class FB_ENTRY_TYPE>

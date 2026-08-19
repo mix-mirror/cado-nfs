@@ -37,7 +37,7 @@
 #include "macros.h"
 #include "multityped_array.hpp"
 #include "tdict.hpp"
-#include "threadpool.hpp"
+import threadpool;
 #include "utils_cxx.hpp"
 #include "verbose.hpp"
 

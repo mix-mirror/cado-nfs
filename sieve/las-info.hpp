@@ -36,7 +36,7 @@
 #include "trialdiv.hpp"
 #include "utils_cxx.hpp"
 #include "relation_cache.hpp"
-#include "chronograms.hpp"
+import chronograms;
 
 // scan-headers: stop here
 

@@ -8,7 +8,7 @@
 #include "fmt/base.h"
 
 #include "tests_common.h"
-#include "threadpool.hpp"
+import threadpool;
 #include "macros.h"
 
 static void test_wait_ordering(thread_pool & pool)

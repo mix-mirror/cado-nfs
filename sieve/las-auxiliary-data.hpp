@@ -13,7 +13,7 @@
 #include "las-report-stats.hpp"
 #include "las-where-am-i-proxy.hpp"
 #include "lock_guarded_container.hpp"
-#include "threadpool.hpp"
+import threadpool;
 #include "tdict.hpp"
 #include "timing.h"
 

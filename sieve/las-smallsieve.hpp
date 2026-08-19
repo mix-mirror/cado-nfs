@@ -13,7 +13,7 @@
 #include "las-qlattice.hpp"
 #include "macros.h"
 #include "smallsieve.hpp"
-#include "threadpool.hpp"
+import threadpool;
 
 
 /* Simple primes/roots. These are implicitly "nice", i.e., odd primes/powers

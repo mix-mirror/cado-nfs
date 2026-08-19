@@ -5,7 +5,7 @@
 #include <memory>        // for shared_ptr
 #include "las-info.hpp"  // for las_info
 #include "sieve-methods.hpp"
-#include "threadpool.hpp"
+import threadpool;
 
 class nfs_aux;
 struct special_q;

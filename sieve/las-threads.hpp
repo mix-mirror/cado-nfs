@@ -14,7 +14,7 @@
 #include "bucket.hpp"
 #include "las-bkmult.hpp"
 #include "las-config.hpp"
-#include "threadpool.hpp"
+import threadpool;
 #include "macros.h"
 #include "verbose.hpp"
 

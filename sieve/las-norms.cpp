@@ -33,7 +33,7 @@
 #include "subdivision.hpp"
 #include "rho.h"
 #include "verbose.hpp"
-#include "threadpool.hpp"
+import threadpool;
 
 using namespace std;
 
