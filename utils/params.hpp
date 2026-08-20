@@ -1,6 +1,7 @@
 #ifndef CADO_PARAMS_HPP
 #define CADO_PARAMS_HPP
 
+#ifndef CADO_IMPORTED_STD_MODULE
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -28,6 +29,7 @@
  * we fall back to stringstream parsing instead
  */
 #include <sstream>
+#endif
 #endif
 
 #include "fmt/base.h"

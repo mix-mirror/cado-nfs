@@ -1,6 +1,7 @@
 #ifndef CADO_THREADPOOL_HPP
 #define CADO_THREADPOOL_HPP
 
+#ifndef CADO_IMPORTED_STD_MODULE
 #include <cstddef>
 
 #include <atomic>
@@ -18,6 +19,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#endif
 
 #include "chronograms.hpp"
 #include "utils_cxx.hpp"

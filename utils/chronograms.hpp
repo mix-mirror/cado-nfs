@@ -1,12 +1,14 @@
 #ifndef CHRONOGRAMS_HPP_
 #define CHRONOGRAMS_HPP_
 
+#ifndef CADO_IMPORTED_STD_MODULE
 #include <cstdint>
 
 #include <array>
 #include <string>
 #include <type_traits>
 #include <vector>
+#endif
 
 #include "params.hpp"
 #include "timing.h"
