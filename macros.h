@@ -29,7 +29,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 /* Common asserting/debugging defines */
 /* See README.macro_usage */
 
-#ifndef CADO_IMPORTED_STD_MODULE
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,8 +37,6 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #ifdef __cplusplus
 #include <stdexcept>
 #endif
-#endif
-
 #include <gmp.h> /* for __GNU_MP_VERSION */
 
 // scan-headers: stop here

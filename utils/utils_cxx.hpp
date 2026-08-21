@@ -1,7 +1,6 @@
 #ifndef CADO_UTILS_CXX_HPP
 #define CADO_UTILS_CXX_HPP
 
-#ifndef CADO_IMPORTED_STD_MODULE
 #include <cstdio>
 #include <cstdlib>
 #include <cstddef>
@@ -21,7 +20,6 @@
 #include <utility>
 #include <vector>
 #include <stdexcept>
-#endif
 
 #include "fmt/base.h"
 #include "fmt/format.h"

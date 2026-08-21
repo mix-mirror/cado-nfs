@@ -116,8 +116,6 @@ if(HAVE_MPFR)
     target_link_libraries(utils PUBLIC mpfr)
 endif()
 
-cado_enable_std_module(utils)
-
 add_library (utils_with_io ${CADO_SHARED} ${sources_io})
 target_link_libraries(utils_with_io PUBLIC utils)
 cado_apply_pch(utils_with_io)

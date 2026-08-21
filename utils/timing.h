@@ -3,10 +3,8 @@
 
 #include "cado_config.h"  // for HAVE_GETRUSAGE, HAVE_GCC_STYLE_AMD64_INLINE...
 
-#ifndef CADO_IMPORTED_STD_MODULE
 #include <stdio.h> // FILE
 #include <stdint.h> /* for uint64_t */
-#endif
 
 #ifdef  HAVE_GETRUSAGE
 #include <sys/resource.h> // IWYU pragma: keep

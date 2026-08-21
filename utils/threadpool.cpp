@@ -1,9 +1,5 @@
 #include "cado.h" // IWYU pragma: keep
 
-#ifdef CADO_USE_STD_MODULE
-import std;
-#define CADO_IMPORTED_STD_MODULE
-#else
 #include <cstddef>
 #include <cstdint>
 
@@ -17,7 +13,6 @@ import std;
 #include <thread>
 #include <utility>
 #include <vector>
-#endif
 
 #include "macros.h"
 #include "threadpool.hpp"
