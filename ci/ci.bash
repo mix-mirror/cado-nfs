@@ -53,11 +53,11 @@ step_configure() {
     if is_ubuntu ; then
         . /etc/lsb-release
         # force newer compiler on ubuntu 24
-        # case "$DISTRIB_RELEASE" in
-        #     24*)
-        #         export CC=gcc-14
-        #         export CXX=g++-14
-        # esac
+        case "$DISTRIB_RELEASE" in
+            24*)
+                export CC=gcc-14
+                export CXX=g++-14
+        esac
     fi
     if [ "$using_cmake_directly" ] ; then
         (cd "$build_tree" ; if [ "$ninja_build" ] ; then unset MAKE; fi ; cmake "$source_tree" $pass_flags_to_cmake)

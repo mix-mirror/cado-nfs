@@ -67,10 +67,10 @@ case "$JOB_NAME" in
     *"mysql specific"*)
         export mysql=1
         ;;
-    *"ninja build"*)
-        export ninja_build=1
-        ;;
 esac
+
+# with c++20 modules, ninja is required.
+export ninja_build=1
 
 case "$JOB_NAME" in
     *"merge coverage tests"*)
@@ -163,17 +163,16 @@ project_package_selection() {
     # None of the tweaks below is strictly required, except if we want to
     # try with c++20 modules.
     #
-    # if (is_debian || is_ubuntu) && [ "$icc" ] ; then
-    #     debian_packages="$debian_packages     clang clang-tools"
-    # fi
-    # if is_ubuntu ; then
-    #     . /etc/lsb-release
-    #     case "$DISTRIB_RELEASE" in
-    #         24*)
-    #             debian_packages="$debian_packages     g++-14";;
-    #     esac
-    # fi
-
+    if (is_debian || is_ubuntu) && [ "$icc" ] ; then
+        debian_packages="$debian_packages     clang clang-tools"
+    fi
+    if is_ubuntu ; then
+        . /etc/lsb-release
+        case "$DISTRIB_RELEASE" in
+            24*)
+                debian_packages="$debian_packages     g++-14";;
+        esac
+    fi
 
     # add this so that we get the gdb tests as well (at least with the
     # shared libs on debian-testing case)

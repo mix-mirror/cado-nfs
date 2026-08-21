@@ -209,6 +209,7 @@
 #define CADO_MPI_MPZ_INTERNAL_SIZE_T   @CADO_MPI_MPZ_INTERNAL_SIZE_T@
 
 #cmakedefine HAVE_LIBSTDCXX_BUG_114153
+#cmakedefine HAVE_LLVM_BUG_190333
 
 /* see also select_mpi.h for c++ templates meant to help in determining mpi type tags */
 

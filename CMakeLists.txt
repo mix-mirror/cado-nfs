@@ -48,18 +48,14 @@ endif()
 # If you change the min version, also change scripts/call_cmake.sh
 # It must be called before the project() command.
 # Note that c++20 modules support requires 3.28
-cmake_minimum_required(VERSION 3.18.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 project(CADO_NFS)
 
-# Enable native C++20. On the other hand, we've given up on c++20
-# modules.
+# Enable native C++20 and module scanning support
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.28.0)
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
-endif()
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
 enable_language(ASM)
 
@@ -239,48 +235,48 @@ endif()
 
 # *IF* we want to try c++20 modules, as of 2026 the only way to go with
 # Intel compilers is to bring in clang-scan-deps from clang-tools.
-# if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
-#     find_program(CMAKE_CXX_CLANG_SCAN_DEPS
-#         NAMES
-#         clang-scan-deps
-#         clang-scan-deps-18
-#         clang-scan-deps-19
-#         clang-scan-deps-20
-#     )
-#     # starting with clang-21, the debian package clang also includes the
-#     # non-versioned clang-scan-deps symlink
-# 
-#     message(STATUS "clang-scan-deps is ${CMAKE_CXX_CLANG_SCAN_DEPS}")
-# 
-#     if (CMAKE_CXX_CLANG_SCAN_DEPS)
-#        set(CMAKE_CXX_MODULE_MAP_FORMAT "clang")
-#        set(CMAKE_CXX_MODULE_MAP_FLAG "@<MODULE_MAP_FILE>")
-#        set(CMAKE_CXX_MODULE_BMI_ONLY_FLAG "--precompile")
-# 
-#        # <DYNDEP_FILE> captures stdout into .ddi; <DEP_FILE> handles .ddi.d
-#        string(CONCAT CMAKE_CXX_SCANDEP_SOURCE
-#                "\"${CMAKE_CXX_CLANG_SCAN_DEPS}\""
-#                " -format=p1689"
-#                " --"
-#                " <CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS>"
-#                 " -Qunused-arguments -Wno-unknown-warning-option"
-#                " -x c++ -c -o <OBJECT> <SOURCE>"
-#                " -MT <OBJECT>"
-#                " -MD -MF <DEP_FILE>"
-#                 " > <DYNDEP_FILE>.tmp && mv <DYNDEP_FILE>.tmp <DYNDEP_FILE>"
-#        )
-# 
-#        list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
-#                CMAKE_CXX_CLANG_SCAN_DEPS
-#                CMAKE_CXX_MODULE_MAP_FORMAT
-#                CMAKE_CXX_MODULE_MAP_FLAG
-#                CMAKE_CXX_MODULE_BMI_ONLY_FLAG
-#                CMAKE_CXX_SCANDEP_SOURCE
-#        )
-#     else()
-#         message(FATAL_ERROR "clang-scan-deps not found in PATH.")
-#     endif()
-# endif()
+if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+    find_program(CMAKE_CXX_CLANG_SCAN_DEPS
+        NAMES
+        clang-scan-deps
+        clang-scan-deps-18
+        clang-scan-deps-19
+        clang-scan-deps-20
+    )
+    # starting with clang-21, the debian package clang also includes the
+    # non-versioned clang-scan-deps symlink
+
+    message(STATUS "clang-scan-deps is ${CMAKE_CXX_CLANG_SCAN_DEPS}")
+
+    if (CMAKE_CXX_CLANG_SCAN_DEPS)
+       set(CMAKE_CXX_MODULE_MAP_FORMAT "clang")
+       set(CMAKE_CXX_MODULE_MAP_FLAG "@<MODULE_MAP_FILE>")
+       set(CMAKE_CXX_MODULE_BMI_ONLY_FLAG "--precompile")
+
+       # <DYNDEP_FILE> captures stdout into .ddi; <DEP_FILE> handles .ddi.d
+       string(CONCAT CMAKE_CXX_SCANDEP_SOURCE
+               "\"${CMAKE_CXX_CLANG_SCAN_DEPS}\""
+               " -format=p1689"
+               " --"
+               " <CMAKE_CXX_COMPILER> <DEFINES> <INCLUDES> <FLAGS>"
+                " -Qunused-arguments -Wno-unknown-warning-option"
+               " -x c++ -c -o <OBJECT> <SOURCE>"
+               " -MT <OBJECT>"
+               " -MD -MF <DEP_FILE>"
+                " > <DYNDEP_FILE>.tmp && mv <DYNDEP_FILE>.tmp <DYNDEP_FILE>"
+       )
+
+       list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES
+               CMAKE_CXX_CLANG_SCAN_DEPS
+               CMAKE_CXX_MODULE_MAP_FORMAT
+               CMAKE_CXX_MODULE_MAP_FLAG
+               CMAKE_CXX_MODULE_BMI_ONLY_FLAG
+               CMAKE_CXX_SCANDEP_SOURCE
+       )
+    else()
+        message(FATAL_ERROR "clang-scan-deps not found in PATH.")
+    endif()
+endif()
 
 message(STATUS "CXXFLAGS=${CMAKE_CXX_FLAGS} (synthetized)")
 
@@ -573,8 +569,11 @@ add_custom_target(gf2x-build ALL
 install(CODE "execute_process(COMMAND ${GMAKE_EXECUTABLE} install WORKING_DIRECTORY gf2x)")
 endif()
 
-
-include(config/pch.cmake)
+# c++20 modules and pch are essentially orthogonal ideas (at least at
+# this point)
+# include(config/pch.cmake)
+function(cado_apply_pch target)
+endfunction()
 
 add_subdirectory (utils)
 add_subdirectory (polyselect)

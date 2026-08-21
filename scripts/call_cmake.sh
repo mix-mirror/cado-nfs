@@ -19,7 +19,7 @@
 # Type "make ?" for more options.
 ########################################################################
 
-: ${CMAKE_GENERATOR="Unix Makefiles"}
+: ${CMAKE_GENERATOR="Ninja"}
 export CMAKE_GENERATOR
 if [ "$CMAKE_GENERATOR" = "Ninja" ] ; then
     BUILD_TOOL=ninja
@@ -128,10 +128,10 @@ if ! [ "$cmake_version" ] ; then
     cmake_path=
 # Recall that (some versions of) bash do not want quoting for regex patterns.
 elif [[ "$cmake_version" =~ ^cmake\ version\ [012] ]] ; then
-    echo "CMake found, but not with version 3.18 or newer" >&2
+    echo "CMake found, but not with version 3.28 or newer" >&2
     cmake_path=
-elif [[ "$cmake_version" =~ ^cmake\ version\ 3\.([0-9]|1[0-7])\. ]] ; then
-    echo "CMake found, but not with version 3.18 or newer" >&2
+elif [[ "$cmake_version" =~ ^cmake\ version\ 3\.([0-9]|1[0-9]|2[0-7])\. ]] ; then
+    echo "CMake found, but not with version 3.28 or newer" >&2
     cmake_path=
 fi
 
@@ -152,7 +152,7 @@ if ! [ "$cmake_path" ] ; then
         echo
         echo "Most probably, you want to rely on your system distribution to"
         echo "provide cmake in some way. Luckily, the package is usually called"
-        echo "cmake. Version **at least** 3.18 is necessary."
+        echo "cmake. Version **at least** 3.28 is necessary."
         echo
         echo "You may try to have cado-nfs download and install some version of"
         echo "cmake for you. THIS IS A PRIORI A VERY BAD IDEA, and we advise"

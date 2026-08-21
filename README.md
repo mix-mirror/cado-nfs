@@ -101,12 +101,24 @@ Required software tools
    compile.
  * As of `cado-nfs-3.0.0`, a C/C++ compiler and C/C++ standard library that
    conform to the C99 and C++20 standards are required.
-   - GCC: the minimal required version is >= 10, and at least version 11
-     is strongly recommended.
-   - LLVM Clang: the minimal required version is >= 12.0.0
-   - Apple Clang: the minimal required version is >= 16.0.0
-   - Intel ICX: the minimal required version is >= 2023
- * GNU make and CMake (`cmake 3.18` or later) for building.
+   Furthermore, C++20 Named Modules are required. This imposes strict
+   baseline requirements on the compiler, build system, and toolchain:
+   * Build System:
+     - CMake: minimal required version is >= 3.28 (for CXX_MODULES
+       dependency scanning)
+     - Ninja: minimal required version is >= 1.11.0 (required by CMake
+       for C++ module dynamic dependencies)
+     - GNU make (for gf2x, as well as the Makefile-based shortcuts in the
+       repo)
+   * Compilers:
+     - GCC: minimal required version is >= 14.1 (GCC 13 and earlier lack
+       CMake P1689 scanner integration)
+     - LLVM Clang: minimal required version is >= 16.0.0 (requires the
+       clang-tools / clang-scan-deps package installed)
+     - Apple Clang: minimal required version is >= 16.0.0 (Xcode 16+)
+     - Intel ICX / IntelLLVM: minimal required version is >= 2024.0
+       (requires system clang-scan-deps installed alongside oneAPI,
+       typically with the clang-tools package)
  * Python 3.8 or later is required, as well as a few fairly common
    packages such as python3-requests and python3-flask. These are
    packaged with most software distributions, or alternatively you can
