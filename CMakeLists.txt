@@ -50,13 +50,6 @@ endif()
 # Note that c++20 modules support requires 3.28
 cmake_minimum_required(VERSION 3.28.0)
 
-
-if (CMAKE_VERSION VERSION_GREATER_EQUAL "4.3")
-    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
-elseif (CMAKE_VERSION VERSION_GREATER_EQUAL "3.30")
-    set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "0e5b6991-d74f-4b3d-a41c-cf096e0b2508")
-endif()
-
 project(CADO_NFS)
 
 # Enable native C++20 and module scanning support
@@ -128,8 +121,6 @@ set(package_basename ${CADO_DIST_ARCHIVE_NAME})
 set(BINSUFFIX bin CACHE STRING "subpath below PREFIX for storing the two main scripts")
 set(LIBSUFFIX lib/${package_basename} CACHE STRING "subpath below PREFIX for storing libraries and binaries")
 set(DATASUFFIX share/${package_basename} CACHE STRING "subpath below PREFIX for storing parameters")
-
-include(config/cxx-modules.cmake)
 
 #####################################################################
 # Add the CFLAGS that are needed in all cases.
