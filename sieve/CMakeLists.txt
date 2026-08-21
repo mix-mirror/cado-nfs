@@ -111,12 +111,6 @@ add_library(siqs_multi_a_debug OBJECT ${las_multi_a_sources})
 cado_apply_pch(siqs_multi_a_debug)
 set_property(TARGET siqs_multi_a_debug PROPERTY COMPILE_DEFINITIONS SUPPORT_LARGE_Q=1 SIQS_SIEVE=1 TRACE_K=1)
 
-foreach(obj_lib las_core_0 las_core_a las_core_b0 las_core_b las_core_c las_multi_a_prod las_multi_a_debug las_multi_a_descent siqs_multi_a_prod siqs_multi_a_debug)
-    if(TARGET ${obj_lib})
-        target_link_libraries(${obj_lib} utils)
-    endif()
-endforeach()
-
 add_executable(las
     las-where-am-i-prod.cpp
     las.cpp

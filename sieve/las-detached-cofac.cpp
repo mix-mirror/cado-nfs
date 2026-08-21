@@ -22,7 +22,7 @@
 #include "tdict.hpp"
 #include "timing.h"
 #include "utils_cxx.hpp"
-import threadpool;
+#include "threadpool.hpp"
 #include "verbose.hpp"
 
 /* asynchronous cofactorization */

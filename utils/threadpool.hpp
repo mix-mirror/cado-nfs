@@ -1,6 +1,5 @@
-module;
-
-#include "cado.h"       // IWYU pragma: keep
+#ifndef CADO_THREADPOOL_HPP
+#define CADO_THREADPOOL_HPP
 
 #include <cstddef>
 
@@ -20,15 +19,12 @@ module;
 #include <utility>
 #include <vector>
 
+#include "chronograms.hpp"
 #include "utils_cxx.hpp"
 
-export module threadpool;
-
-import chronograms;
-
-export class worker_thread;
-export class task_group;
-export class thread_pool;
+class worker_thread;
+class thread_pool;
+class task_group;
 
 class thread_task
 {
@@ -385,3 +381,4 @@ public:
     /* }}} */
 };
 
+#endif  /* CADO_THREADPOOL_HPP */

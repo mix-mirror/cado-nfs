@@ -57,7 +57,7 @@
 #include "macros.h"
 #include "relation.hpp"
 #include "tdict.hpp"
-import threadpool;
+#include "threadpool.hpp"
 #include "verbose.hpp"
 
 MAYBE_UNUSED static inline void subusb(unsigned char *S1, const unsigned char *S2, ssize_t offset)

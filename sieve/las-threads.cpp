@@ -12,9 +12,9 @@
 #include "las-report-stats.hpp"
 #include "las-threads.hpp"
 #include "tdict.hpp"
-import threadpool;
+#include "threadpool.hpp"
 #include "verbose.hpp"
-import chronograms;
+#include "chronograms.hpp"
 
 class las_memory_accessor; // IWYU pragma: keep
 

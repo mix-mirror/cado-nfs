@@ -18,7 +18,7 @@
 #include "macros.h"
 #include "mpz_poly.h"
 #include "sieve-methods.hpp"
-import threadpool;
+#include "threadpool.hpp"
 
 struct special_q; // IWYU pragma: keep
 

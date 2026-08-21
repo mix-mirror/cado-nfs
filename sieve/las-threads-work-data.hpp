@@ -27,7 +27,7 @@
 
 class las_memory_accessor; // IWYU pragma: keep
 class nfs_aux; // IWYU pragma: keep
-import threadpool; // IWYU pragma: keep
+class thread_pool; // IWYU pragma: keep
 struct j_divisibility_helper; // IWYU pragma: keep
 struct las_info; // IWYU pragma: keep
 struct trialdiv_data; // IWYU pragma: keep

@@ -25,7 +25,7 @@
 class nfs_aux; // IWYU pragma: keep
 class nfs_work;
 class nfs_work_cofac;
-import threadpool;
+class thread_pool;
 struct where_am_I;
 
 class plattices_vector_t : public std::vector<ALGO::largesieve>

@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-import threadpool;
+#include "threadpool.hpp"
 #include "las-threads-work-data.hpp"
 #include "las-qlattice.hpp"
 #include "las-plattice.hpp"

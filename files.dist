@@ -1711,7 +1711,8 @@ utils/cado_popen.cpp
 utils/cado_popen.hpp
 utils/cado_subrange_streambuf.hpp
 utils/cado_type_traits.hpp
-utils/chronograms.cppm
+utils/chronograms.cpp
+utils/chronograms.hpp
 utils/coeff_proxy.hpp
 utils/crc.c
 utils/crc.h
@@ -1891,7 +1892,7 @@ utils/subdivision.hpp
 utils/tdict.cpp
 utils/tdict.hpp
 utils/threadpool.cpp
-utils/threadpool.cppm
+utils/threadpool.hpp
 utils/timing.cpp
 utils/timing.h
 utils/typedefs.h

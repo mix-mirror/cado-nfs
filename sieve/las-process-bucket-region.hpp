@@ -16,7 +16,7 @@
 
 class nfs_work;
 class nfs_work_cofac;
-import threadpool;
+class thread_pool;
 
 void process_many_bucket_regions(
         nfs_work & ws,

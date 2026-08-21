@@ -84,7 +84,7 @@
 #include "special-q.hpp"
 #include "sieve-methods.hpp"
 #include "tdict.hpp"
-import threadpool;
+#include "threadpool.hpp"
 #include "timing.h"
 #include "utils_cxx.hpp"
 #include "verbose.hpp"

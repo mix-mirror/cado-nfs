@@ -1,26 +1,23 @@
-module;
-#include "cado.h"
+#include "cado.h" // IWYU pragma: keep
+
 #include <cstddef>
 #include <cstdint>
+
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
-#include <deque>
 #include <exception>
 #include <functional>
-#include <future>
 #include <map>
-#include <memory>
 #include <mutex>
-#include <queue>
 #include <thread>
-#include <tuple>
-#include <type_traits>
 #include <utility>
 #include <vector>
+
+#include "macros.h"
+#include "threadpool.hpp"
 #include "timing.h"
-#include "utils_cxx.hpp"
-module threadpool;
+
 worker_thread::worker_thread(thread_pool & _pool, size_t const _preferred_queue,
                              bool several_threads)
     : pool(_pool)

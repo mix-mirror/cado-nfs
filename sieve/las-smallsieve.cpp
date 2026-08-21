@@ -40,7 +40,7 @@
 #include "portability.h"
 #include "verbose.hpp"
 #include "utils_cxx.hpp"
-import chronograms;
+#include "chronograms.hpp"
 
 
 /* small sieve and resieving */

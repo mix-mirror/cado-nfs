@@ -8,8 +8,8 @@ if(NOT HAVE_FMT)
 endif()
 
 set (sources 
-    threadpool.cpp
         cado_poly.cpp timing.cpp getprime.c
+        chronograms.cpp
         relation.cpp
         relation-tools.c
         arith/mod_ul.c arith/modredc_ul.c arith/modredc_15ul.c arith/modredc_2ul2.c arith/modul_poly.cpp
@@ -36,7 +36,7 @@ set (sources
         verbose.cpp 
         tdict.cpp
         version_info.c
-	modified_files.c mpz_poly_bivariate.cpp
+	modified_files.c threadpool.cpp mpz_poly_bivariate.cpp
         arithmetic_reductions.cpp
         gmpxx.cpp
         cxx_mpz.cpp
@@ -99,11 +99,6 @@ add_library (utils ${CADO_SHARED} ${sources})
 set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/modified_files.c" PROPERTIES GENERATED TRUE)
 
 add_dependencies(utils list_modified_files)
-target_sources(utils PUBLIC
-    FILE_SET CXX_MODULES FILES
-        chronograms.cppm
-        threadpool.cppm
-)
 mark_targets_as_openmp(utils)
 cado_apply_pch(utils)
 
