@@ -1071,7 +1071,7 @@ sieve/las-memory.hpp
 sieve/las-multiobj-globals.cpp
 sieve/las-multiobj-globals.hpp
 sieve/las-norms.cpp
-sieve/las-norms.hpp
+sieve/las-norms.cppm
 sieve/las-output.cpp
 sieve/las-output.hpp
 sieve/las-parallel.cpp

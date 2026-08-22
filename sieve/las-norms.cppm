@@ -1,6 +1,4 @@
-#ifndef CADO_LAS_NORMS_HPP
-#define CADO_LAS_NORMS_HPP
-
+module;
 #include <cstdint>
 #include <cstring>
 #include <ostream>
@@ -20,11 +18,13 @@
 #include "sieve-methods.hpp"
 #include "threadpool.hpp"
 
-struct special_q; // IWYU pragma: keep
+export module las_norms;
+
+export {
 
 /* Only relevant with --adjust-strategy 2 */
-#define ADJUST_STRATEGY2_MIN_SQUEEZE 0
-#define ADJUST_STRATEGY2_MAX_SQUEEZE 3
+constexpr int ADJUST_STRATEGY2_MIN_SQUEEZE = 0;
+constexpr int ADJUST_STRATEGY2_MAX_SQUEEZE = 3;
 
 double get_maxnorm_rectangular (polynomial<double> const & src_poly, double X, double Y);
 
@@ -251,5 +251,4 @@ private:
 
 extern sieve_range_adjust::vec<double> operator*(sieve_range_adjust::vec<double> const& a, sieve_range_adjust::mat<int> const& m) ;
 extern qlattice_basis operator*(sieve_range_adjust::mat<int> const& m, qlattice_basis const& Q) ;
-
-#endif	/* CADO_LAS_NORMS_HPP */
+}

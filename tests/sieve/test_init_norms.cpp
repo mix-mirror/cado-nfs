@@ -20,7 +20,6 @@
 #include "cxx_mpz.hpp"
 #include "las-config.hpp"
 #include "las-coordinates.hpp"
-#include "las-norms.hpp"
 #include "las-siever-config.hpp"
 #include "special-q.hpp"
 #include "macros.h"
@@ -29,6 +28,7 @@
 #include "rootfinder.h"
 #include "timing.h"
 #include "verbose.hpp"
+import las_norms;
 
 static int adjust_strategy = 0;
 

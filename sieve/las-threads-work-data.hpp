@@ -14,7 +14,7 @@
 #include "las-bkmult.hpp"
 #include "las-config.hpp"
 #include "las-dumpfile.hpp"
-#include "las-norms.hpp"
+import las_norms;
 #include "las-plattice.hpp"
 #include "las-siever-config.hpp"
 #include "las-smallsieve.hpp"

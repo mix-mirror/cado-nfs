@@ -1,3 +1,4 @@
+module;
 #include "cado.h" // IWYU pragma: keep
 
 #include <cstdint>
@@ -22,7 +23,6 @@
 #include "cxx_mpz.hpp"
 #include "fb-types.hpp"
 #include "las-config.hpp"
-#include "las-norms.hpp"
 #include "las-qlattice.hpp"
 #include "las-siever-config.hpp"
 #include "special-q.hpp"
@@ -34,6 +34,8 @@
 #include "rho.h"
 #include "verbose.hpp"
 #include "threadpool.hpp"
+module las_norms;
+
 
 using namespace std;
 
@@ -357,7 +359,7 @@ unsigned char lognorm_base::lognorm(
         special_q_data_class auto const & Q) const
 {
     cxx_mpz x;
-    norm(x, i, j, Q);
+    this->norm(x, i, j, Q);
     return log2(mpz_get_d(x)) * scale + LOGNORM_GUARD_BITS;
 }
 
@@ -1230,6 +1232,7 @@ B:=[bestrep(a):a in {{a*b*c*x:a in {1,-1},b in {1,d},c in {1,s}}:x in MM}];
   &cat [prepr(x):x in B];
      */
 #endif
+
 
     double best_sum = 0;
     int best_r = -1;

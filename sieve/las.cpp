@@ -56,7 +56,7 @@ import las_choose_sieve_area;
 #include "las-globals.hpp"
 #include "las-info.hpp"
 #include "las-multiobj-globals.hpp"
-#include "las-norms.hpp"
+import las_norms;
 #include "las-output.hpp"
 #include "las-parallel.hpp"
 #include "las-plattice.hpp"

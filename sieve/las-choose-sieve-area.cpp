@@ -12,7 +12,7 @@ module;
 
 #include "las-info.hpp"
 #include "las-multiobj-globals.hpp"
-#include "las-norms.hpp"
+import las_norms;
 #include "las-qlattice.hpp"
 #include "las-siever-config.hpp"
 #include "las-special-q-task.hpp"

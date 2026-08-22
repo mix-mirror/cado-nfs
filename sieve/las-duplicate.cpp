@@ -80,7 +80,7 @@ Thus the function to check for duplicates needs the following information:
 import las_choose_sieve_area;
 #include "las-cofactor.hpp"
 #include "las-coordinates.hpp"
-#include "las-norms.hpp"
+import las_norms;
 #include "las-qlattice.hpp"
 #include "las-side-config.hpp"
 #include "las-siever-config.hpp"

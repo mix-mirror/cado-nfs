@@ -35,7 +35,7 @@
 #include "las-info.hpp"
 #include "las-config.hpp"
 #include "las-coordinates.hpp"
-#include "las-norms.hpp"
+import las_norms;
 #include "las-qlattice.hpp"
 #include "las-siever-config.hpp"
 #include "las-threads-work-data.hpp"
