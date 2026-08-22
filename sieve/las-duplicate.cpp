@@ -77,7 +77,7 @@ Thus the function to check for duplicates needs the following information:
 #include "ecm/facul.hpp"
 #include "fb.hpp"
 #include "gmp_aux.h"
-#include "las-choose-sieve-area.hpp"
+import las_choose_sieve_area;
 #include "las-cofactor.hpp"
 #include "las-coordinates.hpp"
 #include "las-norms.hpp"

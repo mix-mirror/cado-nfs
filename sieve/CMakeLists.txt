@@ -72,6 +72,7 @@ add_library(las_core_b OBJECT
         las-divide-primes.cpp
         las-sieve2357.cpp
 )
+target_sources(las_core_b PUBLIC FILE_SET CXX_MODULES FILES las-choose-sieve-area.cppm)
 cado_apply_pch(las_core_b)
 
 add_library(las_core_c OBJECT las-arith.cpp)

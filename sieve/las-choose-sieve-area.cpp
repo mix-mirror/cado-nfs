@@ -1,3 +1,4 @@
+module;
 #include "cado.h" // IWYU pragma: keep
 
 #include <cstdint>
@@ -8,7 +9,7 @@
 
 #include "fb-types.hpp"
 #include "las-auxiliary-data.hpp"
-#include "las-choose-sieve-area.hpp"
+
 #include "las-info.hpp"
 #include "las-multiobj-globals.hpp"
 #include "las-norms.hpp"
@@ -19,6 +20,8 @@
 #include "cxx_mpz.hpp"
 #include "verbose.hpp"
 #include "threadpool.hpp"
+
+module las_choose_sieve_area;
 
 int never_discard = 0;      /* only enabled for las_descent */
 

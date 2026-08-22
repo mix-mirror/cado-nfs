@@ -1035,7 +1035,7 @@ sieve/las-auxiliary-data.hpp
 sieve/las-bkmult.cpp
 sieve/las-bkmult.hpp
 sieve/las-choose-sieve-area.cpp
-sieve/las-choose-sieve-area.hpp
+sieve/las-choose-sieve-area.cppm
 sieve/las-cofac-standalone.cpp
 sieve/las-cofac-standalone.hpp
 sieve/las-cofactor.cpp

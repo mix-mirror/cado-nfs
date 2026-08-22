@@ -46,7 +46,7 @@
 #include "relation_cache.hpp"
 #include "las-auxiliary-data.hpp"
 #include "las-bkmult.hpp"
-#include "las-choose-sieve-area.hpp"
+import las_choose_sieve_area;
 #include "las-cofactor.hpp"
 #include "las-config.hpp"
 #include "las-divide-primes.hpp"
