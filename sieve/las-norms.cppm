@@ -11,12 +11,13 @@ module;
 #include "las-config.hpp"
 #include "las-qlattice.hpp"
 #include "las-siever-config.hpp"
-#include "logapprox.hpp"
 #include "polynomial.hpp"
 #include "macros.h"
 #include "mpz_poly.h"
 #include "sieve-methods.hpp"
 #include "threadpool.hpp"
+
+import logapprox;
 
 export module las_norms;
 

@@ -1,13 +1,13 @@
-#ifndef CADO_LOGAPPROX_HPP
-#define CADO_LOGAPPROX_HPP
-
+module;
 #include <list>     // for list
 #include <utility>  // for pair
 #include <vector>   // for vector
 
 #include "polynomial.hpp"
 
-struct piecewise_linear_function {
+export module logapprox;
+
+export struct piecewise_linear_function {
     std::vector<double> endpoints;
     std::vector<std::pair<double,double>> equations;
     bool has_precision_issues = false;
@@ -41,7 +41,7 @@ struct piecewise_linear_function {
     {}
 };
 
-template<typename T>
+export template<typename T>
 class piecewise_linear_approximator {
     polynomial<T> f;
     polynomial<T> f1;
@@ -67,7 +67,5 @@ class piecewise_linear_approximator {
     piecewise_linear_function logapprox(T i0, T i1) const;
 };
 
-extern template class piecewise_linear_approximator<double>;
-extern template class piecewise_linear_approximator<long double>;
-
-#endif	/* CADO_LOGAPPROX_HPP */
+export extern template class piecewise_linear_approximator<double>;
+export extern template class piecewise_linear_approximator<long double>;

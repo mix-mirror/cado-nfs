@@ -74,7 +74,8 @@ add_library(las_core_b OBJECT
 )
 target_sources(las_core_b PUBLIC FILE_SET CXX_MODULES FILES las-choose-sieve-area.cppm)
 target_link_libraries(las_core_b PUBLIC las_core_b0)
-target_sources(las_core_b0 PUBLIC FILE_SET CXX_MODULES FILES las-norms.cppm)
+target_sources(las_core_b0 PUBLIC FILE_SET CXX_MODULES FILES
+    las-norms.cppm logapprox.cppm)
 cado_apply_pch(las_core_b)
 
 add_library(las_core_c OBJECT las-arith.cpp)

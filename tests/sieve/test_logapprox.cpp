@@ -5,11 +5,12 @@
 
 #include "fmt/base.h"
 
-#include "logapprox.hpp"
 #include "macros.h"
 #include "mpz_poly.h"
 #include "polynomial.hpp"
 #include "tests_common.h"
+
+import logapprox;
 
 /* The logapprox test is not as interesting as the test_init_norms test.
  * Here, we have different kind of behaviors depending on the compiler

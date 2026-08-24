@@ -1,3 +1,4 @@
+module;
 #include "cado.h" // IWYU pragma: keep
 
 #include <cmath>             // for exp
@@ -12,12 +13,12 @@
 
 #include "fmt/base.h"
 
-#include "logapprox.hpp"
 #include "macros.h"          // for ASSERT_ALWAYS, UNLIKELY
 #include "runtime_numeric_cast.hpp"
 #include "polynomial.hpp"
 #include "cado_math_aux.hpp"
 
+module logapprox;
 
 #define xxxDEBUG_LOGAPPROX
 

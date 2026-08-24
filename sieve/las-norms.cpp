@@ -26,7 +26,6 @@ module;
 #include "las-qlattice.hpp"
 #include "las-siever-config.hpp"
 #include "special-q.hpp"
-#include "logapprox.hpp"
 #include "macros.h"
 #include "mpz_poly.h"
 #include "polynomial.hpp"
@@ -34,6 +33,7 @@ module;
 #include "rho.h"
 #include "verbose.hpp"
 #include "threadpool.hpp"
+import logapprox;
 module las_norms;
 
 
