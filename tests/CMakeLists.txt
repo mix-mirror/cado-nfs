@@ -170,8 +170,8 @@ cado_define_test(full_c30
 
 
         if(HAVE_GMPECM)
+            # CL computation requires the factor binary which requires gmp-ecm
             # Test for CL computation with 20-digit discriminant
-            # It requires the factor binary which requires gmp-ecm
             cado_define_test(full_d20
                 PROVIDE_TEMPORARY_WDIR_ARG workdir
                 SCRIPT
@@ -190,6 +190,26 @@ cado_define_test(full_c30
                 TIMEOUT 360
                 SHA1_ON_REGEXP_LINES "^[a-z0-9_ ]* = .*$"
                 EXPECT_SHA1 d5f8f6080a3cb6230e8bd4c8946450a5f411162d
+            )
+            # Test for CL computation with 50-digit discriminant
+            cado_define_test(full_d50
+                PROVIDE_TEMPORARY_WDIR_ARG workdir
+                SCRIPT
+                ${CADO_NFS_BINARY_DIR}/cado-nfs.py
+                -cl -qs -t 2
+                slaves.downloadretry=1
+                -31415926535897932384626433832795028841971693993751
+                TARGET_DEPENDENCIES full_dependencies_base
+                det_from_lingen
+                bwc_full_gfp
+                siqs lingen_pz merge-dl replay-dl filter_galois factor
+                cl_structure_from_group_order
+                AVOID_CONCURRENT 16
+                ENVIRONMENT OMP_DYNAMIC=true OMP_NUM_THREADS=16
+                            OMP_THREAD_LIMIT=16
+                TIMEOUT 360
+                SHA1_ON_REGEXP_LINES "^[a-z0-9_ ]* = .*$"
+                EXPECT_SHA1 f95047402c2ac8185163b013dac9d4412cf25bda
             )
         endif()
     endif()
