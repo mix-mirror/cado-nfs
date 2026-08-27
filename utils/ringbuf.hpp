@@ -248,10 +248,12 @@ struct ringbuf {
             /* Make sure our writing space in the buffer is not empty */
             if (local_w_avail == 0) {
                 std::unique_lock ux(mx);
-                for( ; ! avail_to_write ; ) {
+                for( ; !done && !avail_to_write ; ) {
                     full_count++;
                     bored.wait(ux);
                 }
+                if (done)
+                    return -2;
                 local_w_avail = avail_to_write;
             }
             /* We may now fread() from f, but only up to the _contiguous_
@@ -307,10 +309,12 @@ struct ringbuf {
             /* Make sure our writing space in the buffer is not empty */
             if (local_w_avail == 0) {
                 std::unique_lock ux(mx);
-                for( ; ! avail_to_write ; ) {
+                for( ; !done && !avail_to_write ; ) {
                     full_count++;
                     bored.wait(ux);
                 }
+                if (done)
+                    return -2;
                 local_w_avail = avail_to_write;
             }
             /* We may now fread() from f, but only up to the _contiguous_

@@ -38,6 +38,8 @@ void cado::filter_io_details::filter_rels_producer_thread(
     timingstats_dict_ptr stats)
 {
     for(auto const & filename : input_files) {
+        if (r.is_done())
+            break;
         ifstream_maybe_compressed f(filename);
         if (!f)
             throw cado::error("cannot open {}", filename);

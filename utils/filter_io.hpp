@@ -1729,59 +1729,67 @@ struct filter_rels_obj {
                     "read rels", "rels");
 
         inflight.enter(0);
-        for(size_t avail_seen = 0 ; ; ) {
-            {
-                std::unique_lock ux(rb.mx);
-                while(rb.avail_to_read == avail_seen && !rb.done)
-                    rb.bored.wait(ux);
-                avail_seen = rb.avail_to_read; /* must be before mutex unlock ! */
-                if (avail_seen == 0 && rb.done) {
-                    /* end of producer1 is with rb->done = 1 -- which is
-                     * compatible with bytes still being in the pipe ! */
-                    break;
-                }
-            }
-
-            /* We may have one or several lines which have just been
-             * produced. As long as we succeed reading complete lines, we
-             * consume them, and feed the second pipe.
-             */
-            int nl;
-            for(size_t avail_offset = 0; avail_offset < avail_seen && (nl = rb.strchr('\n', 0)) >= 0 ; ) {
-                /* skip comments and blank lines */
-                if (*rb.begin() != '#' && *rb.begin() != '\n') {
-                    uint64_t const relnum = nrels++;
-                    if (!active || (*active)[relnum]) {
-                        auto * slot = inflight.schedule(0);
-                        ASSERT_ALWAYS(slot);
-                        cado::filter_io_details::parse_helper(*slot, relnum, rb.begin());
-                        inflight.complete(0, slot);
-                        nactive++;
+        try {
+            for(size_t avail_seen = 0 ; ; ) {
+                {
+                    std::unique_lock ux(rb.mx);
+                    while(rb.avail_to_read == avail_seen && !rb.done)
+                        rb.bored.wait(ux);
+                    avail_seen = rb.avail_to_read; /* must be before mutex unlock ! */
+                    if (avail_seen == 0 && rb.done) {
+                        /* end of producer1 is with rb->done = 1 -- which is
+                         * compatible with bytes still being in the pipe ! */
+                        break;
                     }
                 }
-                /* skip the newline byte as well */
-                nl++;
-                nB += nl;
-                rb.skip_get(nl);
-                avail_seen -= nl;
-                avail_offset += nl;
-                if (stats_test_progress(infostats))
-                {
-                    if (!active)
-                        stats_print_progress (infostats, nrels, 0, nB, 0);
-                    else
-                        stats_print_progress (infostats, nactive, nrels, nB, 0);
+
+                /* We may have one or several lines which have just been
+                 * produced. As long as we succeed reading complete lines, we
+                 * consume them, and feed the second pipe.
+                 */
+                int nl;
+                for(size_t avail_offset = 0; avail_offset < avail_seen && (nl = rb.strchr('\n', 0)) >= 0 ; ) {
+                    /* skip comments and blank lines */
+                    if (*rb.begin() != '#' && *rb.begin() != '\n') {
+                        uint64_t const relnum = nrels++;
+                        if (!active || (*active)[relnum]) {
+                            auto * slot = inflight.schedule(0);
+                            ASSERT_ALWAYS(slot);
+                            cado::filter_io_details::parse_helper(*slot, relnum, rb.begin());
+                            inflight.complete(0, slot);
+                            nactive++;
+                        }
+                    }
+                    /* skip the newline byte as well */
+                    nl++;
+                    nB += nl;
+                    rb.skip_get(nl);
+                    avail_seen -= nl;
+                    avail_offset += nl;
+                    if (stats_test_progress(infostats))
+                    {
+                        if (!active)
+                            stats_print_progress (infostats, nrels, 0, nB, 0);
+                        else
+                            stats_print_progress (infostats, nactive, nrels, nB, 0);
+                    }
                 }
             }
-        }
-        inflight.drain();
-        inflight.leave(0);
-        /*}}}*/
+            inflight.drain();
+            inflight.leave(0);
+            /*}}}*/
 
-        /* {{{ join all threads */
-        consumers.clear();
-        P.join();
-        /*}}}*/
+            /* {{{ join all threads */
+            consumers.clear();
+            P.join();
+            /*}}}*/
+        } catch (...) {
+            inflight.drain(); /* will stop consumers threads */
+            rb.mark_done(); /* will wake up producer thread if waiting because
+                             * of full buffer. */
+            P.join();
+            throw;
+        }
 
         /* NOTE: the inflight dtor is called automatically */
 

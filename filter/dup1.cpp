@@ -94,6 +94,17 @@ struct set_of_files {
             throw cado::error("Error writing relation to {}", filename);
         lines_left--;
     }
+
+    void reset() {
+        file.reset();
+        filename.clear();
+        for (unsigned int i = 0u; i < next_idx; ++i) {
+            int rc = std::remove(fmt::format(fmt::runtime(pattern), i).c_str());
+            ASSERT_ALWAYS(rc == 0);
+        }
+        next_idx = 0;
+        lines_left = 0;
+    }
 };// }}}
 
 template<typename ab_type, int base>
@@ -113,8 +124,6 @@ struct dup1_process {
     parameter_switch<"abhexa", "read a and b as hexa not decimal"> abhexa;
     parameter_switch<"ab", "only print a and b in the output"> only_ab;
     parameter_switch<"mkdir", "create output directories"> make_dirs;
-    parameter_switch<"large-ab", "enable support for a,b beyond 64 bits">
-        largeab;
 
     parameter_with_default<unsigned int,
                         "n",
@@ -150,7 +159,6 @@ struct dup1_process {
         : abhexa(pl)
         , only_ab(pl)
         , make_dirs(pl)
-        , largeab(pl)
         , nslices_log(pl)
         , log_max_nrels_per_files(pl)
         , only_slice(pl)
@@ -172,7 +180,6 @@ struct dup1_process {
         decltype(dup1_process::only_ab)::configure(pl);
         decltype(dup1_process::make_dirs)::configure(pl);
         decltype(dup1_process::abhexa)::configure(pl);
-        decltype(dup1_process::largeab)::configure(pl);
     }
 
 
@@ -201,6 +208,15 @@ struct dup1_process {
             const std::string message_pattern = fmt::format(
                     "# Opening output file for slice {}: {{}}\n", i);
             S.emplace_back(pattern, 1UL<<log_max_nrels_per_files, message_pattern);
+        }
+    }
+
+    void reset()
+    {
+        for(size_t i = 0u; auto & s: S) {
+            s.reset();
+            nr_rels_tot[i] = 0u;
+            ++i;
         }
     }
 
@@ -271,7 +287,7 @@ struct dup1_process {
         }
     }
 
-    void filter(std::vector<std::string> const & files)
+    void filter(std::vector<std::string> const & files, bool largeab)
     {
         if (largeab) {
             filter0<cxx_mpz>(files);
@@ -342,7 +358,17 @@ main (int argc, char const * argv[])
 
     timingstats_dict_init(stats);
 
-    D.filter(input_files);
+    try {
+        D.filter(input_files, false);
+    } catch (cado::filter_io::out_of_range const & e) {
+        /* XXX first part of this comment is significant, and parsed by
+         * scripts/cadofactor/cadotask.py
+         */
+        fmt::print(stderr, "Error, could not parsed a too large value a,b: "
+                           "retrying using cxx_mpz\n");
+        D.reset();
+        D.filter(input_files, true);
+    }
 
     // double thread_times[2];
     // thread_seconds_user_sys(thread_times);

@@ -1152,7 +1152,6 @@ class Duplicates1(Program):
                  bzip: Toggle("bz") = None,  # noqa: F821
                  only_ab: Toggle("ab") = None,  # noqa: F821
                  abhexa: Toggle() = None,
-                 large_ab: Toggle("large-ab") = None,  # noqa: F821
                  force_posix_threads: Toggle(dash=True) = None,
                  only: Parameter(checktype=int) = None,
                  nslices_log: Parameter("n",  # noqa: F821

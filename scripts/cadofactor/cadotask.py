@@ -4332,7 +4332,7 @@ class Duplicates1Task(Task, FilesCreator, HasStatistics):
     @property
     def programs(self):
         return ((cadoprograms.Duplicates1,
-                 ("filelist", "prefix", "out", "nslices_log", "large_ab"),
+                 ("filelist", "prefix", "out", "nslices_log"),
                  {}),)
 
     @property
@@ -4366,7 +4366,6 @@ class Duplicates1Task(Task, FilesCreator, HasStatistics):
         # Enforce the fact that our children *MUST* use the same
         # nslices_log value as the one we have.
         self.progparams[0]["nslices_log"] = self.params["nslices_log"]
-        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
         tablename = self.make_tablename("infiles")
         self.already_split_input = \
             self.make_db_dict(tablename,
@@ -4505,10 +4504,14 @@ class Duplicates1Task(Task, FilesCreator, HasStatistics):
         self.logger.debug("Exit Duplicates1Task.run(" + self.name + ")")
         return True
 
-    @staticmethod
-    def parse_output_files(stderr):
+    def parse_output_files(self, stderr):
         files = {}
         for line in stderr.splitlines():
+            if re.match(r'Error, could not parsed a too large value a,b',
+                        line):
+                assert self.params["algo"] == Algorithm.QS, "error in dup1"
+                files = {}  # reset in case of error
+                continue
             match = re.match(r'# Opening output file for slice (\d+): (.+)$',
                              line)
             if match:
