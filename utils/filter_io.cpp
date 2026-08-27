@@ -28,7 +28,8 @@ void cado::filter_io_details::filter_rels_producer_thread(
     if (!f.good() && !f.eof())
         throw cado::error("read error on input stream");
 
-    r.mark_done();
+    if (!r.is_done())
+        r.mark_done();
     if (stats) timingstats_dict_add_mythread(stats, "producer");
 }
 
@@ -47,7 +48,8 @@ void cado::filter_io_details::filter_rels_producer_thread(
         if (!f.good() && !f.eof())
             throw cado::error("read error on {}", filename);
     }
-    r.mark_done();
+    if (!r.is_done())
+        r.mark_done();
     if (stats) timingstats_dict_add_mythread(stats, "producer");
 }
 
