@@ -364,7 +364,7 @@ main (int argc, char const * argv[])
         /* XXX first part of this comment is significant, and parsed by
          * scripts/cadofactor/cadotask.py
          */
-        fmt::print(stderr, "Error, could not parsed a too large value a,b: "
+        fmt::print(stderr, "Error, could not parse a too large value a,b: "
                            "retrying using cxx_mpz\n");
         D.reset();
         D.filter(input_files, true);

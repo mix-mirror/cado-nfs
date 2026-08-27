@@ -4507,7 +4507,7 @@ class Duplicates1Task(Task, FilesCreator, HasStatistics):
     def parse_output_files(self, stderr):
         files = {}
         for line in stderr.splitlines():
-            if re.match(r'Error, could not parsed a too large value a,b',
+            if re.match(r'Error, could not parse a too large value a,b',
                         line):
                 assert self.params["algo"] == Algorithm.QS, "error in dup1"
                 files = {}  # reset in case of error
