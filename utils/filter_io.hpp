@@ -1331,6 +1331,9 @@ namespace cado::filter_io_details {
         cond_t bored[n];
         int active[n] = { 0, } ;     /* number of active threads */
 
+        static constexpr size_t DRAIN_SENTINEL = SIZE_MAX;
+        static constexpr size_t ABORT_SENTINEL = SIZE_MAX-1u;
+
         /*{{{ ctor */
         explicit inflight_rels_buffer(int nthreads_total)
             : sync_point(nthreads_total)
@@ -1356,11 +1359,10 @@ namespace cado::filter_io_details {
         inflight_rels_buffer& operator=(inflight_rels_buffer const&) = delete;
         inflight_rels_buffer& operator=(inflight_rels_buffer &&) = delete;
 
-        void drain() /*{{{ */
+        template<size_t sentinel>
+        void _drain() /*{{{ */
             /* This belongs to the buffer closing process.  The out condition of
-             * this call is that all X(k) for k>0 terminate.  This call (as well
-             * as init/clear) must be called on the producer side (step 0) (in a
-             * multi-producer context, only one thread is entitled to call this)
+             * this call is that all X(k) for k>0 terminate.
              */
         {
             // size_t c = completed[0];
@@ -1371,12 +1373,32 @@ namespace cado::filter_io_details {
                 while(active[k]) {
                     locking_layer::wait(bored + k, m + k);
                 }
-                completed[k].store(SIZE_MAX);
+                completed[k].store(sentinel);
                 locking_layer::signal_broadcast(bored + k);
                 locking_layer::unlock(m + k);
             }
         }
         /*}}}*/
+
+        void drain()
+            /* This belongs to the buffer closing process.
+             * This call (as well as init/clear) must be called on the producer
+             * side (step 0) (in a multi-producer context, only one thread is
+             * entitled to call this)
+             */
+        {
+            _drain<DRAIN_SENTINEL>();
+        }
+
+        void abort()
+            /* This belongs to the buffer closing process.
+             * This call (as well as init/clear) must be called on the producer
+             * side (step 0) (in a multi-producer context, only one thread is
+             * entitled to call this)
+             */
+        {
+            _drain<ABORT_SENTINEL>();
+        }
 
         relation_type * schedule(size_t k) /* {{{ */
             /* Schedule a new relation slot for processing at level k.
@@ -1407,12 +1429,18 @@ namespace cado::filter_io_details {
                     locking_layer::wait(bored + prev, m + prev);
                 }
             }
-            /* when completed[prev] == SIZE_MAX, the previous-level workers
-             * are creating spuriouss relation created to trigger termination.
+            /* when completed[prev] == ABORT_SENTINEL, the previous-level
+             * workers are creating spuriouss relation created to trigger
+             * immediate termination.
+             * when completed[prev] == DRAIN_SENTINEL, the previous-level
+             * workers are creating spuriouss relation created to trigger
+             * termination once all scheduled relations are completed.
              * In this case, scheduled[prev] is safe to read now. we use it
              * as a marker to tell whether there's still work ahead of us, or
              * not.  */
-            if (UNLIKELY(completed[prev].load() == SIZE_MAX) && scheduled[prev].load() == s) {
+            auto const cprev = completed[prev].load();
+            if (UNLIKELY(cprev == ABORT_SENTINEL ||
+                    (cprev == DRAIN_SENTINEL && scheduled[prev].load() == s))) {
                 /* prepare to return */
                 /* note that scheduled[k] is *not* bumped here */
                 locking_layer::unlock(m + prev);
@@ -1475,7 +1503,7 @@ namespace cado::filter_io_details {
             sync_point.arrive_and_wait();
         }
         /* leave() is a no-op, since active-- is performed as part of the
-         * normal drain() call */
+         * normal drain()/abort() call */
         void leave(int) { }
 
         /* The calling scenario is as follows.
@@ -1485,7 +1513,7 @@ namespace cado::filter_io_details {
          *  - start workers.
          *  - enter(0)
          *  - some schedule(0) / complete(0) for relations which get fed in.
-         *  - drain() once all are produced
+         *  - drain() once all are produced or abort() in case of error
          *  - leave(0)
          *
          * For the workers (there may be more at each level if
@@ -1501,8 +1529,8 @@ namespace cado::filter_io_details {
          * similar to other worker threads, but the fine points haven't been
          * considered yet.
          *
-         * The current implementation has leave() a no-op, and uses drain()
-         * at the owner thread to to a shutdown. This could change.
+         * The current implementation has leave() a no-op, and uses drain() or
+         * abort() at the owner thread to to a shutdown. This could change.
          */
 
         /*{{{ filter_rels consumer thread */
@@ -1784,7 +1812,8 @@ struct filter_rels_obj {
             P.join();
             /*}}}*/
         } catch (...) {
-            inflight.drain(); /* will stop consumers threads */
+            inflight.abort(); /* will stop consumers threads */
+            inflight.leave(0);
             rb.mark_done_if_not(); /* will wake up producer thread if waiting
                                       because of full buffer. */
             P.join();
