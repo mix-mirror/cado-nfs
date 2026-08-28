@@ -235,7 +235,6 @@ struct dup2_process { /* {{{ */
     renumber_t renumber_tab;
 
     bool is_for_dl = false; /* By default we do dup2 for factorization */
-    bool largeab = false; /* By default, do not use mpz for a,b */
 
     explicit dup2_process(cxx_param_list & pl)
         : output(pl)
@@ -247,8 +246,6 @@ struct dup2_process { /* {{{ */
          * that they can be parsed later. Which means now.
          */
         pl.parse("dl", is_for_dl);
-        pl.parse("large-ab", largeab);
-
     }
 
     static void declare_usage(cxx_param_list & pl) {
@@ -256,12 +253,10 @@ struct dup2_process { /* {{{ */
         pl.declare_usage("renumber", "input file for renumbering table");
         pl.declare_usage("nrels", "number of expected relations");
         pl.declare_usage("dl", "do not reduce exponents modulo 2");
-        pl.declare_usage("large-ab", "enable support for a and b beyond 64 bits");
     }
 
     static void configure_switches(cxx_param_list & pl) {
         pl.configure_switch("dl");
-        pl.configure_switch("large-ab");
     }
 
     void read()
@@ -492,7 +487,8 @@ struct dup2_process { /* {{{ */
                 [this](relation_type & rel) { hash_renumbered_relation(rel); });
     } /* }}} */
 
-    void filter_already_renumbered_rels(std::vector<std::string> const & files) /* {{{ */
+    void filter_already_renumbered_rels(std::vector<std::string> const & files,
+                                        bool largeab) /* {{{ */
     {
         fmt::print(stderr, "Reading {} files already renumbered:\n", files.size());
         if (largeab)
@@ -746,7 +742,8 @@ struct dup2_process { /* {{{ */
         }
     }
 
-    void filter_new_rels(std::vector<std::string> const & files) /* {{{ */
+    void filter_new_rels(std::vector<std::string> const & files,
+                         bool largeab) /* {{{ */
     {
         fmt::print(stderr, "Reading {} new files:\n", files.size());
         if (largeab)
@@ -786,6 +783,17 @@ struct dup2_process { /* {{{ */
             }
         }
     } /* }}} */
+
+    void reset()
+    {
+        nrels = nrels_tot = ndup = ndup_tot = nrels_already_renumbered = 0u;
+        std::fill_n(H.get(), K, 0u);
+        for(auto & [a, b]: sanity_ab) {
+            a = 0u;
+            b = 0u;
+        }
+        sanity_checked = 0u;
+    }
 }; /* }}} */
 
 int main(int argc, char const * argv[])
@@ -818,10 +826,18 @@ int main(int argc, char const * argv[])
 
     D.read();
     auto [ oldlist, newlist ] = input.separate_file_list(check_whether_file_is_renumbered);
-    D.filter_already_renumbered_rels(oldlist);
-    D.filter_new_rels(newlist);
-    D.final_stats();
-
+    try {
+        D.filter_already_renumbered_rels(oldlist, false);
+        D.filter_new_rels(newlist, false);
+        D.final_stats();
+    } catch (cado::filter_io::out_of_range const & e) {
+        fmt::print(stderr, "Error, could not parse a too large value a,b: "
+                           "retrying using cxx_mpz\n");
+        D.reset();
+        D.filter_already_renumbered_rels(oldlist, true);
+        D.filter_new_rels(newlist, true);
+        D.final_stats();
+    }
 
     return 0;
 }

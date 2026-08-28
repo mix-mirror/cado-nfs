@@ -1174,7 +1174,6 @@ class Duplicates2(Program):
                  rel_count: Parameter("nrels", checktype=int),  # noqa: F821
                  renumber: Parameter(is_input_file=True),
                  filelist: Parameter(is_input_file=True) = None,
-                 large_ab: Toggle("large-ab") = None,  # noqa: F821
                  force_posix_threads: Toggle(dash=True) = None,
                  dlp: Toggle("dl") = None,  # noqa: F821
                  **kwargs):

@@ -4567,7 +4567,7 @@ class Duplicates2Task(Task, FilesCreator, HasStatistics):
         input = {"poly": Request.GET_POLYNOMIAL_FILENAME,
                  "renumber": Request.GET_RENUMBER_FILENAME}
         return ((cadoprograms.Duplicates2,
-                ("dlp", "rel_count", "filelist", "large_ab"),
+                ("dlp", "rel_count", "filelist"),
                 input),)
 
     @property
@@ -4599,7 +4599,6 @@ class Duplicates2Task(Task, FilesCreator, HasStatistics):
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
-        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
         self.progparams[0]["dlp"] = \
             self.params["computation"] in (Computation.DLP, Computation.CL)
         self.nr_slices = 2**self.params["nslices_log"]
