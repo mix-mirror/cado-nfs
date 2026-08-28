@@ -165,6 +165,15 @@ struct ringbuf {
         bored.notify_all();
     }
 
+    void mark_done_if_not()
+    {
+        const std::scoped_lock dummy(mx);
+        if (!done) {
+            done = -1;
+            bored.notify_all();
+        }
+    }
+
     int is_done() const
     {
         const std::scoped_lock dummy(mx);

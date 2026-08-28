@@ -1785,8 +1785,8 @@ struct filter_rels_obj {
             /*}}}*/
         } catch (...) {
             inflight.drain(); /* will stop consumers threads */
-            rb.mark_done(); /* will wake up producer thread if waiting because
-                             * of full buffer. */
+            rb.mark_done_if_not(); /* will wake up producer thread if waiting
+                                      because of full buffer. */
             P.join();
             throw;
         }
