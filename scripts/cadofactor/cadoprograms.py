@@ -1457,7 +1457,6 @@ class Characters(Program):
                  nchar: Parameter() = None,
                  nratchars: Parameter() = None,
                  threads: Parameter("t") = None,  # noqa: F821
-                 large_ab: Toggle("large-ab") = None,  # noqa: F821
                  only_sign_chars: Toggle() = None,
                  **kwargs):
         super().__init__(locals(), **kwargs)

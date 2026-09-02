@@ -398,14 +398,16 @@ static blockmatrix big_character_matrix(
         std::vector<alg_prime_t> const & chars,
         const char * purgedname,
         cxx_cado_poly const & cpoly,
-        int nthreads,
-        int largeab)
+        int nthreads)
 {
     big_characters_data B(cpoly, purgedname, chars);
-    if (!largeab) {
+    try {
         using relation_type = cado::relation_building_blocks::ab_block<uint64_t, 16>;
         B.filter<relation_type>(nthreads);
-    } else {
+    } catch (cado::filter_io::out_of_range const & e) {
+        fmt::print(stderr, "Error, could not parse a too large value a,b: "
+                           "retrying using cxx_mpz\n");
+        B.res.set_zero();
         using relation_type = cado::relation_building_blocks::ab_block<cxx_mpz, 16>;
         B.filter<relation_type>(nthreads);
     }
@@ -659,8 +661,6 @@ declare_usage (cxx_param_list & pl)
   pl.declare_usage("ker",    "input kernel file");
   pl.declare_usage("nratchars", "number of characters on rational "
                                           "side");
-  pl.declare_usage("large-ab", "enable support for a and b larger than"
-                                        "64 bits");
   pl.declare_usage("only-sign-chars", "use only the sign character "
                                                 "on each side");
 }
@@ -690,7 +690,6 @@ int main(int argc, char const * argv[])
 
     const char *bw_kernel_file = NULL;
 
-    pl.configure_switch("large-ab");
     pl.configure_switch("only-sign-chars");
 
     cado::filter_io_details::configure(pl);
@@ -757,7 +756,7 @@ int main(int argc, char const * argv[])
     cado::filter_io_details::interpret_parameters(pl);
 
     blockmatrix bcmat = big_character_matrix(chars, purgedname,
-            cpoly, nthreads, pl.parse<bool>("large-ab"));
+            cpoly, nthreads);
 
     fprintf(stderr, "done building big character matrix at wct=%.1fs\n", wct_seconds()-wct0);
 

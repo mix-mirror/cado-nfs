@@ -6089,7 +6089,7 @@ class CharactersTask(Task):
                  "purged": Request.GET_PURGED_FILENAME,
                  "index": Request.GET_INDEX_FILENAME,
                  "heavyblock": Request.GET_DENSE_FILENAME}
-        override = ("out", "large_ab", "only_sign_chars")
+        override = ("out", "only_sign_chars")
         return ((cadoprograms.Characters, override, input),)
 
     @property
@@ -6099,7 +6099,6 @@ class CharactersTask(Task):
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
-        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
         self.progparams[0]["only_sign_chars"] = \
             self.params["algo"] == Algorithm.QS
 
