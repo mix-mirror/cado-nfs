@@ -235,10 +235,10 @@ struct dup1_process {
     unsigned int compute_slice (cxx_mpz const & a, cxx_mpz const & b) const
     {
         const cxx_mpz t = a * CA_DUP1 + b * CB_DUP1;
-        mp_limb_t h = 0U;
-        ASSERT_ALWAYS(mpz_size(t) <= std::numeric_limits<mp_size_t>::max());
-        for (size_t i = 0; i < mpz_size(t); ++i)
-            h ^= mpz_getlimbn(t, static_cast<mp_size_t>(i));
+        size_t n = mpz_size(t);
+        ASSERT_ALWAYS(n <= std::numeric_limits<mp_size_t>::max());
+        mp_limb_t h = n == 0 ? 0U
+                             : mpz_getlimbn(t, n > 1u ? n-2u : 0u);
         return static_cast<unsigned int>(h >> (GMP_NUMB_BITS - nslices_log));
     }
 

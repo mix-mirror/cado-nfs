@@ -4504,14 +4504,10 @@ class Duplicates1Task(Task, FilesCreator, HasStatistics):
         self.logger.debug("Exit Duplicates1Task.run(" + self.name + ")")
         return True
 
-    def parse_output_files(self, stderr):
+    @staticmethod
+    def parse_output_files(stderr):
         files = {}
         for line in stderr.splitlines():
-            if re.match(r'Error, could not parse a too large value a,b',
-                        line):
-                assert self.params["algo"] == Algorithm.QS, "error in dup1"
-                files = {}  # reset in case of error
-                continue
             match = re.match(r'# Opening output file for slice (\d+): (.+)$',
                              line)
             if match:
