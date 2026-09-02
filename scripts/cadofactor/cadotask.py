@@ -5034,7 +5034,7 @@ class FilterGaloisTask(Task):
         input = {"poly": Request.GET_POLYNOMIAL_FILENAME,
                  "renumber": Request.GET_RENUMBER_FILENAME}
         return ((cadoprograms.GaloisFilter,
-                 ("dl", "nrels", "large_ab"),
+                 ("dl", "nrels"),
                  input),)
 
     @property
@@ -5047,7 +5047,6 @@ class FilterGaloisTask(Task):
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
-        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
         self.progparams[0]["dl"] = \
             self.params["computation"] in (Computation.DLP, Computation.CL)
 

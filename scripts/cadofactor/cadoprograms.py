@@ -1194,7 +1194,6 @@ class GaloisFilter(Program):
                  basepath: Parameter() = None,
                  galois: Parameter() = None,
                  dl: Toggle() = None,
-                 large_ab: Toggle("large-ab") = None,  # noqa: F821
                  **kwargs):
         super().__init__(locals(), **kwargs)
 

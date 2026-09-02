@@ -138,11 +138,6 @@ struct filter_galois_process {
         "for DL (untested)">
             is_for_dl;
 
-    parameter_switch<
-        "large-ab",
-        "enable support for a and b beyond 64 bits">
-            largeab;
-
     cxx_cado_poly cpoly;
 
     /* Renumbering table to convert from (p,r) to an index */
@@ -169,7 +164,6 @@ struct filter_galois_process {
         decltype(action)::configure(pl);
         decltype(nthreads)::configure(pl);
         decltype(is_for_dl)::configure(pl);
-        decltype(largeab)::configure(pl);
     }
 
     explicit filter_galois_process(cxx_param_list & pl)
@@ -180,7 +174,6 @@ struct filter_galois_process {
         , action(pl)
         , nthreads(pl)
         , is_for_dl(pl)
-        , largeab(pl)
     {
         if (!cpoly.read(polyfilename))
             throw cado::error("cannot read {}", polyfilename());
@@ -276,7 +269,7 @@ struct filter_galois_process {
      * non-duplicate relations found in the input file set.
      */
 
-    size_t filter(std::vector<std::string> const & files)
+    size_t filter(std::vector<std::string> const & files, bool largeab)
     {
         if (!largeab) {
             using R = cado::relation_building_blocks::primes_block<
@@ -290,6 +283,13 @@ struct filter_galois_process {
             return filter<R>(files);
         }
     }
+
+    void reset()
+    {
+        ndups = 0u;
+        std::fill_n(H.get(), K, 0u);
+    }
+
     private:
 
     template<typename relation_type>
@@ -361,7 +361,16 @@ int main(int argc, char const * argv[])
     timingstats_dict_t stats;
     timingstats_dict_init(stats);
 
-    size_t noutrels = fg.filter(input.create_file_list());
+    size_t noutrels = 0u;
+    try {
+        noutrels = fg.filter(input.create_file_list(), false);
+    } catch (cado::filter_io::out_of_range const & e) {
+        fmt::print(stderr, "Error, could not parse a too large value a,b: "
+                           "retrying using cxx_mpz\n");
+        fg.reset();
+        noutrels = fg.filter(input.create_file_list(), true);
+    }
+
 
     /* XXX This printout is parsed by cado-nfs.py */
     fmt::print(stderr, "Number of output relations: {}\n", noutrels);

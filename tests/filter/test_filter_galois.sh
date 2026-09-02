@@ -38,7 +38,7 @@ poly="${SOURCE_TEST_DIR}/test_filter_galois.d20.poly"
 renumber="${SOURCE_TEST_DIR}/test_filter_galois.d20.renumber"
 rels="${SOURCE_TEST_DIR}/test_filter_galois.d20.rels"
 outrels="${wdir}/test_filter_galois.d20.rels"
-args="-poly ${poly} -nrels 29 -renumber ${renumber} -galois _y -dl -large-ab\
+args="-poly ${poly} -nrels 29 -renumber ${renumber} -galois _y -dl\
        -outdir ${wdir} ${rels}"
 
 SHA1BIN=sha1sum
