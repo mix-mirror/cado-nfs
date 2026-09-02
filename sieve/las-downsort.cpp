@@ -459,8 +459,10 @@ struct downsort_object {
             uint32_t bucket_index,
             uint32_t first_region0_index)
     {
-        fib_ds_sss<LEVEL>(bucket_index, first_region0_index);
+        if constexpr (LEVEL > 0)
+            fib_ds_sss<LEVEL>(bucket_index, first_region0_index);
         if constexpr (LEVEL > 1) {
+            /* Because of this "if constexpr", the recursion terminates */
             recurse<LEVEL>(first_region0_index);
         } else {
             pbr(first_region0_index);
@@ -472,14 +474,21 @@ struct downsort_object {
         // Visit the downsorting tree depth-first.
         // If toplevel = 1, then this is just processing all bucket
         // regions.
-        size_t  const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
+        size_t const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
 
-        static_assert(MAX_TOPLEVEL == 3);
+        static_assert(MAX_TOPLEVEL <= 3);
+
+        /* TODO: it's ugly. */
 
         for (int i = 0; i < ws.nb_buckets[ws.toplevel]; i++) {
             if (ws.task->must_take_decision())
                 break;
             switch (ws.toplevel) {
+                case 1:
+                    /* there should only be one loop, then. */
+                    ASSERT_ALWAYS(i == 0);
+                    tree<0>(0, 0);
+                    return;
 #if MAX_TOPLEVEL >= 2
                 case 2:
                     tree<1>(i, i*BRS[2]/BRS[1]);
@@ -517,12 +526,6 @@ void downsort_toplevel(
 
 // some explicit instantiations are needed to terminate the compile-time
 // recursions. The code is such that at runtime, we never reach here!
-template<>
-template<>
-void downsort_object<true>::tree<0>(uint32_t, uint32_t) { ASSERT_ALWAYS(0); }
-template<>
-template<>
-void downsort_object<false>::tree<0>(uint32_t, uint32_t) { ASSERT_ALWAYS(0); }
 template <>
 template <>
 void downsort_object<true>::ds_aux<2>(task_group &, int, uint32_t) { ASSERT_ALWAYS(0); }

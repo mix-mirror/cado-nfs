@@ -854,12 +854,10 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
     {
         CHILD_TIMER(timer_special_q, "process_bucket_region outer container");
         TIMER_CATEGORY(timer_special_q, sieving_mixed());
-        if (ws.toplevel == 1) {
-            /* Process bucket regions in parallel */
-            process_many_bucket_regions(ws, wc_p, aux_p, Q, pool, 0, w);
-        } else {
-            downsort_toplevel(ws, wc_p, aux_p, Q, pool, precomp_plattices, w);
-        }
+        /* if ws.toplevel == 1, this will simplify to calling
+         * process_many_bucket_regions.
+         */
+        downsort_toplevel(ws, wc_p, aux_p, Q, pool, precomp_plattices, w);
     }
 
     BOOKKEEPING_TIMER(timer_special_q);
