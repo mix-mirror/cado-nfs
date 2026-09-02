@@ -6149,8 +6149,7 @@ class SqrtTask(Task):
                  "index": Request.GET_INDEX_FILENAME,
                  "kernel": Request.GET_KERNEL_FILENAME}
         return ((cadoprograms.Sqrt,
-                 ("ab", "prefix", "side0", "side1", "gcd", "dep", "large_ab",
-                  "qs"),
+                 ("ab", "prefix", "side0", "side1", "gcd", "dep", "qs"),
                  input), )
 
     @property
@@ -6162,7 +6161,6 @@ class SqrtTask(Task):
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
                          path_prefix=path_prefix)
-        self.progparams[0]["large_ab"] = self.params["algo"] == Algorithm.QS
         self.factors = self.make_db_dict(self.make_tablename("factors"),
                                          connection=self.db_connection)
         self.add_factor(self.params["N"])

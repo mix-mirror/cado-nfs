@@ -1583,19 +1583,12 @@ struct task_prepare_dependencies /* {{{ */
     std::string purgedname;
     std::string indexname;
     std::string kername;
-    bool largeab = false;
 
     static void declare_usage(cxx_param_list & pl)
     {
         pl.declare_usage("purged", "Purged relations file, as produced by 'purge'");
         pl.declare_usage("index", "Index file, as produced by 'merge'");
         pl.declare_usage("ker", "Kernel file, as produced by 'characters'");
-        pl.declare_usage("large-ab", "enable support for a,b beyond 64 bits");
-    }
-
-    static void configure_switches(cxx_param_list & pl)
-    {
-        pl.configure_switch("large-ab");
     }
 
     static void lookup_parameters(cxx_param_list & pl)
@@ -1603,7 +1596,6 @@ struct task_prepare_dependencies /* {{{ */
         pl.lookup("purged");
         pl.lookup("index");
         pl.lookup("ker");
-        pl.lookup("large-ab");
     }
 
 
@@ -1612,7 +1604,6 @@ struct task_prepare_dependencies /* {{{ */
         pl.parse_mandatory("purged", purgedname);
         pl.parse_mandatory("index", indexname);
         pl.parse_mandatory("ker", kername);
-        pl.parse("large-ab", largeab);
     }
 
     template<typename relation_type>
@@ -1719,10 +1710,15 @@ struct task_prepare_dependencies /* {{{ */
         prepare_abs();
         prepare_deps(prefix);
 
-        if (largeab)
-            filter<cxx_mpz>();
-        else
+        try {
             filter<uint64_t>();
+        } catch (cado::filter_io::out_of_range const & e) {
+            fmt::print(stderr, "Error, could not parse a too large value a,b: "
+                               "retrying using cxx_mpz\n");
+            deps.clear();
+            prepare_deps(prefix);
+            filter<cxx_mpz>();
+        }
 
         fmt::print(stderr, "Written {} dependencies files\n", deps.size());
         for(auto const & D : deps) {
@@ -1993,7 +1989,6 @@ int main(int argc, char const *argv[])
     cado::filter_io_details::configure(pl);
 
     sqrt_modes::configure_switches(pl);
-    task_prepare_dependencies::configure_switches(pl);
 
     pl.configure_switch_old("-v", &verbose);
 
