@@ -59,6 +59,11 @@ static void downsort_aux(nfs_work & ws,
 
     nfs_work::side_data & wss(ws.sides[side]);
 
+    // Early exit if this side does not reach LEVEL + 2, since for
+    // LEVEL+1 to contain longhints, we need the toplevel to be LEVEL+2
+    // or above.
+    if (wss.fbs->get_toplevel() < LEVEL + 2)
+        return;
 
     auto const & BA_ins = wss.bucket_arrays<LEVEL + 1, my_longhint_t>();
     auto & BA_outs = wss.bucket_arrays<LEVEL, my_longhint_t>();
@@ -241,7 +246,7 @@ static void downsort_tree_inner(
         // reading without reserving. We require that things at level
         // above are finished before entering here.
 
-        {
+        if (wss.fbs->get_toplevel() >= LEVEL + 1) {
             auto const & BA_ins = wss.bucket_arrays<LEVEL + 1, my_shorthint_t>();
             auto & BA_outs = wss.bucket_arrays<LEVEL, my_longhint_t>();
             /* otherwise the code here can't work */

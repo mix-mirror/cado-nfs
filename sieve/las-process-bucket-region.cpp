@@ -338,7 +338,7 @@ template<bool with_hints> void process_bucket_region_run::apply_buckets_inner(in
     }
 
     /* Apply downsorted buckets, if necessary. */
-    if (ws.toplevel > 1) {
+    if (wss.fbs->get_toplevel() > 1) {
         auto const & BA_ins = wss.bucket_arrays<1, my_longhint_t>();
         verbose_fmt_print(0, 4,
                 "# apply 1l buckets ({} groups of {} buckets)"

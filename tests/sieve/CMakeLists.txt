@@ -211,6 +211,13 @@ cado_divert_test(F9_sieve 2_levels APPEND_ARGUMENTS bkthresh1=600000)
 cado_divert_test(F9_sieve 3_levels APPEND_ARGUMENTS
     bkthresh1=600000 bkthresh2=1100000 -Bi 5)
 
+# These test elide the top-level FIB on one of the two sides. The way
+# it's dealt with is currently suboptimal, but we must make sure that it
+# remains functional.
+cado_divert_test(F9_sieve 2_levels_border APPEND_ARGUMENTS bkthresh1=1200000)
+cado_divert_test(F9_sieve 3_levels_border APPEND_ARGUMENTS
+    bkthresh1=600000 bkthresh2=1200000 -Bi 5)
+
 if(HAVE_SSE2)
     cado_divert_test(F9_sieve smallset_purge
         APPEND_ARGUMENTS -smallset-purge)

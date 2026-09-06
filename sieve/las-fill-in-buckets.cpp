@@ -305,6 +305,9 @@ static void fill_in_buckets_one_side(nfs_work & ws, nfs_aux & aux,
     timetree_t & timer(aux.rt.timer);
     nfs_work::side_data & wss(ws.sides[side]);
 
+    // Early exit if this side does not reach LEVEL + 1
+    if (wss.fbs->get_toplevel() < LEVEL)
+        return;
 
     BOOKKEEPING_TIMER(timer);
 
