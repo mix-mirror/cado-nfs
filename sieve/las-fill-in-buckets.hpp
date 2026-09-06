@@ -57,18 +57,6 @@ struct precomp_plattice_t :
 };
 
 
-template <int LEVEL>
-void
-downsort_tree(
-        nfs_work &ws,
-        std::shared_ptr<nfs_work_cofac> wc_p,
-        std::shared_ptr<nfs_aux> aux_p,
-        ALGO::special_q_data const & Q,
-        thread_pool &pool,
-        uint32_t bucket_index,
-        uint32_t first_region0_index,
-        std::vector<cado::multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS - 1>> & precomp_plattice,
-        where_am_I & w);
 
 void fill_in_buckets_toplevel_multiplex(
         nfs_work &ws,

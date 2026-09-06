@@ -51,6 +51,7 @@
 #include "las-config.hpp"
 #include "las-divide-primes.hpp"
 #include "las-dlog-base.hpp"
+#include "las-downsort.hpp"
 #include "las-duplicate.hpp"
 #include "las-fill-in-buckets.hpp"
 #include "las-globals.hpp"
