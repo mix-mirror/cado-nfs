@@ -1,10 +1,7 @@
 #ifndef CADO_LAS_FILL_IN_BUCKETS_HPP
 #define CADO_LAS_FILL_IN_BUCKETS_HPP
 
-#include <cstdint>
-
 #include <vector>
-#include <memory>
 
 #include "las-config.hpp"
 #include "multityped_array.hpp"
@@ -57,8 +54,7 @@ struct precomp_plattice_t :
 };
 
 
-
-void fill_in_buckets_toplevel_multiplex(
+void fill_in_buckets_toplevel_entry(
         nfs_work &ws,
         nfs_aux &aux,
         ALGO::special_q_data const & Q,

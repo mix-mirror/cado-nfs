@@ -1,16 +1,23 @@
 #ifndef CADO_LAS_FILL_IN_BUCKETS_INL
 #define CADO_LAS_FILL_IN_BUCKETS_INL
 
+#include <cstdint>
+
+#include <utility>
+
 #include "bucket.hpp"
-#include "bucket-push-update.hpp"
+#include "bucket-push-update.hpp"       // IWYU pragma: keep
 #include "fb-types.hpp"
 #include "fb.hpp"
 #include "las-plattice.hpp"
-#include "las-auxiliary-data.hpp"
 #include "las-qlattice.hpp"
 #include "threadpool.hpp"
 #include "las-threads-work-data.hpp"
 #include "las-fill-in-buckets.hpp"
+#include "macros.h"
+#include "chronograms.hpp"
+#include "las-where-am-i-proxy.hpp"
+#include "las-where-am-i.hpp"
 
 template <int LEVEL, class FB_ENTRY_TYPE>
 void make_lattice_bases(
@@ -91,7 +98,7 @@ void make_lattice_bases(
 // FIXME FIXME FIXME: tons of duplicated code, here!!!
 // But putting if() in critical loops can kill performance (I tried...)
 
-template <int LEVEL, class FB_ENTRY_TYPE, typename TARGET_HINT>
+template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
 static void fill_in_buckets_toplevel_sublat(
     bucket_array_t<LEVEL, TARGET_HINT> & orig_BA, nfs_work & ws,
     qlattice_basis const & Q,
@@ -235,7 +242,7 @@ static void fill_in_buckets_toplevel_sublat(
 }
 
 /* TARGET_HINT is shorthint_t or void */
-template <int LEVEL, class FB_ENTRY_TYPE, typename TARGET_HINT>
+template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
 static void
 fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
                          nfs_work & ws, fb_slice<FB_ENTRY_TYPE> const & slice,
@@ -355,7 +362,7 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
 }
 
 /* TARGET_HINT is shorthint_t or void */
-template <int LEVEL, typename TARGET_HINT>
+template <int LEVEL, hint_type TARGET_HINT>
 static void
 fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
                          nfs_work & ws,

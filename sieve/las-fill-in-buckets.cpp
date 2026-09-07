@@ -8,9 +8,7 @@
  */
 
 #include <cstddef>
-#include <cstdint>
 
-#include <algorithm>
 #include <array>
 #include <functional>
 #include <memory>
@@ -27,9 +25,7 @@
 #include "las-bkmult.hpp"
 #include "las-config.hpp"
 #include "las-fill-in-buckets.hpp"
-#include "las-globals.hpp"
 #include "las-process-bucket-region.hpp"
-#include "las-report-stats.hpp"
 #include "las-siever-config.hpp"
 #include "las-threads-work-data.hpp"
 #include "las-where-am-i-proxy.hpp"
@@ -155,15 +151,12 @@ void fill_in_buckets_prepare_plattices(
     });
 }
 
-/* {{{ */
-
-
 // At top level.
 // We need to interleave the root transforms and the FK walk,
 // otherwise, we spend all the time waiting for memory.
 // Hence the ugly de-templatization.
 // At some point, the code should be re-organized, I'm afraid.
-template <int LEVEL, class FB_ENTRY_TYPE, typename TARGET_HINT>
+template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
 static void
 fill_in_buckets_toplevel_wrapper(worker_thread * worker,
         int side,
@@ -220,7 +213,7 @@ fill_in_buckets_toplevel_wrapper(worker_thread * worker,
     }
 }
 /* same for sublat */
-template <int LEVEL, class FB_ENTRY_TYPE, typename TARGET_HINT>
+template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
 static void
 fill_in_buckets_toplevel_sublat_wrapper(worker_thread * worker,
         int side,
@@ -278,7 +271,7 @@ fill_in_buckets_toplevel_sublat_wrapper(worker_thread * worker,
 }
 
 // Static helper function outside loop to avoid lambda closure bloat inside foreach_slice
-template <int LEVEL, class FB_ENTRY_TYPE, typename TARGET_HINT>
+template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
 static void run_fill_in_buckets_toplevel(worker_thread* worker, int side, nfs_work & ws,
                                          nfs_aux & aux, ALGO::special_q_data const & Q,
                                          plattices_dense_vector_t * pre,
@@ -296,7 +289,7 @@ static void run_fill_in_buckets_toplevel(worker_thread* worker, int side, nfs_wo
     }
 }
 
-template <int LEVEL, typename TARGET_HINT>
+template <int LEVEL, hint_type TARGET_HINT>
 static void fill_in_buckets_one_side(nfs_work & ws, nfs_aux & aux,
                                      ALGO::special_q_data const & Q,
                                      thread_pool & pool, int const side,
@@ -374,7 +367,7 @@ inline void fib_one_side(nfs_work & ws, Args&& ...args)
     fib1s_caller_s<level, hint_t>()(ws, std::forward<Args>(args)...);
 }
 
-void fill_in_buckets_toplevel_multiplex(nfs_work & ws, nfs_aux & aux,
+void fill_in_buckets_toplevel_entry(nfs_work & ws, nfs_aux & aux,
         ALGO::special_q_data const & Q, thread_pool & pool, int side,
         where_am_I & w)
 {

@@ -773,7 +773,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             nfs_work::side_data  const& wss(ws.sides[side]);
             if (wss.no_fb()) continue;
 
-            fill_in_buckets_toplevel_multiplex(ws, aux, Q, pool, side, w);
+            fill_in_buckets_toplevel_entry(ws, aux, Q, pool, side, w);
 
             fill_in_buckets_prepare_plattices(ws, Q, pool, side, precomp_plattices[side]);
 
