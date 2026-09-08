@@ -409,9 +409,8 @@ struct downsort_object {
             ws.slice_statistics(1);
 
         auto exc = pool.get_exceptions<buckets_are_full>(thread_pool::QUEUE_GENERIC);
-        if (!exc.empty()) {
-            throw *std::ranges::max_element(exc);
-        }
+        if (!exc.empty())
+            throw buckets_are_full(*std::ranges::max_element(exc));
 
         // it seems difficult to compute the max target bucket index, in
         // fact. Well of course it should be ws.nb_buckets[1], but just
