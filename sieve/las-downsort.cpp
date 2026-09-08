@@ -75,67 +75,6 @@ struct downsort_object {
         , w(w)
     {}
 
-    /* This is auxiliary only. We downsort stuff that we already downsorted.
-     * So it applies only if LEVEL+1 is itself not the toplevel.
-     * For this reason, we must have a specific instantiation that reduces
-     * this to a no-op if LEVEL+1>=3, because there's no longhint_t for level
-     * 3 presently.
-     */
-    template <int LEVEL>
-    void ds_aux(task_group & tg,
-            int side,
-            uint32_t bucket_index)
-    {
-        static_assert(LEVEL <= MAX_TOPLEVEL - 1);
-
-        nfs_work::side_data & wss(ws.sides[side]);
-
-        // Early exit if this side does not reach LEVEL + 2, since for
-        // LEVEL+1 to contain longhints, we need the toplevel to be LEVEL+2
-        // or above.
-        if (wss.fbs->get_toplevel() < LEVEL + 2)
-            return;
-
-        auto const & BA_ins = wss.bucket_arrays<LEVEL + 1, my_longhint_t>();
-        auto & BA_outs = wss.bucket_arrays<LEVEL, my_longhint_t>();
-        ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
-
-        verbose_fmt_print(0, 3,
-                "# Downsorting the side-{} {}{} buckets ({} groups of {} buckets"
-                ", taking only bucket {}/{})"
-                " to {}{} buckets ({} groups of {} buckets)\n",
-                side,
-                LEVEL + 1, my_longhint_t::rtti[0],
-                BA_ins.size(), BA_ins[0].n_bucket,
-                bucket_index, BA_ins[0].n_bucket,
-                LEVEL, my_longhint_t::rtti[0],
-                BA_outs.size(), BA_outs[0].n_bucket);
-
-
-        // What comes from already downsorted data above:
-        for (auto const & BA_in: BA_ins) {
-            pool.add_task(
-                tg,
-                [this, side, bucket_index, &BA_in](worker_thread * worker, where_am_I && w) {
-                    nfs_work::side_data & wss(ws.sides[side]);
-                    fb_factorbase::slicing const & fbs(*wss.fbs);
-                    int const id = worker->rank();
-                    nfs_aux::thread_data & taux(aux_p->th[id]);
-                    taux.w = std::move(w);
-                    timetree_t & timer(aux_p->get_timer(worker));
-                    ENTER_THREAD_TIMER(timer);
-                    MARK_TIMER_FOR_SIDE(timer, side);
-                    taux.w = std::move(w);
-                    CHILD_TIMER(timer, fmt::format("downsort<{}>", LEVEL));
-                    auto tt = worker->trace(chronograms::DS(side,LEVEL,bucket_index));
-                    downsort<LEVEL + 1>(fbs,
-                            wss.acquire_BA<LEVEL, my_longhint_t>(wss.rank_BA(BA_in)),
-                            BA_in, bucket_index, taux.w);
-                },
-                where_am_I(w));
-        }
-    }
-    // }}}
     // {{{ FIB (fill-in-buckets)
     // For internal levels, the fill-in is not exactly the same as for
     // top-level, since the plattices have already been precomputed.
@@ -189,12 +128,37 @@ struct downsort_object {
         }
     }
 
-    // {{{ DS (downsort) -- should refactor shorthint and longhint.
+    // {{{ DS (downsort)
+    /* Downsort the updates coming from the level above into the
+     * <LEVEL, my_longhint_t> destination bucket arrays.
+     *
+     * Two kinds of updates are downsorted here:
+     *
+     *  - shorthint updates, present as soon as the toplevel is >= LEVEL+1;
+     *  - longhint updates -- updates that were already downsorted once,
+     *    from an even higher level -- present only when the toplevel is
+     *    >= LEVEL+2 (and only then does a <LEVEL+1, my_longhint_t> bucket
+     *    array exist at all). This is what the ds_aux() method used to
+     *    handle separately.
+     *
+     * Both kinds are written to the SAME destination array -- the one
+     * whose rank matches the rank of the source array. The shorthint pass
+     * creates the single slice via add_slice_index(0); the longhint pass
+     * merely appends to it. So, for any given destination array, the
+     * shorthint pass must run first, and the two passes must never run
+     * concurrently: otherwise the slice-0 start pointers recorded by
+     * add_slice_index(0) no longer match the bucket starts (tripping the
+     * assertion in bucket_array_t::begin()), and the concurrent
+     * push_update()s corrupt the array. We guarantee both by doing the
+     * two passes for one destination array back-to-back inside a single
+     * task; tasks for different destination arrays stay independent.
+     */
     template <int LEVEL>
         void ds(task_group & tg, int side, uint32_t bucket_index)
     {
-        /* FIRST: Downsort what is coming from the level above, for this
-         * bucket index */
+        static_assert(LEVEL > 0);
+        static_assert(LEVEL + 1 <= MAX_TOPLEVEL);
+
         // All these BA are global stuff; see reservation_group.
         // We reserve those where we write, and access the ones for
         // reading without reserving. We require that things at level
@@ -202,34 +166,40 @@ struct downsort_object {
 
         nfs_work::side_data & wss(ws.sides[side]);
 
-        if (wss.fbs->get_toplevel() < LEVEL + 1)
+        int const toplevel = wss.fbs->get_toplevel();
+        bool const has_short_above = toplevel > LEVEL;
+        bool const has_long_above =
+            (LEVEL + 2 <= MAX_TOPLEVEL) && (toplevel > LEVEL + 1);
+
+        if (!has_short_above && !has_long_above)
             return;
+
+        WHERE_AM_I_UPDATE(w, side, side);
+        nfs_aux & aux(*aux_p);
+        timetree_t & timer(aux.rt.timer);
+        CHILD_TIMER(timer,
+                fmt::format("downsort<{}*->{}l>", LEVEL+1, LEVEL));
+        TIMER_CATEGORY(timer, sieving(side));
 
         auto const & BA_ins = wss.bucket_arrays<LEVEL + 1, my_shorthint_t>();
         auto & BA_outs = wss.bucket_arrays<LEVEL, my_longhint_t>();
-        /* otherwise the code here can't work */
-        /* see also the comment above in downsort_aux */
         ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
 
         verbose_fmt_print(0, 3,
-                "# Downsorting the side-{} {}{} buckets ({} groups of {} buckets"
+                "# Downsorting the side-{} {}{}{} buckets ({} groups of {} buckets"
                 ", taking only bucket {}/{})"
                 " to {}{} buckets ({} groups of {} buckets)\n",
                 side,
-                LEVEL + 1, my_shorthint_t::rtti[0],
+                LEVEL + 1, my_shorthint_t::rtti[0], has_long_above ? "+l" : "",
                 BA_ins.size(), BA_ins[0].n_bucket,
                 bucket_index, BA_ins[0].n_bucket,
                 LEVEL, my_longhint_t::rtti[0],
                 BA_outs.size(), BA_outs[0].n_bucket);
 
-        ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
-
-        wss.reset_all_pointers<LEVEL, my_longhint_t>();
-
-        for (auto const & BA_in: BA_ins) {
+        for (size_t rank = 0; rank < BA_ins.size(); ++rank) {
             pool.add_task(
                     tg,
-                    [this, side, &BA_in, bucket_index](worker_thread * worker, where_am_I && w) {
+                    [this, side, rank, bucket_index, has_short_above, has_long_above](worker_thread * worker, where_am_I && w) {
                     nfs_work::side_data & wss(ws.sides[side]);
                     fb_factorbase::slicing const & fbs(*wss.fbs);
                     int const id = worker->rank();
@@ -238,17 +208,32 @@ struct downsort_object {
                     taux.w = std::move(w);
                     ENTER_THREAD_TIMER(timer);
                     MARK_TIMER_FOR_SIDE(timer, side);
-                    CHILD_TIMER(timer, fmt::format("downsort<{}>", LEVEL));
+                    CHILD_TIMER(timer, fmt::format("downsort<{}*->{}l>",
+                                LEVEL+1, LEVEL));
                     auto tt = worker->trace(chronograms::DS(side, LEVEL, bucket_index));
 
-                    downsort<LEVEL + 1>(fbs,
-                            wss.acquire_BA<LEVEL, my_longhint_t>(wss.rank_BA(BA_in)),
-                            BA_in, bucket_index,
-                            taux.w);
+                    /* Both passes below write this same array; the
+                     * shorthint pass must come first (add_slice_index(0)). */
+                    auto & BA_out =
+                        wss.acquire_BA<LEVEL, my_longhint_t>(rank);
+
+                    if (has_short_above) {
+                        downsort<LEVEL + 1>(fbs, BA_out,
+                                wss.bucket_arrays<LEVEL + 1, my_shorthint_t>()[rank],
+                                bucket_index, taux.w);
+                    }
+                    if constexpr (LEVEL + 2 <= MAX_TOPLEVEL) {
+                        if (has_long_above) {
+                            downsort<LEVEL + 1>(fbs, BA_out,
+                                    wss.bucket_arrays<LEVEL + 1, my_longhint_t>()[rank],
+                                    bucket_index, taux.w);
+                        }
+                    }
                     },
                     where_am_I(w));
         }
     }
+    // }}}
 
 
     // first_region0_index is a way to remember where we are in the tree.
@@ -261,9 +246,10 @@ struct downsort_object {
             int side,
             uint32_t first_region0_index)
     {
-        /* SECOND: fill in buckets at this level, for this region. */
+        /* SECOND: fill in buckets at this level, for this region.
+         * (reset_all_pointers() for both destination hint types is done
+         * by the caller, fib_ds_sss(), before ds() and fib() run.) */
         nfs_work::side_data & wss(ws.sides[side]);
-        wss.reset_all_pointers<LEVEL, my_shorthint_t>();
 
         auto & BA_outs = wss.bucket_arrays<LEVEL, my_shorthint_t>();
         auto & lattices = precomp_plattices[side].template get<LEVEL>();
@@ -340,12 +326,11 @@ struct downsort_object {
         WHERE_AM_I_UPDATE(w, N, first_region0_index);
 
         std::vector<task_group> ds_tgs(nsides);
-        std::vector<task_group> ds_aux_tgs(nsides);
         std::vector<task_group> fib_tgs(nsides);
         std::vector<task_group> sss_tgs(nsides);
 
         for (int side = 0; side < nsides; ++side) {
-            nfs_work::side_data const & wss(ws.sides[side]);
+            nfs_work::side_data & wss(ws.sides[side]);
             if (wss.no_fb())
                 continue;
 
@@ -353,25 +338,19 @@ struct downsort_object {
             TIMER_CATEGORY(timer, sieving(side));
 
             auto & ds_tg = ds_tgs[side];
-            auto & ds_aux_tg = ds_aux_tgs[side];
             auto & fib_tg = fib_tgs[side];
             auto & sss_tg = sss_tgs[side];
 
-            ds<LEVEL>(ds_tg, side, bucket_index);
+            /* ds() now downsorts both the shorthint and the longhint
+             * updates from above (the latter is what ds_aux() used to do)
+             * -- and for any given destination array it does the two
+             * passes within one task, so they can no longer race. The
+             * resets for both destination hint types are therefore done
+             * here, once, before ds() and fib() are scheduled. */
+            wss.reset_all_pointers<LEVEL, my_shorthint_t>();
+            wss.reset_all_pointers<LEVEL, my_longhint_t>();
 
-            if (LEVEL < ws.toplevel - 1) {
-                /* ds_aux() (the "downsort what was already downsorted"
-                 * pass) appends to the very same <LEVEL, my_longhint_t>
-                 * bucket arrays that ds() fills from the shorthint
-                 * updates: ds() creates the single slice with
-                 * add_slice_index(0), ds_aux() only appends. So ds_aux()
-                 * must run only once ds_tg (the shorthint downsort) has
-                 * completed for this side -- never concurrently. */
-                ds_tg.on_complete(
-                        [this, &ds_aux_tg, side, bucket_index]() mutable {
-                            ds_aux<LEVEL>(ds_aux_tg, side, bucket_index);
-                        });
-            }
+            ds<LEVEL>(ds_tg, side, bucket_index);
 
             fib<LEVEL>(fib_tg, side, first_region0_index);
 
@@ -387,7 +366,6 @@ struct downsort_object {
             if (wss.no_fb())
                 continue;
             ds_tgs[side].wait();
-            ds_aux_tgs[side].wait();
             fib_tgs[side].wait();
             if (LEVEL == 1)
                 sss_tgs[side].wait();
@@ -523,12 +501,3 @@ void downsort_toplevel(
         D.tree_toplevel();
     }
 }
-
-// some explicit instantiations are needed to terminate the compile-time
-// recursions. The code is such that at runtime, we never reach here!
-template <>
-template <>
-void downsort_object<true>::ds_aux<2>(task_group &, int, uint32_t) { ASSERT_ALWAYS(0); }
-template <>
-template <>
-void downsort_object<false>::ds_aux<2>(task_group &, int, uint32_t) { ASSERT_ALWAYS(0); }
