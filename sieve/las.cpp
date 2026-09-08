@@ -28,8 +28,6 @@
 #include <utility>
 #include <vector>
 
-#include <dirent.h>
-
 #include <gmp.h>
 #include "fmt/base.h"
 #include "fmt/format.h"
@@ -62,12 +60,10 @@
 #include "las-parallel.hpp"
 #include "las-plattice.hpp"
 #include "las-process-bucket-region.hpp"
-#include "las-qlattice.hpp"
 #include "las-report-stats.hpp"
 #include "las-side-config.hpp"
 #include "las-sieve-shared-data.hpp"
 #include "las-siever-config.hpp"
-#include "las-smallsieve.hpp"
 #include "las-special-q-task-collection.hpp"
 #include "las-special-q-task.hpp"
 #include "las-threads-work-data.hpp"
@@ -815,21 +811,8 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
                                 wss.lognorms.scale);
 
                         wss.ssd->small_sieve_info("small sieve", side);
-                    });
 
-            if (ws.toplevel == 1) {
-                /* when ws.toplevel > 1, this start_many call
-                 * is done several times.
-                 */
-                sss_tg.on_complete([&ws, &Q, side, &pool, &sss_tg]() {
-                        nfs_work::side_data & wss(ws.sides[side]);
-                        wss.ssd->small_sieve_prepare_many_start_positions(
-                                pool, &sss_tg,
-                                0,
-                                std::min(SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE, ws.nb_buckets[1]),
-                                ws.conf.logI, Q.sublat);
-                        });
-            }
+                    });
         }
 
         /* Note: we haven't done any downsorting yet ! */
@@ -838,10 +821,9 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             if (wss.no_fb()) continue;
             auto & sss_tg(sss_tgs[side]);
             sss_tg.wait();
-            if (ws.toplevel == 1)
-                wss.ssd->small_sieve_activate_many_start_positions();
         }
-            
+
+
         pool.drain_queue(thread_pool::QUEUE_GENERIC);
 
         ws.check_buckets_max_full_toplevel(ws.toplevel);

@@ -121,7 +121,10 @@ nfs_work::nfs_work(las_info & _las, int nr_workspaces, sieve_method auto tag)
     : las(_las),
     local_memory(_las.local_memory_accessor()),
     nr_workspaces(nr_workspaces),
-    sides {{ {nr_workspaces, tag}, {nr_workspaces, tag} }}
+    sides {{
+        { las.bucket_batch_size, nr_workspaces, tag},
+        { las.bucket_batch_size, nr_workspaces, tag}
+    }}
 {
     zeroinit_defaults();
     // we cannot do this because thread_data has no copy ctor (on
@@ -330,7 +333,7 @@ void nfs_work::compute_toplevel_and_buckets()
     ASSERT_ALWAYS(toplevel >= 1 && toplevel <= MAX_TOPLEVEL);
 
     /* update number of buckets at toplevel */
-    size_t  const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
+    size_t const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
 
     std::fill_n(nb_buckets, FB_MAX_PARTS, 0);
 
