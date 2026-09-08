@@ -75,59 +75,6 @@ struct downsort_object {
         , w(w)
     {}
 
-    // {{{ FIB (fill-in-buckets)
-    // For internal levels, the fill-in is not exactly the same as for
-    // top-level, since the plattices have already been precomputed.
-    template <int LEVEL>
-    void fib_internal(
-            worker_thread * worker,
-            int side,
-            plattices_vector_t & plattices_vector,
-            uint32_t const first_region0_index)
-    {
-        /* Import some contextual stuff */
-        int const id = worker->rank();
-        nfs_aux::thread_data & taux(aux_p->th[id]);
-        timetree_t & timer(aux_p->get_timer(worker));
-        ENTER_THREAD_TIMER(timer);
-        where_am_I & w(taux.w);
-        nfs_work::side_data & wss(ws.sides[side]);
-
-        MARK_TIMER_FOR_SIDE(timer, side);
-
-        // we're declaring the timer here, but really the work happens below
-        // in fill_in_buckets_lowlevel. We happen to have access to
-        // param->side here, so we use it to provide a nicer timing report.
-        CHILD_TIMER(timer,
-                fmt::format("fill_in_buckets_one_slice_internal<{}>", LEVEL));
-
-        WHERE_AM_I_UPDATE(w, side, side);
-        WHERE_AM_I_UPDATE(w, i, plattices_vector.get_index());
-        WHERE_AM_I_UPDATE(w, N, first_region0_index);
-
-        try {
-            auto acquired = wss.reserve_BA<LEVEL, my_shorthint_t>();
-            auto tt = worker->trace(chronograms::FIB(
-                        side,
-                        LEVEL,
-                        wss.rank_BA(acquired.access()),
-                        plattices_vector.get_index()));
-                
-            /* Get an unused bucket array that we can write to */
-            /* clearly, reserve_BA() possibly throws. As it turns out,
-             * fill_in_buckets_lowlevel<> does not, at least currently. One
-             * could imagine that it could throw, so let's wrap it too.
-             */
-            fill_in_buckets_lowlevel<LEVEL, my_shorthint_t>(
-                    acquired.access(),
-                    ws, Q, plattices_vector,
-                    first_region0_index, w);
-        } catch (buckets_are_full & e) {
-            e.side = side;
-            throw e;
-        }
-    }
-
     // {{{ DS (downsort)
     /* Downsort the updates coming from the level above into the
      * <LEVEL, my_longhint_t> destination bucket arrays.
@@ -235,6 +182,59 @@ struct downsort_object {
     }
     // }}}
 
+    // {{{ FIB (fill-in-buckets)
+    // For internal levels, the fill-in is not exactly the same as for
+    // top-level, since the plattices have already been precomputed.
+    template <int LEVEL>
+    void fib_internal(
+            worker_thread * worker,
+            int side,
+            plattices_vector_t & plattices_vector,
+            uint32_t const first_region0_index)
+    {
+        /* Import some contextual stuff */
+        int const id = worker->rank();
+        nfs_aux::thread_data & taux(aux_p->th[id]);
+        timetree_t & timer(aux_p->get_timer(worker));
+        ENTER_THREAD_TIMER(timer);
+        where_am_I & w(taux.w);
+        nfs_work::side_data & wss(ws.sides[side]);
+
+        MARK_TIMER_FOR_SIDE(timer, side);
+
+        // we're declaring the timer here, but really the work happens below
+        // in fill_in_buckets_lowlevel. We happen to have access to
+        // param->side here, so we use it to provide a nicer timing report.
+        CHILD_TIMER(timer,
+                fmt::format("fill_in_buckets_one_slice_internal<{}>", LEVEL));
+
+        WHERE_AM_I_UPDATE(w, side, side);
+        WHERE_AM_I_UPDATE(w, i, plattices_vector.get_index());
+        WHERE_AM_I_UPDATE(w, N, first_region0_index);
+
+        try {
+            auto acquired = wss.reserve_BA<LEVEL, my_shorthint_t>();
+            auto tt = worker->trace(chronograms::FIB(
+                        side,
+                        LEVEL,
+                        wss.rank_BA(acquired.access()),
+                        plattices_vector.get_index()));
+
+            /* Get an unused bucket array that we can write to */
+            /* clearly, reserve_BA() possibly throws. As it turns out,
+             * fill_in_buckets_lowlevel<> does not, at least currently. One
+             * could imagine that it could throw, so let's wrap it too.
+             */
+            fill_in_buckets_lowlevel<LEVEL, my_shorthint_t>(
+                    acquired.access(),
+                    ws, Q, plattices_vector,
+                    first_region0_index, w);
+        } catch (buckets_are_full & e) {
+            e.side = side;
+            throw e;
+        }
+    }
+    // }}}
 
     // first_region0_index is a way to remember where we are in the tree.
     // The depth-first is a way to process all the the regions of level 0 in
