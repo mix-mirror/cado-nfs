@@ -117,6 +117,9 @@ public:
     void on_complete(std::function<void()> cb) {
         {
             const std::scoped_lock lock(mx);
+
+            ASSERT_ALWAYS(!completion_cb && "task_group::on_complete callback overwritten!");
+
             if (finished_count.load(std::memory_order_relaxed) >=
                 created_count.load(std::memory_order_relaxed))
             {
@@ -139,6 +142,23 @@ public:
         size_t const j = joined_count.fetch_add(1, std::memory_order_acq_rel) + 1;
         if (j >= created_count.load(std::memory_order_relaxed))
             cv.notify_all();
+    }
+
+    /* This helper makes it possible to define a chain of functions that
+     * must be called _in sequence_. The (i+1)-th callback that is listed
+     * after the i-th is only called once both the i-th callback _and_,
+     * if relevant, the tasks that it added to the task group are
+     * complete.
+     */
+    template <typename F1, typename F2, typename... Rest>
+    void on_complete(F1&& first, F2&& second, Rest&&... rest) {
+        on_complete([this, f = std::forward<F1>(first), 
+                           s = std::forward<F2>(second), 
+                           ... r = std::forward<Rest>(rest)]() mutable 
+        {
+            f();
+            this->on_complete(std::move(s), std::move(r)...);
+        });
     }
 
     size_t created() const {
