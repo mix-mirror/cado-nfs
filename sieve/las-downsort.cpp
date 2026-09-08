@@ -121,6 +121,7 @@ struct downsort_object {
                     fb_factorbase::slicing const & fbs(*wss.fbs);
                     int const id = worker->rank();
                     nfs_aux::thread_data & taux(aux_p->th[id]);
+                    taux.w = std::move(w);
                     timetree_t & timer(aux_p->get_timer(worker));
                     ENTER_THREAD_TIMER(timer);
                     MARK_TIMER_FOR_SIDE(timer, side);
@@ -130,7 +131,8 @@ struct downsort_object {
                     downsort<LEVEL + 1>(fbs,
                             wss.acquire_BA<LEVEL, my_longhint_t>(wss.rank_BA(BA_in)),
                             BA_in, bucket_index, taux.w);
-                }, where_am_I(w));
+                },
+                where_am_I(w));
         }
     }
     // }}}
@@ -187,11 +189,135 @@ struct downsort_object {
         }
     }
 
+    // {{{ DS (downsort) -- should refactor shorthint and longhint.
+    template <int LEVEL>
+        void ds(task_group & tg, int side, uint32_t bucket_index)
+    {
+        /* FIRST: Downsort what is coming from the level above, for this
+         * bucket index */
+        // All these BA are global stuff; see reservation_group.
+        // We reserve those where we write, and access the ones for
+        // reading without reserving. We require that things at level
+        // above are finished before entering here.
+
+        nfs_work::side_data & wss(ws.sides[side]);
+
+        if (wss.fbs->get_toplevel() < LEVEL + 1)
+            return;
+
+        auto const & BA_ins = wss.bucket_arrays<LEVEL + 1, my_shorthint_t>();
+        auto & BA_outs = wss.bucket_arrays<LEVEL, my_longhint_t>();
+        /* otherwise the code here can't work */
+        /* see also the comment above in downsort_aux */
+        ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
+
+        verbose_fmt_print(0, 3,
+                "# Downsorting the side-{} {}{} buckets ({} groups of {} buckets"
+                ", taking only bucket {}/{})"
+                " to {}{} buckets ({} groups of {} buckets)\n",
+                side,
+                LEVEL + 1, my_shorthint_t::rtti[0],
+                BA_ins.size(), BA_ins[0].n_bucket,
+                bucket_index, BA_ins[0].n_bucket,
+                LEVEL, my_longhint_t::rtti[0],
+                BA_outs.size(), BA_outs[0].n_bucket);
+
+        ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
+
+        wss.reset_all_pointers<LEVEL, my_longhint_t>();
+
+        for (auto const & BA_in: BA_ins) {
+            pool.add_task(
+                    tg,
+                    [this, side, &BA_in, bucket_index](worker_thread * worker, where_am_I && w) {
+                    nfs_work::side_data & wss(ws.sides[side]);
+                    fb_factorbase::slicing const & fbs(*wss.fbs);
+                    int const id = worker->rank();
+                    nfs_aux::thread_data & taux(aux_p->th[id]);
+                    timetree_t & timer(aux_p->get_timer(worker));
+                    taux.w = std::move(w);
+                    ENTER_THREAD_TIMER(timer);
+                    MARK_TIMER_FOR_SIDE(timer, side);
+                    CHILD_TIMER(timer, fmt::format("downsort<{}>", LEVEL));
+                    auto tt = worker->trace(chronograms::DS(side, LEVEL, bucket_index));
+
+                    downsort<LEVEL + 1>(fbs,
+                            wss.acquire_BA<LEVEL, my_longhint_t>(wss.rank_BA(BA_in)),
+                            BA_in, bucket_index,
+                            taux.w);
+                    },
+                    where_am_I(w));
+        }
+    }
+
+
     // first_region0_index is a way to remember where we are in the tree.
     // The depth-first is a way to process all the the regions of level 0 in
     // increasing order of j-value.
     // first_region0_index * nb_lines_per_region0 therefore gives the j-line
     // where we are. This is what is called N by WHERE_AM_I and friends.
+    template<int LEVEL>
+    void fib(task_group & tg,
+            int side,
+            uint32_t first_region0_index)
+    {
+        /* SECOND: fill in buckets at this level, for this region. */
+        nfs_work::side_data & wss(ws.sides[side]);
+        wss.reset_all_pointers<LEVEL, my_shorthint_t>();
+
+        auto & BA_outs = wss.bucket_arrays<LEVEL, my_shorthint_t>();
+        auto & lattices = precomp_plattices[side].template get<LEVEL>();
+
+        verbose_fmt_print(0, 3,
+                "# Filling the side-{} {}{} buckets ({} groups of {} buckets)"
+                " using {} precomputed lattices\n",
+                side,
+                LEVEL, my_shorthint_t::rtti[0],
+                BA_outs.size(), BA_outs[0].n_bucket,
+                lattices.size());
+        if (!lattices.empty()) {
+            verbose_fmt_print(0, 3,
+                    "#   lattices go from slice {} ({} primes) to slice {} ({} primes)\n",
+                    lattices.front().get_index(), lattices.front().size(),
+                    lattices.back().get_index(), lattices.back().size()
+                    );
+        }
+
+        for (auto & it: lattices) {
+            pool.add_task(tg, thread_pool::QUEUE_GENERIC, it.get_weight(),
+                    [this, side, &it, first_region0_index](worker_thread * worker, where_am_I && w) {
+                    int const id = worker->rank();
+                    nfs_aux::thread_data & taux(aux_p->th[id]);
+                    taux.w = std::move(w);
+                    fib_internal<LEVEL>(worker, side, it, first_region0_index);
+                    },
+                    where_am_I(w));
+        }
+    }
+
+    // {{{ SSS (start small sieve), only for level 1.
+    void sss(task_group & tg, int side, uint32_t first_region0_index)
+    {
+        /* Prepare for PBR: we need to precompute the small sieve positions
+         * for all the small sieved primes.
+         *
+         * For ws.toplevel==1, we don't reach here, of course, and the
+         * corresponding initialization is done with identical code in
+         * las.cpp
+         */
+        ASSERT(ws.toplevel > 1);
+        nfs_work::side_data const & wss(ws.sides[side]);
+
+        wss.ssd->small_sieve_prepare_many_start_positions(
+                pool, &tg,
+                first_region0_index,
+                std::min(SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE, ws.nb_buckets[1]),
+                ws.conf.logI, Q.sublat);
+        tg.on_complete([&wss]() {
+                wss.ssd->small_sieve_activate_many_start_positions();
+                });
+    }
+
 
     template <int LEVEL>
     void fib_ds_sss(
@@ -206,8 +332,6 @@ struct downsort_object {
         nfs_aux & aux(*aux_p);
         timetree_t & timer(aux.rt.timer);
 
-        using my_longhint_t = hints_proxy<WITH_HINTS>::l;
-        using my_shorthint_t = hints_proxy<WITH_HINTS>::s;
 
         CHILD_TIMER(timer, fmt::format("downsort_tree<{}>", LEVEL));
         TIMER_CATEGORY(timer, sieving_mixed());
@@ -221,7 +345,7 @@ struct downsort_object {
         std::vector<task_group> sss_tgs(nsides);
 
         for (int side = 0; side < nsides; ++side) {
-            nfs_work::side_data & wss(ws.sides[side]);
+            nfs_work::side_data const & wss(ws.sides[side]);
             if (wss.no_fb())
                 continue;
 
@@ -231,129 +355,30 @@ struct downsort_object {
             auto & ds_tg = ds_tgs[side];
             auto & ds_aux_tg = ds_aux_tgs[side];
             auto & fib_tg = fib_tgs[side];
+            auto & sss_tg = sss_tgs[side];
 
-            /* FIRST: Downsort what is coming from the level above, for this
-             * bucket index */
-            // All these BA are global stuff; see reservation_group.
-            // We reserve those where we write, and access the ones for
-            // reading without reserving. We require that things at level
-            // above are finished before entering here.
-
-            if (wss.fbs->get_toplevel() >= LEVEL + 1) {
-                auto const & BA_ins = wss.bucket_arrays<LEVEL + 1, my_shorthint_t>();
-                auto & BA_outs = wss.bucket_arrays<LEVEL, my_longhint_t>();
-                /* otherwise the code here can't work */
-                /* see also the comment above in downsort_aux */
-                ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
-
-                verbose_fmt_print(0, 3,
-                        "# Downsorting the side-{} {}{} buckets ({} groups of {} buckets"
-                        ", taking only bucket {}/{})"
-                        " to {}{} buckets ({} groups of {} buckets)\n",
-                        side,
-                        LEVEL + 1, my_shorthint_t::rtti[0],
-                        BA_ins.size(), BA_ins[0].n_bucket,
-                        bucket_index, BA_ins[0].n_bucket,
-                        LEVEL, my_longhint_t::rtti[0],
-                        BA_outs.size(), BA_outs[0].n_bucket);
-
-                ASSERT_ALWAYS(BA_ins.size() == BA_outs.size());
-
-                wss.reset_all_pointers<LEVEL, my_longhint_t>();
-
-                for (auto const & BA_in: BA_ins) {
-                    pool.add_task(
-                            ds_tg,
-                            [this, side, &BA_in, bucket_index](worker_thread * worker, where_am_I && w) {
-                            nfs_work::side_data & wss(ws.sides[side]);
-                            fb_factorbase::slicing const & fbs(*wss.fbs);
-                            int const id = worker->rank();
-                            nfs_aux::thread_data & taux(aux_p->th[id]);
-                            timetree_t & timer(aux_p->get_timer(worker));
-                            taux.w = std::move(w);
-                            ENTER_THREAD_TIMER(timer);
-                            MARK_TIMER_FOR_SIDE(timer, side);
-                            CHILD_TIMER(timer, fmt::format("downsort<{}>", LEVEL));
-                            auto tt = worker->trace(chronograms::DS(side, LEVEL, bucket_index));
-
-                            downsort<LEVEL + 1>(fbs,
-                                    wss.acquire_BA<LEVEL, my_longhint_t>(wss.rank_BA(BA_in)),
-                                    BA_in, bucket_index,
-                                    taux.w);
-                            },
-                            where_am_I(w));
-                }
-            }
+            ds<LEVEL>(ds_tg, side, bucket_index);
 
             if (LEVEL < ws.toplevel - 1) {
                 /* ds_aux() (the "downsort what was already downsorted"
                  * pass) appends to the very same <LEVEL, my_longhint_t>
                  * bucket arrays that ds() fills from the shorthint
                  * updates: ds() creates the single slice with
-                 * add_slice_index(0), ds_aux() only appends to it. So
-                 * ds_aux() must run only once ds_tg (the shorthint
-                 * downsort) has completed for this side -- never
-                 * concurrently with it. */
+                 * add_slice_index(0), ds_aux() only appends. So ds_aux()
+                 * must run only once ds_tg (the shorthint downsort) has
+                 * completed for this side -- never concurrently. */
                 ds_tg.on_complete(
                         [this, &ds_aux_tg, side, bucket_index]() mutable {
                             ds_aux<LEVEL>(ds_aux_tg, side, bucket_index);
                         });
             }
 
-            {
-                /* SECOND: fill in buckets at this level, for this region. */
-                wss.reset_all_pointers<LEVEL, my_shorthint_t>();
+            fib<LEVEL>(fib_tg, side, first_region0_index);
 
-                auto & BA_outs = wss.bucket_arrays<LEVEL, my_shorthint_t>();
-                auto & lattices = precomp_plattices[side].template get<LEVEL>();
+            if (LEVEL == 1) {
+                ASSERT(ws.toplevel > 1);
 
-                verbose_fmt_print(0, 3,
-                        "# Filling the side-{} {}{} buckets ({} groups of {} buckets)"
-                        " using {} precomputed lattices\n",
-                        side,
-                        LEVEL, my_shorthint_t::rtti[0],
-                        BA_outs.size(), BA_outs[0].n_bucket,
-                        lattices.size());
-                if (!lattices.empty()) {
-                    verbose_fmt_print(0, 3,
-                            "#   lattices go from slice {} ({} primes) to slice {} ({} primes)\n",
-                            lattices.front().get_index(), lattices.front().size(),
-                            lattices.back().get_index(), lattices.back().size()
-                            );
-                }
-
-                for (auto & it: lattices) {
-                    pool.add_task(fib_tg, thread_pool::QUEUE_GENERIC, it.get_weight(),
-                            [this, side, &it, first_region0_index](worker_thread * worker) {
-                            fib_internal<LEVEL>(worker, side, it, first_region0_index);
-                            });
-                }
-            }
-        }
-
-        if (LEVEL == 1) {
-            /* Prepare for PBR: we need to precompute the small sieve positions
-             * for all the small sieved primes.
-             *
-             * For ws.toplevel==1, we don't reach here, of course, and the
-             * corresponding initialization is done with identical code in
-             * las.cpp
-             */
-            ASSERT(ws.toplevel > 1);
-            for (int side = 0; side < nsides; side++) {
-                nfs_work::side_data const & wss(ws.sides[side]);
-                if (wss.no_fb())
-                    continue;
-
-                auto & sss_tg = sss_tgs[side];
-                wss.ssd->small_sieve_prepare_many_start_positions(
-                        pool, &sss_tg,
-                        first_region0_index,
-                        std::min(SMALL_SIEVE_START_POSITIONS_MAX_ADVANCE, ws.nb_buckets[1]),
-                        ws.conf.logI, Q.sublat);
-                sss_tg.on_complete([&wss]() {
-                    wss.ssd->small_sieve_activate_many_start_positions();
-                });
+                sss(sss_tg, side, first_region0_index);
             }
         }
 
