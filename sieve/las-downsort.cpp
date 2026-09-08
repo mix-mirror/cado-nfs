@@ -292,47 +292,55 @@ static void downsort_tree_inner(
             }
         }
 
-        /* Once ds_tg completes for this side, enqueue all FIB slice tasks into fib_tg */
-        ds_tg.on_complete(
-            [&ws, &aux, &pool, &precomp_plattices, &ds_aux_tg, &fib_tg, side, first_region0_index, &Q, bucket_index, w_val = where_am_I(w)]() mutable {
-                /* SECOND: fill in buckets at this level, for this region. */
-                /* We do so only once ds_tg completes for this side */
-                auto do_fib = [&ws, &aux, &pool, &precomp_plattices, &fib_tg, side, first_region0_index, &Q]() {
-                    nfs_work::side_data & wss(ws.sides[side]);
-                    wss.reset_all_pointers<LEVEL, my_shorthint_t>();
-
-                    auto & BA_outs = wss.bucket_arrays<LEVEL, my_shorthint_t>();
-                    auto & lattices = precomp_plattices[side].get<LEVEL>();
-
-                    verbose_fmt_print(0, 3,
-                            "# Filling the side-{} {}{} buckets ({} groups of {} buckets)"
-                            " using {} precomputed lattices\n",
-                            side,
-                            LEVEL, my_shorthint_t::rtti[0],
-                            BA_outs.size(), BA_outs[0].n_bucket,
-                            lattices.size());
-                    if (!lattices.empty()) {
-                        verbose_fmt_print(0, 3,
-                                "#   lattices go from slice {} ({} primes) to slice {} ({} primes)\n",
-                                lattices.front().get_index(), lattices.front().size(),
-                                lattices.back().get_index(), lattices.back().size()
-                            );
-                    }
-
-                    for (auto & it: lattices) {
-                        pool.add_task(fib_tg, thread_pool::QUEUE_GENERIC, it.get_weight(),
-                                fill_in_buckets_one_slice_internal<LEVEL, my_shorthint_t>,
-                                std::ref(ws), std::ref(aux), std::ref(Q), side, nullptr, &it, nullptr, first_region0_index);
-                    }
-                };
-
-                if (LEVEL < ws.toplevel - 1) {
+        /* The "downsort what was already downsorted" pass (downsort_aux,
+         * i.e. downsort<LEVEL, longhint>) writes to the same
+         * <LEVEL, my_longhint_t> bucket arrays as the shorthint downsort
+         * above: the shorthint pass creates the single slice via
+         * add_slice_index(0), and this pass merely appends to it. The two
+         * must therefore stay ordered -- schedule downsort_aux only once
+         * ds_tg (the shorthint downsort) has completed for this side. */
+        if (LEVEL < ws.toplevel - 1) {
+            ds_tg.on_complete(
+                [&ws, &aux, &pool, &ds_aux_tg, side, bucket_index, w_val = where_am_I(w)]() mutable {
                     downsort_aux<LEVEL, WITH_HINTS>(ws, aux, pool, ds_aux_tg, side, bucket_index, w_val);
-                    ds_aux_tg.on_complete(do_fib);
-                } else {
-                    do_fib();
-                }
-            });
+                });
+        }
+
+        /* SECOND: fill in buckets at this level, for this region.
+         *
+         * It's a misinterpretation of the algorithm that DS and FIB were
+         * serialized. They need not be: FIB writes the
+         * <LEVEL, my_shorthint_t> arrays, disjoint from the
+         * <LEVEL, my_longhint_t> arrays that DS writes (and from the small
+         * sieve start positions that SSS writes). So FIB may be scheduled
+         * right away, concurrently with the downsort passes. */
+        {
+            wss.reset_all_pointers<LEVEL, my_shorthint_t>();
+
+            auto & BA_outs = wss.bucket_arrays<LEVEL, my_shorthint_t>();
+            auto & lattices = precomp_plattices[side].get<LEVEL>();
+
+            verbose_fmt_print(0, 3,
+                    "# Filling the side-{} {}{} buckets ({} groups of {} buckets)"
+                    " using {} precomputed lattices\n",
+                    side,
+                    LEVEL, my_shorthint_t::rtti[0],
+                    BA_outs.size(), BA_outs[0].n_bucket,
+                    lattices.size());
+            if (!lattices.empty()) {
+                verbose_fmt_print(0, 3,
+                        "#   lattices go from slice {} ({} primes) to slice {} ({} primes)\n",
+                        lattices.front().get_index(), lattices.front().size(),
+                        lattices.back().get_index(), lattices.back().size()
+                    );
+            }
+
+            for (auto & it: lattices) {
+                pool.add_task(fib_tg, thread_pool::QUEUE_GENERIC, it.get_weight(),
+                        fill_in_buckets_one_slice_internal<LEVEL, my_shorthint_t>,
+                        std::ref(ws), std::ref(aux), std::ref(Q), side, nullptr, &it, nullptr, first_region0_index);
+            }
+        }
     }
 
     if (LEVEL == 1) {
