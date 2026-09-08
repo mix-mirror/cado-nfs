@@ -858,42 +858,7 @@ static void do_one_special_q_sublat(nfs_work & ws, std::shared_ptr<nfs_work_cofa
             /* Process bucket regions in parallel */
             process_many_bucket_regions(ws, wc_p, aux_p, Q, pool, 0, w);
         } else {
-            // Prepare plattices at internal levels
-
-            // Visit the downsorting tree depth-first.
-            // If toplevel = 1, then this is just processing all bucket
-            // regions.
-            size_t  const(&BRS)[FB_MAX_PARTS] = BUCKET_REGIONS;
-            static_assert(MAX_TOPLEVEL == 3);
-            for (int i = 0; i < ws.nb_buckets[ws.toplevel]; i++) {
-                if (ws.task->must_take_decision())
-                    break;
-                /* Dividing by BRS[1] is actually correct if we want to
-                 * fill the first_region0_index parameter. Of course we
-                 * must make sure that for the recursive downsort, this
-                 * doesn't entail an extra multiplication (e.g. by
-                 * BRS[2]/BRS[1]. XXX we must check this!
-                 */
-                switch (ws.toplevel) {
-#if MAX_TOPLEVEL >= 2
-                    case 2:
-                        downsort_tree<1>(ws, wc_p, aux_p, Q, pool,
-                                i, i*BRS[2]/BRS[1],
-                                precomp_plattices, w);
-                        break;
-#endif
-
-#if MAX_TOPLEVEL >= 3
-                    case 3:
-                        downsort_tree<2>(ws, wc_p, aux_p, Q, pool, i,
-                                i*BRS[3]/BRS[1],
-                                precomp_plattices, w);
-                        break;
-#endif
-                    default:
-                        ASSERT_ALWAYS(0);
-                }
-            }
+            downsort_toplevel(ws, wc_p, aux_p, Q, pool, precomp_plattices, w);
         }
     }
 

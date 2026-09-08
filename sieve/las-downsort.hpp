@@ -1,8 +1,6 @@
 #ifndef SIEVE_LAS_DOWNSORT_HPP_
 #define SIEVE_LAS_DOWNSORT_HPP_
 
-#include <cstdint>
-
 #include <memory>
 #include <vector>
 
@@ -27,18 +25,13 @@ class nfs_work_cofac;
 class thread_pool;
 struct where_am_I;
 
-
-template <int LEVEL>
-void
-downsort_tree(
+extern void downsort_toplevel(
         nfs_work &ws,
-        std::shared_ptr<nfs_work_cofac> wc_p,
-        std::shared_ptr<nfs_aux> aux_p,
+        std::shared_ptr<nfs_work_cofac> const & wc_p,
+        std::shared_ptr<nfs_aux> const & aux_p,
         ALGO::special_q_data const & Q,
         thread_pool &pool,
-        uint32_t bucket_index,
-        uint32_t first_region0_index,
-        std::vector<cado::multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS - 1>> & precomp_plattice,
+        std::vector<cado::multityped_array<precomp_plattice_t, 1, FB_MAX_PARTS - 1>> & precomp_plattices,
         where_am_I & w);
 
 #endif	/* SIEVE_LAS_DOWNSORT_HPP_ */
