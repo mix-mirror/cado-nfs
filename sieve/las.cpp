@@ -98,6 +98,7 @@ static void configure_aliases(cxx_param_list & pl)
 {
     pl.configure_alias("log-bucket-region", "B");
     pl.configure_alias("log-bucket-region-step", "Bi");
+    pl.configure_alias("bucket-batch-size", "bbs");
     las_output::configure_aliases(pl);
     tdict::configure_aliases(pl);
 }
