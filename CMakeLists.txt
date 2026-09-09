@@ -599,8 +599,15 @@ configure_file(cado-nfs.py cado-nfs.py ESCAPE_QUOTES @ONLY)
 
 file(GENERATE OUTPUT source-location.txt CONTENT "${CADO_NFS_SOURCE_DIR}")
 configure_file(cado-nfs-client.py cado-nfs-client.py ESCAPE_QUOTES @ONLY)
+# cado-nfs-monitor.py is a plain http client of the api server. It has
+# no @-substitutions to make and imports nothing from the cado tree, so
+# unlike its two siblings above it is copied rather than configured --
+# which also means it can simply be scp'd to wherever you want to watch
+# the computation from.
+configure_file(cado-nfs-monitor.py cado-nfs-monitor.py COPYONLY)
 install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/cado-nfs.py DESTINATION ${BINSUFFIX})
 install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/cado-nfs-client.py DESTINATION ${BINSUFFIX})
+install(PROGRAMS ${CMAKE_CURRENT_BINARY_DIR}/cado-nfs-monitor.py DESTINATION ${BINSUFFIX})
 
 
 message(STATUS "Main scripts will go to ${CMAKE_INSTALL_PREFIX}/${BINSUFFIX}")

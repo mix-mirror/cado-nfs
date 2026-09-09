@@ -19,6 +19,7 @@ README.dlp
 README.md
 README.msieve
 cado-nfs-client.py
+cado-nfs-monitor.py
 cado-nfs.py
 cado-nfs.supp
 cado.h
