@@ -74,9 +74,15 @@ class WuTable(DbTable):
               ("wu", "TEXT", "NOT NULL"),
               ("timecreated", "TEXT", ""),
               ("timeassigned", "TEXT", ""),
-              ("assignedclient", "TEXT", ""),
+              # assignedclient and resultclient are VARCHAR and not TEXT
+              # because we want to index them (see below), and MySQL
+              # refuses to index a TEXT column unless a key length is
+              # given. Note that pre-existing databases keep whatever
+              # type they were created with; there, index creation just
+              # fails with a warning, which DbTable.create() tolerates.
+              ("assignedclient", "VARCHAR(512)", ""),
               ("timeresult", "TEXT", ""),
-              ("resultclient", "TEXT", ""),
+              ("resultclient", "VARCHAR(512)", ""),
               ("errorcode", "INTEGER", ""),
               ("failedcommand", "INTEGER", ""),
               ("timeverified", "TEXT", ""),
@@ -88,7 +94,19 @@ class WuTable(DbTable):
     index = {"wuid": (fields[1][0],),
              "submitter": (fields[2][0],),
              "priority": (fields[14][0],),
-             "status": (fields[3][0],)
+             "status": (fields[3][0],),
+             # The two indices below support the per-client aggregation
+             # that the api server does for its monitoring endpoints.
+             # Without them, every such query is a full scan of a table
+             # that reaches millions of rows on a large computation.
+             #
+             # (status, assignedclient) serves the "what is currently in
+             # flight, and on which client" query, which seeks on status.
+             # (resultclient, status) serves the "what has each client
+             # contributed" query, which groups on resultclient and can
+             # be answered from the index alone.
+             "by_assignedclient": (fields[3][0], fields[7][0]),
+             "by_resultclient": (fields[9][0], fields[3][0]),
              }
 
 

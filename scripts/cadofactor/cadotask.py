@@ -14,6 +14,7 @@ import logging
 import pathlib
 import socket
 import gzip
+import json
 import heapq
 import errno
 from cadofactor import patterns, wudb, cadoprograms
@@ -2065,8 +2066,18 @@ class ClientServerTask(Task, wudb.UsesWorkunitDb, patterns.Observer):
         # only print ETA when achievement > 0 to avoid division by zero
         a = self.get_achievement()
         if a > 0:
+            eta = self.get_eta()
             self.logger.info("Marking workunit %s as %s (%.1f%% => ETA %s)",
-                             wuid, ok_str, 100.0 * a, self.get_eta())
+                             wuid, ok_str, 100.0 * a, eta)
+            # Store the very same numbers in our DB-backed state, so that
+            # the api server -- which only ever sees the database, never
+            # the task objects -- can report where we stand without
+            # having to duplicate each subclass's get_achievement().
+            # See cadofactor/api/views.py
+            self.state.update({"achievement": a,
+                               "eta": eta,
+                               "progress_time": time.time()},
+                              commit=False)
         self.wuar.verification(wuid, ok, commit=commit)
 
     def cancel_available_wus(self):
@@ -7650,6 +7661,22 @@ class CompleteFactorization(HasState,
                 + fg + (self.purge, self.merge, self.linalg) \
                 + (self.characters, self.sqrt)
 
+        # Publish the task pipeline for the api server. The scheduler's
+        # own notion of progress (self.tasks_that_want_to_run,
+        # self.tasks_that_have_run) lives in memory only, so without this
+        # nothing in the database says which task is running. See
+        # cadofactor/api/views.py
+        self.progress = self.make_db_dict('api_progress',
+                                          connection=self.db_connection)
+        self.publish_progress(pipeline=json.dumps(
+            [{"name": t.name, "title": t.title} for t in self.tasks]),
+            computation=str(self.params["computation"]),
+            algo=str(self.params["algo"]),
+            current="",
+            current_started=0,
+            done=json.dumps([]),
+            finished=False)
+
         reverse_lookup = defaultdict(list)
         self.parameter_help = ""
         for t in self.tasks:
@@ -7751,6 +7778,41 @@ class CompleteFactorization(HasState,
             self.request_map[Request.GET_CANDIDATE_CLASSNUMBER_FACTORED] = \
                 self.hfactor.get_fact_str
 
+    def publish_progress(self, **kwargs):
+        """
+        Record scheduler progress in the api_progress DB table.
+
+        This is the only channel through which the api server learns
+        which task is currently running, since the scheduler state
+        itself never leaves this process. Failures here must never
+        disturb the computation, so they are logged and swallowed.
+        """
+        try:
+            self.progress.update(kwargs)
+        except Exception as e:
+            self.logger.warning("Could not publish progress (%s)", e)
+
+    def publish_task_done(self, task):
+        """
+        Append a finished task to the api_progress "done" list, together
+        with the statistics it is able to report about itself.
+        """
+        try:
+            done = json.loads(self.progress.get("done", "[]"))
+        except ValueError:
+            done = []
+        entry = {"name": task.name, "time": time.time()}
+        # Reuse the very strings that print_stats() would log, rather
+        # than teaching the api server how to format statistics.
+        if hasattr(task, "get_statistics_as_strings"):
+            try:
+                entry["stats"] = task.get_statistics_as_strings()[0]
+            except Exception as e:
+                self.logger.debug("No stats for %s (%s)", task.name, e)
+        done = [d for d in done if d.get("name") != task.name]
+        done.append(entry)
+        self.publish_progress(done=json.dumps(done))
+
     def enter_subtask_chain(self):
         self.start_elapsed_time()
         self.servertask.run()
@@ -7764,6 +7826,10 @@ class CompleteFactorization(HasState,
         self.stop_all_clients()
         self.elapsed = self.end_elapsed_time()
         self.cputotal = self.get_sum_of_cpu_or_real_time(True)
+        self.publish_progress(current="",
+                              finished=True,
+                              elapsed=self.elapsed or 0,
+                              cputotal=self.cputotal)
         self.servertask.shutdown(exc)
 
     def run(self):
@@ -7800,8 +7866,11 @@ class CompleteFactorization(HasState,
                     if task is None:
                         break
                     last_task = task.title
+                    self.publish_progress(current=task.name,
+                                          current_started=time.time())
                     last_status = task.run()
                     self.tasks_that_have_run.add(task)
+                    self.publish_task_done(task)
                     self.logger.info(task.title)
                     task.print_stats()
 
