@@ -1000,6 +1000,19 @@ class FreeRel(Program):
         super().__init__(locals(), **kwargs)
 
 
+class IsSquareFreeUpTo(Program):
+    binary = "is_squarefree_up_to"
+    name = binary
+    subdir = "misc"
+
+    def __init__(self, *,
+                 N: Parameter(checktype=int),
+                 B: Parameter(checktype=int),
+                 skip2: Toggle() = None,
+                 **kwargs):
+        super().__init__(locals(), **kwargs)
+
+
 class Las(Program):
     binary = "las"
     name = binary

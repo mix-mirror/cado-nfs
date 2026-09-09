@@ -3699,12 +3699,12 @@ class CheckDiscriminantTask(Task):
 
     @property
     def programs(self):
-        return ()
+        return ((cadoprograms.IsSquareFreeUpTo, ("n", "B", "skip2"), {}),)
 
     @property
     def paramnames(self):
         return self.join_params(super().paramnames,
-                                {"N": int, "computation": str, "gzip": True})
+                                {"N": int, "computation": str, "lpb0": int})
 
     def __init__(self, *, mediator, db, parameters, path_prefix):
         super().__init__(mediator=mediator, db=db, parameters=parameters,
@@ -3718,27 +3718,17 @@ class CheckDiscriminantTask(Task):
     def run(self):
         super().run()
 
-        renumfile = self.send_request(Request.GET_RENUMBER_FILENAME)
-        if not renumfile:
-            raise Exception("CheckDiscriminantTask(): no renumber file "
-                            "received from FreeRelTask")
-
-        open_fun = gzip.open if self.params["gzip"] else open
-
-        with open_fun(str(renumfile), "rb") as f:
-            for line in f:
-                if line.startswith(b"#"):
-                    continue
-                m = re.fullmatch(rb'(\d+) 0\n', line)
-                if m is not None:
-                    p = int(m.group(1))
-                    if p > 2 and self.params["N"] % (p*p) == 0:
-                        msg = f"The discriminant {self.params['N']} has a " \
-                              f"square factor {p}^2 belonging to the factor " \
-                              "base"
-                        self.logger.critical(msg)
-                        return False
-                    # case p=2 is check in __init__ of CompleteFactorization
+        (stdoutpath, stderrpath) = self.make_std_paths(
+            cadoprograms.IsSquareFreeUpTo.name)
+        p = cadoprograms.IsSquareFreeUpTo(
+                                 skip2=True,  # case p=2 is already checked
+                                 B=(1 << self.params["lpb0"]),
+                                 stdout=str(stdoutpath),
+                                 stderr=str(stderrpath),
+                                 **self.merged_args[0])
+        message = self.submit_command(p, None, log_errors=True)
+        if message.get_exitcode(0) != 0:
+            raise Exception("Program failed")
         return True
 
 

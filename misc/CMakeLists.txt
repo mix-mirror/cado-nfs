@@ -32,4 +32,7 @@ endif()
 add_executable(cl_structure_from_group_order cl_structure_from_group_order.cpp)
 target_link_libraries(cl_structure_from_group_order PRIVATE utils)
 
+add_executable(is_squarefree_up_to is_squarefree_up_to.cpp)
+target_link_libraries(is_squarefree_up_to PRIVATE utils)
+
 include(CMakeLists-nodist.txt OPTIONAL)

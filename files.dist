@@ -662,6 +662,7 @@ misc/explain_indexed_relation.cpp
 misc/factor.cpp
 misc/factor.hpp
 misc/indexed_relations_to_density.cpp
+misc/is_squarefree_up_to.cpp
 misc/smooth_detect.cpp
 misc/smooth_detect.hpp
 parameters/cl/params.qs.d100

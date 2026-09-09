@@ -186,7 +186,7 @@ if(pz IN_LIST BWC_GFP_ARITHMETIC_BACKENDS)
             det_from_lingen
             bwc_full_gfp
             siqs lingen_pz merge-dl replay-dl filter_galois factor
-            cl_structure_from_group_order
+            cl_structure_from_group_order is_squarefree_up_to
             AVOID_CONCURRENT 16
             ENVIRONMENT OMP_DYNAMIC=true OMP_NUM_THREADS=16
                         OMP_THREAD_LIMIT=16
