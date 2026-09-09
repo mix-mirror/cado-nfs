@@ -13,6 +13,11 @@ set(cadofactor_scripts
     # signalhandler.py
     # verify.py
     api_server.py
+    api/__init__.py
+    api/admin.py
+    api/auth.py
+    api/spec.py
+    api/views.py
     cadofactor_tools/__init__.py
     cadofactor_tools/certificate.py
     cadofactor_tools/upload_dir.py

@@ -118,12 +118,36 @@ class DictDbDirectAccess(MutableMapping):
         return self._conn.cursor()
 
     def __getitem__(self, key):
-        r, = self._conn.harness_transaction(READONLY,
-                                            self._table.where,
-                                            # cursor is implicitly added
-                                            limit=1,
-                                            eq=dict(kkey=key))
-        return self.__convert_value(r)
+        """
+        Look one key up in the table.
+
+        A missing key must raise KeyError, as a Mapping is expected to.
+        Tuple-unpacking the result instead raises ValueError, which
+        MutableMapping.get() does not catch -- so d.get(missing) used to
+        propagate rather than return the default. The api server hits
+        that path on every request for an unregistered file.
+
+        >>> conn = DBFactory('db:sqlite3://:memory:').connect()
+        >>> d = DictDbDirectAccess(conn, 'getitem_test')
+        >>> d.get('absent') is None
+        True
+        >>> d.get('absent', 'fallback')
+        'fallback'
+        >>> d['absent']
+        Traceback (most recent call last):
+        KeyError: 'absent'
+        >>> d['present'] = 'yes'
+        >>> d['present']
+        'yes'
+        """
+        rows = self._conn.harness_transaction(READONLY,
+                                              self._table.where,
+                                              # cursor is implicitly added
+                                              limit=1,
+                                              eq=dict(kkey=key))
+        if not rows:
+            raise KeyError(key)
+        return self.__convert_value(rows[0])
 
     def _iter_raw(self):
         n = len(self)

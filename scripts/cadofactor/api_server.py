@@ -3,19 +3,34 @@ This implements the Cado-NFS api server. Some useful
 documentation sources that I perused in order to code this.
 
 https://blog.miguelgrinberg.com/post/running-your-flask-application-over-https
-https://medium.com/@DanKaranja/building-api-documentation-in-flask-with-swagger-a-step-by-step-guide-59a453509e2f
 https://stackoverflow.com/questions/39853643/is-it-possible-to-mark-a-method-with-a-route-in-flask
 
-The new cado-nfs api server is built upon:
+The cado-nfs api server is built upon:
 
  - flask (python3-flask) in order to actually build an api
  - optionally, gunicorn (python3-gunicorn) in order to make a
    multithreaded server from it. (still WIP)
- - optionally, flasgger (python3-flasgger) in order to provide online api
-   docs.
+
+It serves two rather different audiences.
+
+ - The endpoints that cado-nfs-client.py needs (/workunit, /upload,
+   /file, /files, /WUstatus) are unauthenticated, and gated by
+   server.whitelist alone. That is the pre-existing design: a client is
+   given a url and a certificate fingerprint, never a secret.
+
+ - Everything under /api/v1, plus the web ui at /ui/ that consumes it,
+   is meant for whoever runs the computation. Those endpoints require a
+   bearer token which we write to <workdir>/<name>.api-token with mode
+   0600, and are gated by server.ui_whitelist (localhost by default, so
+   that an ssh tunnel works without widening the client whitelist).
+
+The OpenAPI 3.1 description of the whole thing is assembled in
+cadofactor/api/spec.py with no third-party tooling, and served at
+/api/v1/openapi.json.
 """
 
 import flask
+import hashlib
 import json
 import logging
 import multiprocessing
@@ -29,6 +44,11 @@ import time
 from cadofactor.cadofactor_tools import UploadDirProvider
 from cadofactor.database import DictDbDirectAccess
 from cadofactor import wudb
+from cadofactor.api import auth
+from cadofactor.api import spec
+from cadofactor.api.spec import api_route
+from cadofactor.api.admin import AdminEndpoints, spec_schemas
+from cadofactor.api.views import ServingState, DbViews
 from werkzeug import serving
 
 from ipaddress import ip_address, ip_network
@@ -39,11 +59,6 @@ from werkzeug.exceptions import HTTPException
 
 # See #30142
 werkzeug.utils._filename_ascii_strip_re = re.compile(r"[^A-Za-z0-9,_.-]")
-
-try:
-    from flasgger import Swagger
-except ModuleNotFoundError:
-    pass
 
 try:
     import gunicorn.app.base
@@ -60,25 +75,26 @@ try:
 except ModuleNotFoundError:
     pass
 
-swagger_template = {
-    "swagger": "2.0",
-    "info": {
-        "title": "Cado-NFS api",
-        "description": "API for Cado-NFS server",
-        "contact": {
-            "name": "The Cado-NFS development team",
-            "url": "https://cado-nfs.inria.fr",
-            },
-        "version": "0.1",
-        "license": {
-            "name": "GNU LGPL",
-            "url":
-                "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.en.html",
-            }
-        },
-    }
-
 HAVE_SSL = 'ssl' in sys.modules
+
+# Where the (dependency-free, build-step-free) web ui lives.
+UI_DIRECTORY = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            'api', 'ui')
+
+API_PREFIX = "/api/v1"
+
+SPEC_INFO = dict(
+    title="cado-nfs api",
+    version="1.0.0",
+    description="Monitoring and administration of a running cado-nfs"
+                " computation, plus the workunit endpoints used by"
+                " cado-nfs-client.py.",
+    license_name="GNU LGPL 2.1",
+    license_url="https://www.gnu.org/licenses/old-licenses/"
+                "lgpl-2.1.en.html",
+    contact={"name": "The Cado-NFS development team",
+             "url": "https://cado-nfs.inria.fr"},
+)
 
 
 class ApiServer(flask.Flask):
@@ -101,7 +117,10 @@ class ApiServer(flask.Flask):
                  only_registered=True,
                  cafile=None,
                  whitelist=None,
+                 ui_whitelist=None,
                  timeout_hint=None,
+                 workdir=None,
+                 name=None,
                  # linger_before_quit=False
                  ):
         # some parameters are currently not targeted by the
@@ -134,6 +153,19 @@ class ApiServer(flask.Flask):
 
         TLS is used if cafile is given, in which case an ad hoc certificate
         is written to this file name.
+
+        whitelist gates the endpoints that cado-nfs-client.py uses.
+        ui_whitelist gates the monitoring and administration endpoints
+        under /api/v1 and the web ui at /ui/; it defaults to the loopback
+        addresses, so that "ssh -L 8001:localhost:8001" gives access to
+        the ui without opening the client endpoints any wider.
+
+        workdir and name locate the files that belong to the
+        computation: the api token is written to
+        <workdir>/<name>.api-token, and <workdir>/<name>.log is what the
+        /api/v1/log endpoint tails. Without them the api server still
+        serves clients, but the authenticated part of the api is
+        disabled, since there is nowhere to put the token.
         """
 
         self.name = "API server"
@@ -194,29 +226,54 @@ recent than 3.1.3) fixes this.
 
         # inject fields to the api app object.
 
-        if 'flasgger' in sys.modules:
-            self.swagger = Swagger(self, template=swagger_template)
-        else:
-            self.swagger = None
-
         self.database_uri = dbdata
         self._db_connection_pool = {}
         self.wuaccess = None
-        self.serving_wus = True
-        self.no_work_available = False
         self.only_registered = only_registered
         self.upload_dir_provider = UploadDirProvider(uploaddir, nrsubdir)
-        self.upload_cycle = 0
         self.timeout_hint = timeout_hint
-        self.whitelist = []
-        for w in whitelist or []:
-            try:
-                self.whitelist.append(f"{socket.gethostbyname(w)}/32")
-            except socket.gaierror:
-                self.whitelist.append(w)
+        self.whitelist = self._resolve_whitelist(whitelist)
         self.logger.info(f"server whitelist is {self.whitelist}")
-        self.wdir = None
+        self.ui_whitelist = self._resolve_whitelist(
+            ui_whitelist if ui_whitelist is not None
+            else ["127.0.0.1/32", "::1/128"])
+        self.logger.info(f"ui whitelist is {self.ui_whitelist}")
+        self.wdir = workdir
+        self.computation_name = name
 
+        # Whether we are still handing workunits out lives in the
+        # database rather than in this object. It is written from
+        # cado-nfs.py's main thread and read by request handlers, and
+        # those two need not be the same process -- they already are not
+        # under gunicorn, whose arbiter forks its workers. Note that
+        # get_db_connection is passed as a callable, not called: sqlite3
+        # connections are bound to the thread that created them, which
+        # is why _get_db_things keeps a per-thread pool.
+        self.serving = ServingState(self.get_db_connection)
+        self.serving.set(True)
+
+        # Read-only queries behind the monitoring endpoints.
+        self.views = DbViews(self.get_db_connection)
+
+        # The authenticated part of the api needs somewhere private to
+        # put its token. Without a workdir we simply do not offer it.
+        self.api_token = None
+        self.token_file = None
+        if workdir is not None and name is not None:
+            self.token_file = os.path.join(workdir, name + ".api-token")
+            try:
+                self.api_token = auth.load_or_create_token(self.token_file)
+            except (auth.TokenError, OSError) as e:
+                self.logger.error("Could not set up the api token: %s", e)
+                self.logger.error("The monitoring api and the web ui will"
+                                  " not be available")
+                self.token_file = None
+        else:
+            self.logger.info("No workdir given to the api server;"
+                             " the monitoring api and the web ui are"
+                             " disabled")
+
+        self.admin = AdminEndpoints(self)
         self._route_endpoints()
 
         if False and threaded and 'gunicorn' in sys.modules:
@@ -363,6 +420,23 @@ recent than 3.1.3) fixes this.
         self.logger.info("If you want to start additional clients, remember "
                          "to add their hosts to server.whitelist")
 
+        if self.api_token is not None:
+            # The token travels in the fragment, which browsers keep to
+            # themselves: it appears in no request line, no access log
+            # and no Referer header.
+            self.logger.info("Web UI: %s/ui/#token=%s",
+                             self.url, self.api_token)
+            self.logger.info("  (or open %s/ui/ and paste the token from"
+                             " %s)", self.url, self.token_file)
+            self.logger.info("  Terminal UI: cado-nfs-monitor.py"
+                             " %s --workdir=%s watch",
+                             connection_parameters, self.wdir)
+            self.logger.info("  The UI listens for %s only; use"
+                             " 'ssh -L %d:localhost:%d <host>' from"
+                             " elsewhere, or set server.ui_whitelist",
+                             ", ".join(self.ui_whitelist) or "nobody",
+                             self.port, self.port)
+
     def get_cert_sha1(self):
         if self._ssl_context:
             return get_certificate_hash(self._ssl_context[0])
@@ -382,7 +456,11 @@ recent than 3.1.3) fixes this.
 
     def stop_serving_wus(self):
         self.logger.info("Got notification to stop serving Workunits")
-        self.serving_wus = False
+        self.serving.set(False)
+
+    def resume_serving_wus(self):
+        self.logger.info("Resuming serving Workunits")
+        self.serving.set(True)
 
     def shutdown(self, exc=None):
         if exc is not None:
@@ -412,10 +490,21 @@ recent than 3.1.3) fixes this.
     def get_registered_filenames(self):
         return self._get_db_things()[2]
 
-    def get_upload_folder(self):
-        f = self.upload_dir_provider(self.upload_cycle)
-        self.upload_cycle += 1
-        return f
+    def get_upload_folder(self, key):
+        """
+        Pick the upload subdirectory that an uploaded file goes to.
+
+        The point of the subdirectories is only to keep any single
+        directory from growing to a size that the filesystem handles
+        badly, so any reasonably uniform spread will do. We derive it
+        from the file's own name rather than from a counter, because a
+        counter living in this object would spread unevenly as soon as
+        the server runs as more than one process.
+        """
+        h = int.from_bytes(hashlib.sha1(key.encode('utf-8',
+                                                   'replace')).digest()[:4],
+                           'big')
+        return self.upload_dir_provider(h)
 
     def get_workdir(self):
         """
@@ -424,15 +513,96 @@ recent than 3.1.3) fixes this.
         d = wudb.DictDbAccess(self.get_db_connection(), 'tasks')
         return d['workdir']
 
+    def _resolve_whitelist(self, entries):
+        """
+        Turn host names into /32 networks, leave CIDR strings alone.
+        """
+        resolved = []
+        for w in entries or []:
+            try:
+                resolved.append(f"{socket.gethostbyname(w)}/32")
+            except socket.gaierror:
+                resolved.append(w)
+        return resolved
+
     def _route_endpoints(self):
         self.errorhandler(HTTPException)(self.api_errorhandler)
         self.before_request(self.api_limit_remote_addr)
-        self.route("/")(self.api_hello_world)
-        self.route("/workunit")(self.api_get_workunit)
-        self.route("/file/<path:path>")(self.api_download_file)
-        self.route("/files")(self.api_list_all_files)
-        self.route("/upload", methods=["POST"])(self.api_upload_file)
-        self.route("/WUstatus/<wuid>")(self.api_wu_status)
+
+        # Routes and their documentation come from the same @api_route
+        # declaration, so an endpoint cannot be reachable and yet absent
+        # from the OpenAPI document. See cadofactor/api/spec.py.
+        self.api_routes = []
+        for method, meta in (spec.collect_api_routes(self)
+                             + spec.collect_api_routes(self.admin)):
+            if meta["auth"] and self.api_token is None:
+                # No token could be set up, so refuse to expose the
+                # endpoints that the token is meant to protect.
+                continue
+            self.api_routes.append(meta)
+            self.route(meta["rule"], methods=list(meta["methods"]))(method)
+
+    def _peer_allowed(self, peer, whitelist):
+        try:
+            address = ip_address(peer)
+        except ValueError:
+            return False
+        for net in whitelist or []:
+            try:
+                if address in ip_network(net):
+                    return True
+            except ValueError:
+                self.logger.warning("ignoring malformed whitelist"
+                                    " entry %s", net)
+        return False
+
+    def is_ui_path(self, path):
+        """
+        Whether a path belongs to the part of the server that is meant
+        for whoever runs the computation, rather than for clients.
+
+        >>> ApiServer.is_ui_path(None, '/api/v1/clients')
+        True
+        >>> ApiServer.is_ui_path(None, '/ui/app.js')
+        True
+        >>> ApiServer.is_ui_path(None, '/api/docs')
+        True
+        >>> ApiServer.is_ui_path(None, '/workunit')
+        False
+        >>> ApiServer.is_ui_path(None, '/upload')
+        False
+        """
+        return (path.startswith(API_PREFIX)
+                or path.startswith("/api/docs")
+                or path == "/ui"
+                or path.startswith("/ui/"))
+
+    def api_limit_remote_addr(self):
+        """
+        Implements ip filtering.
+
+        Client endpoints are gated by server.whitelist, as they always
+        were. The ui and the monitoring api are gated by
+        server.ui_whitelist as well, which defaults to loopback only --
+        the point being that "ssh -L" reaches the ui without the client
+        whitelist having to be widened to the operator's workstation.
+        """
+        peer = flask.request.remote_addr
+        path = flask.request.path
+
+        if self._peer_allowed(peer, self.whitelist):
+            return
+        if self.is_ui_path(path) \
+                and self._peer_allowed(peer, self.ui_whitelist):
+            return
+
+        self.logger.error(f'blocked incoming request from {peer}')
+        if not self.whitelist:
+            self.logger.error(' NOTE: no whitelist is configured,'
+                              ' all ip addresses are blocked anyway.'
+                              ' You probably want to add'
+                              ' a server.whitelist= argument')
+        flask.abort(403)  # Forbidden
 
     def api_errorhandler(self, e):
         """
@@ -447,68 +617,48 @@ recent than 3.1.3) fixes this.
             "description": e.description,
         })
         response.content_type = "application/json"
-        return response, 404
+        # Return the response as it is, keeping the status code that the
+        # exception carries. Appending a code here -- as this used to do
+        # with a hardcoded 404 -- overrides it, and in particular turned
+        # the 410 that /workunit answers at the end of the distributed
+        # phase into a 404. cado-nfs-client.py keys its clean shutdown
+        # off that 410 (see WorkunitClientToFinish), so it never got the
+        # message and kept retrying instead.
+        return response
 
-    def api_limit_remote_addr(self):
-        """
-        Implements ip filtering
-        """
-        peer = flask.request.remote_addr
-        for net in self.whitelist or []:
-            if ip_address(peer) in ip_network(net):
-                return
-        self.logger.error(f'blocked incoming request from {peer}')
-        if self.whitelist is None:
-            self.logger.error(' NOTE: no whitelist is configured,'
-                              ' all ip addresses are blocked anyway.'
-                              ' You probably want to add'
-                              ' a server.whitelist= argument')
-        flask.abort(403)  # Forbidden
-
+    @api_route("/", tags=["misc"],
+               summary="Liveness probe",
+               description="Answers as soon as the server is up. Used by"
+                           " clients and by monitoring tools to tell a"
+                           " running server from a closed port.",
+               responses={200: ("The server is alive",
+                                {"type": "object",
+                                 "properties": {
+                                     "message": {"type": "string"}}})})
     def api_hello_world(self):
-        """
-        This is an example endpoint that returns 'Hello, World!'
-        ---
-        tags:
-          - misc
-        responses:
-            200:
-                description: A successful response
-                examples:
-                    application/json: "Hello, World!"
-        """
-
         resp = {'message': "Hello, World!"}
 
         return flask.json.jsonify(resp), 200
 
+    @api_route("/workunit", tags=["client"],
+               summary="Hand a fresh workunit to a client",
+               description="The client must identify itself with the"
+                           " clientid form field. A 404 is a priori"
+                           " temporary: it only means that the server"
+                           " has not provisioned fresh workunits yet.",
+               parameters=[
+                   spec.query_parameter(
+                       "clientid", {"type": "string"},
+                       "client-defined identifier", required=True)],
+               responses={
+                   200: ("A fresh workunit the client can work on",
+                         {"$ref": "#/components/schemas/Workunit"}),
+                   403: "No clientid was provided",
+                   404: "No work available for the time being",
+                   410: "The distributed computation phase is over."
+                        " Clients should terminate now.",
+               })
     def api_get_workunit(self):
-        """
-        This returns a fresh workunit.
-        ---
-        description: This returns a fresh workunit. The client must provide its
-                     name with the clientid parameter. A 404 is return is the
-                     server has not yet provisioned fresh workunits.
-        parameters:
-          - name: clientid
-            in: query
-            description: client-defined identifier
-            required: true
-            type: string
-        produces:
-          - application/json
-        responses:
-          200:
-            description: A fresh workunit that the client can work on.
-          404:
-            description: No work available. This is a priori temporary, since
-                         we are only waiting for the server to fill the
-                         database with further workunits that we can hand
-                         over to clients.
-          410:
-            description: The distributed computation phase is over. Clients
-                         should terminate now.
-        """
         clientid = flask.request.form.get('clientid')
         if clientid is None:
             # self.logger.debug(f"got {flask.request.path}"
@@ -520,7 +670,7 @@ recent than 3.1.3) fixes this.
         #                   f" from {flask.request.remote_addr}"
         #                   f" with client identification {clientid}")
 
-        if not self.serving_wus:
+        if not self.serving.get():
             flask.abort(410, "Distributed computation finished")
 
         # we might want to make the timeout dependent on the clientid.
@@ -528,8 +678,6 @@ recent than 3.1.3) fixes this.
                                         timeout_hint=self.timeout_hint)
 
         if not wu:
-            # This flag is to downgrade the logging level. Ugly.
-            self.no_work_available = True
             flask.abort(404, "No work available")
 
         self.logger.info(f"Sending workunit {wu.get_id()}"
@@ -544,21 +692,16 @@ recent than 3.1.3) fixes this.
 
         return flask.json.jsonify(wu), 200
 
+    @api_route("/file/<path:path>", tags=["client"],
+               summary="Download a file registered for download",
+               description="Clients use this to fetch the input files"
+                           " and executables that their workunits refer"
+                           " to. Only files that a task has registered"
+                           " are served, unless server.only_registered"
+                           " is false.",
+               responses={200: "The file contents",
+                          404: "No such registered file"})
     def api_download_file(self, path):
-        """
-        Pulls a file from the server.
-        ---
-        description: This pulls a file from the server, if this file is
-                     registered for download
-        produces:
-          - application/octet-stream
-        parameters:
-          - name: path
-            in: path
-            description: file path as recognized by server
-            required: true
-            type: string
-        """
         d = self.get_registered_filenames()
         if d is None:
             if re.match('^/', path):
@@ -579,17 +722,30 @@ recent than 3.1.3) fixes this.
                     return flask.send_from_directory(dirname, basename)
         flask.abort(404, 'File not found')
 
+    @api_route("/files", tags=["client"],
+               summary="List the files registered for download",
+               responses={200: ("Mapping from registered name to the"
+                                " path it resolves to on the server",
+                                {"type": "object",
+                                 "additionalProperties":
+                                     {"type": "string"}})})
     def api_list_all_files(self):
-        """
-        List the server files that are available for download
-        ---
-        """
         d = self.get_registered_filenames()
 
         d = {} if d is None else dict(d)
 
         return flask.json.jsonify(d), 200
 
+    @api_route("/upload", methods=["POST"], tags=["client"],
+               summary="Upload the results of a finished workunit",
+               description="Multipart form upload. Besides the files"
+                           " themselves, the client sends clientid,"
+                           " WUid, a fileinfo JSON object describing"
+                           " each file, and, on failure, errorcode and"
+                           " failedcommand.",
+               responses={200: "Upload accepted",
+                          400: "Missing WUid, clientid or fileinfo",
+                          403: "A file of that name already exists"})
     def api_upload_file(self):
         clientid = flask.request.form.get('clientid')
         wuid = flask.request.form.get('WUid')
@@ -607,7 +763,8 @@ recent than 3.1.3) fixes this.
         uploaded_files = []
         for fkey, f in flask.request.files.items():
             filename = secure_filename(f.filename)
-            path = os.path.join(self.get_upload_folder(), filename)
+            path = os.path.join(self.get_upload_folder(filename),
+                                filename)
             fi = fileinfo.get(filename)
             if fi is None:
                 self.logger.error("Incomplete answer from client:"
@@ -645,6 +802,20 @@ recent than 3.1.3) fixes this.
 
         return flask.json.jsonify(resp), 200
 
+    @api_route("/WUstatus/<wuid>", tags=["client"],
+               summary="Status of one workunit",
+               description="Returns the numeric status of a workunit."
+                           " The names of the values are, in order:"
+                           " AVAILABLE, ASSIGNED, NEED_RESUBMIT,"
+                           " RECEIVED_OK, RECEIVED_ERROR, VERIFIED_OK,"
+                           " VERIFIED_ERROR, CANCELLED.",
+               responses={
+                   200: ("The workunit status",
+                         {"type": "object",
+                          "properties": {
+                              "status": {"type": "integer",
+                                         "minimum": 0, "maximum": 7}}}),
+                   404: "No such workunit"})
     def api_wu_status(self, wuid):
         res = self.get_wuaccess().query(limit=1, eq={"wuid": wuid})
 
@@ -652,3 +823,48 @@ recent than 3.1.3) fixes this.
             flask.abort(404, "wuid does not exist")
         else:
             return flask.json.jsonify({"status": res[0]["status"]}), 200
+
+    # ---- the OpenAPI document, and the web ui that consumes the api ----
+    #
+    # Neither is token-gated. The document describes the interface and
+    # carries nothing about the computation; you need to be able to read
+    # it in order to write a client at all. The ui files are static
+    # assets which must load before the page can so much as ask for a
+    # token. Both are still behind the ip filter.
+
+    @api_route(API_PREFIX + "/openapi.json", tags=["docs"],
+               summary="OpenAPI 3.1 description of this api",
+               responses={200: ("The OpenAPI document",
+                                {"type": "object"})})
+    def api_openapi(self):
+        return flask.json.jsonify(self.openapi_spec()), 200
+
+    @api_route("/api/docs", tags=["docs"],
+               summary="Human-readable rendering of the api description",
+               responses={200: "An HTML page"})
+    def api_docs(self):
+        return flask.send_from_directory(UI_DIRECTORY, "docs.html")
+
+    @api_route("/ui/", tags=["ui"],
+               summary="Web dashboard",
+               responses={200: "An HTML page"})
+    def api_ui_index(self):
+        return flask.send_from_directory(UI_DIRECTORY, "index.html")
+
+    @api_route("/ui/<path:path>", tags=["ui"],
+               summary="Static assets of the web dashboard",
+               responses={200: "The asset", 404: "No such asset"})
+    def api_ui_asset(self, path):
+        return flask.send_from_directory(UI_DIRECTORY, path)
+
+    def openapi_spec(self):
+        """
+        Assemble the OpenAPI document for the routes we registered.
+        """
+        doc = spec.build_spec(self.api_routes,
+                              servers=[getattr(self, 'url', None)]
+                              if getattr(self, 'url', None) else None,
+                              **SPEC_INFO)
+        doc["components"].setdefault("schemas", {})
+        doc["components"]["schemas"].update(spec_schemas())
+        return doc

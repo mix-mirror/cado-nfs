@@ -6859,6 +6859,7 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
     def paramnames(self):
         return {"name": str, "workdir": None, "address": None, "port": 0,
                 "threaded": False, "ssl": True, "whitelist": None,
+                "ui_whitelist": "127.0.0.1/32,::1/128",
                 "only_registered": True, "forgetport": False,
                 "timeout_hint": None, "nrsubdir": 0,
                 "linger_before_quit": 0}
@@ -6953,6 +6954,13 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
 
         # lbq = self.params["linger_before_quit"]
 
+        # The ui and the monitoring api are gated separately from the
+        # client endpoints; loopback by default, which is what an ssh
+        # tunnel gives you.
+        ui_whitelist = [h.strip()
+                        for h in self.params["ui_whitelist"].split(",")
+                        if h.strip()]
+
         self.server = ApiServer(
             serveraddress, serverport, db,
             threaded=threaded,
@@ -6961,7 +6969,10 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
             only_registered=only_registered,
             cafile=cafilename,
             whitelist=server_whitelist,
+            ui_whitelist=ui_whitelist,
             timeout_hint=servertimeout_hint,
+            workdir=basedir,
+            name=self.params["name"],
             # linger_before_quit=lbq
             )
         self.state["port"] = self.server.get_port()
@@ -7668,10 +7679,19 @@ class CompleteFactorization(HasState,
         # cadofactor/api/views.py
         self.progress = self.make_db_dict('api_progress',
                                           connection=self.db_connection)
+        # tasks.wutimeout is what the api server uses to decide when a
+        # client has been silent long enough to be worth reporting as
+        # stale. Individual client-server tasks may override it under
+        # their own node; the top-level value is a good enough basis for
+        # a liveness heuristic.
+        wutimeout = self.parameters.myparams({"wutimeout": 10800})
+
         self.publish_progress(pipeline=json.dumps(
             [{"name": t.name, "title": t.title} for t in self.tasks]),
             computation=str(self.params["computation"]),
             algo=str(self.params["algo"]),
+            name=str(self.params["name"]),
+            wutimeout=int(wutimeout["wutimeout"]),
             current="",
             current_started=0,
             done=json.dumps([]),
