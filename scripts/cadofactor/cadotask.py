@@ -7630,7 +7630,7 @@ class CompleteFactorization(HasState,
                 self.tasks = self.tasks + (self.descent,)
         elif computation == Computation.CL:
             self.tasks = self.polysel \
-                + (self.fb, self.freerel, self.checkdisc, self.sieving,
+                + (self.checkdisc, self.fb, self.freerel, self.sieving,
                    self.dup1, self.dup2, self.filtergalois, self.purge,
                    self.merge, self.linalg, self.hfactor, self.grstruct)
         else:
