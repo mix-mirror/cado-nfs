@@ -49,7 +49,7 @@ tasks.linalg.bwc.interleaving = 0
 tasks.linalg.m = 64
 tasks.linalg.n = 64
 
-# Force prep to choose a permutation on columns. Otherwise the choise
+# Force prep to choose a permutation on columns. Otherwise the choice
 # between rows and columns is made based on the largest deviation of
 # weights. For large matrices from NFS or QS, it is always the columns that
 # have the largest deviation of weights. For small matrices, it may not be

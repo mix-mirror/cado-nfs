@@ -157,7 +157,6 @@ if(pz IN_LIST BWC_GFP_ARITHMETIC_BACKENDS)
         ${CADO_NFS_BINARY_DIR}/cado-nfs.py
         -qs -t 2
         slaves.downloadretry=1
-        tasks.linalg.bwc.balancing_options=reorder=columns
         1513082186477365836608886586480243097453
         TARGET_DEPENDENCIES full_dependencies_base
         siqs
