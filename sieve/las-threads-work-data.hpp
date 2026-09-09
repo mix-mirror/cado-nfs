@@ -62,7 +62,16 @@ class nfs_work {
     las_info const & las;
     las_memory_accessor & local_memory;
 
-    static constexpr int number_of_bas_for_threads(int n) {
+    /* Fill-in reserves one bucket array per concurrent writer, so one per
+     * thread avoids blocking in reservation_array::inner_reserve(). But
+     * every bucket region afterwards iterates over *all* of them, in
+     * apply_one_bucket() and purge_buckets(), so the per-region cost
+     * carries a term proportional to their number. Scaling the count with
+     * the thread count optimises the fill side at the expense of the
+     * merge side; -nr-workspaces (-nw) overrides it. */
+    static int number_of_bas_for_threads(int n, int requested = 0) {
+        if (requested > 0)
+            return requested;
         /* This +2 is here to allow work to spread somewhat more evenly.
          * */
         return n == 1 ? 1 : (n + 2);

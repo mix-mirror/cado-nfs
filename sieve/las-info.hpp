@@ -173,6 +173,10 @@ struct las_info : public las_parallel_desc, private NonCopyable {
      */
     int bucket_batch_size = 1;
 
+    /* nr_workspaces: number of bucket arrays per reservation array. 0
+     * means "derive it from the number of threads". */
+    int nr_workspaces = 0;
+
     // ----- stuff roughly related to the descent
     /* This is an opaque pointer to C++ code. */
     void * descent_helper;

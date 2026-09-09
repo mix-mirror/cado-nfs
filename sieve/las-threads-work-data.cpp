@@ -109,7 +109,8 @@ void nfs_work::zeroinit_defaults()
 
 nfs_work::nfs_work(las_info & _las, sieve_method auto tag)
     : nfs_work(_las,
-            nfs_work::number_of_bas_for_threads(_las.number_of_threads_per_subjob()),
+            nfs_work::number_of_bas_for_threads(
+                _las.number_of_threads_per_subjob(), _las.nr_workspaces),
             tag)
 {
 }

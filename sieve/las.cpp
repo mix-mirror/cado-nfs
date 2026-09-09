@@ -99,6 +99,7 @@ static void configure_aliases(cxx_param_list & pl)
     pl.configure_alias("log-bucket-region", "B");
     pl.configure_alias("log-bucket-region-step", "Bi");
     pl.configure_alias("bucket-batch-size", "bbs");
+    pl.configure_alias("nr-workspaces", "nw");
     las_output::configure_aliases(pl);
     tdict::configure_aliases(pl);
 }
@@ -342,7 +343,7 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
     ASSERT_ALWAYS(1 <= toplevel && toplevel <= MAX_TOPLEVEL);
     */
 
-    int const nba = nfs_work::number_of_bas_for_threads(nthreads);
+    int const nba = nfs_work::number_of_bas_for_threads(nthreads, las.nr_workspaces);
 
     std::array<double, MAX_TOPLEVEL + 1> ms, ss;
     std::array<round_me, MAX_TOPLEVEL + 1> rs;
