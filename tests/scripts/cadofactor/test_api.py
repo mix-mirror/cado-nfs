@@ -9,6 +9,7 @@ where section is one of openapi, auth, views, actions, or serve (which
 starts a real http server for test_monitor_cli.sh to talk to).
 """
 
+import json
 import os
 import stat
 import sys
@@ -216,8 +217,8 @@ def section_views(app, f):
     f.equal(counts["VERIFIED_ERROR"], 2, "failed workunits are counted")
     f.equal(summary["total"], sum(counts.values()), "the total adds up")
 
-    clients = {c["clientid"]: c
-               for c in get("/api/v1/clients").get_json()["clients"]}
+    clients_payload = get("/api/v1/clients").get_json()
+    clients = {c["clientid"]: c for c in clients_payload["clients"]}
     f.equal(sorted(clients), sorted(EXPECT["clients"]),
             "every client that has been seen is reported")
     for name, want in EXPECT["clients"].items():
@@ -280,6 +281,30 @@ def section_views(app, f):
         if entry["turnaround_samples"] < views.TURNAROUND_MIN_SAMPLES:
             f.equal(entry["liveness_basis"], "wutimeout",
                     "%s: too few samples, so falls back" % name)
+
+    # The full list is far too big to poll on a real pool, so there is
+    # a summary form and the full one is paginated.
+    brief = get("/api/v1/clients?summary=1").get_json()
+    f.check("clients" not in brief,
+            "summary=1 omits the per-client array")
+    f.equal(brief["total"], len(EXPECT["clients"]),
+            "summary=1 still reports the total")
+    f.equal(brief["counts"], clients_payload["counts"],
+            "summary=1 reports the same tallies")
+    f.check(len(brief["top"]) <= len(EXPECT["clients"]),
+            "summary=1 names only the top contributors")
+    f.check(len(json.dumps(brief)) < len(json.dumps(clients_payload)) / 2,
+            "summary=1 is much smaller than the full list",
+            "%d vs %d bytes" % (len(json.dumps(brief)),
+                                len(json.dumps(clients_payload))))
+
+    paged = get("/api/v1/clients?limit=2&offset=1").get_json()
+    f.equal(len(paged["clients"]), 2, "the client list paginates")
+    f.equal(paged["total"], len(EXPECT["clients"]),
+            "and still reports the full total")
+    f.equal(paged["clients"][0]["clientid"],
+            clients_payload["clients"][1]["clientid"],
+            "the offset lands where it should")
 
     # Ages must not be in the body, or no answer would ever revalidate.
     f.check("idle_seconds" not in clients[list(clients)[0]],

@@ -50,6 +50,12 @@ MAX_LOG_LINES = 5000
 # Bound on a single page of workunits.
 MAX_PAGE = 500
 
+# Bound on a single page of clients, and how many of them the summary
+# form names. Both exist because pools get big: 1400 clients is half a
+# megabyte of JSON, and that is a small run.
+MAX_CLIENT_PAGE = 500
+TOP_CLIENTS = 10
+
 
 def spec_schemas():
     """
@@ -515,7 +521,23 @@ class AdminEndpoints(object):
                            " reassigned at that point regardless, and"
                            " while few workunits back the estimate it"
                            " is also floored at a small multiple of"
-                           " tasks.wutimeoutcheck.",
+                           " tasks.wutimeoutcheck."
+                           " Pools get large -- 1400 clients is half a"
+                           " megabyte of JSON -- so the full list is"
+                           " paginated, and summary=1 returns only the"
+                           " tallies and the top contributors, which is"
+                           " what a dashboard should poll.",
+               parameters=[
+                   query_parameter("summary", {"type": "boolean"},
+                                   "Return only counts by state and the"
+                                   " top %d contributors, omitting the"
+                                   " per-client array" % TOP_CLIENTS),
+                   query_parameter("limit", {"type": "integer"},
+                                   "Page size, at most %d"
+                                   % MAX_CLIENT_PAGE),
+                   query_parameter("offset", {"type": "integer"},
+                                   "Clients to skip"),
+               ],
                responses={200: ("Client list",
                                 {"type": "object",
                                  "properties": {
@@ -531,12 +553,33 @@ class AdminEndpoints(object):
         by_state = {}
         for client in clients:
             by_state[client["state"]] = by_state.get(client["state"], 0) + 1
-        return json_response({
-            "clients": clients,
+        payload = {
             "counts": by_state,
             "total": len(clients),
             "wutimeout": self.views.wutimeout(),
-        })
+        }
+
+        # A real pool is large: a c180 polyselect run with 1400 clients
+        # makes this endpoint half a megabyte, and a dashboard that
+        # asked for it every couple of seconds would be taking capacity
+        # away from the computation it is supposed to be watching. So
+        # the whole list is opt-in, and paginated.
+        if flask.request.args.get("summary") in ("1", "true", "yes"):
+            payload["top"] = [
+                {k: c[k] for k in ("clientid", "state", "completed",
+                                   "failed", "in_flight", "share")}
+                for c in clients[:TOP_CLIENTS]]
+            payload["truncated"] = max(0, len(clients) - TOP_CLIENTS)
+            return json_response(payload)
+
+        limit = _int_arg("limit", MAX_CLIENT_PAGE, minimum=1,
+                         maximum=MAX_CLIENT_PAGE)
+        offset = _int_arg("offset", 0, minimum=0)
+        payload["clients"] = clients[offset:offset + limit]
+        payload["limit"] = limit
+        payload["offset"] = offset
+        payload["returned"] = len(payload["clients"])
+        return json_response(payload)
 
     @api_route(API + "/stats", tags=["monitoring"], auth=True,
                summary="Per-task cpu and elapsed times, and the"

@@ -141,7 +141,25 @@ export const info = () => call(PREFIX + '/info', {revalidate: true});
 export const progress = () => call(PREFIX + '/progress', {revalidate: true});
 export const summary = () =>
     call(PREFIX + '/workunits/summary', {revalidate: true});
-export const clients = () => call(PREFIX + '/clients', {revalidate: true});
+/* The tallies and the top contributors only. This is what the overview
+ * polls: the full list is half a megabyte on a 1400-client run, and
+ * asking for that every two seconds would take capacity away from the
+ * computation being watched. */
+export const clientsSummary = () =>
+    call(PREFIX + '/clients?summary=1', {revalidate: true});
+
+export function clients(query = {}) {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+        if (value !== null && value !== undefined && value !== '') {
+            params.set(key, value);
+        }
+    }
+    const q = params.toString();
+    return call(PREFIX + '/clients' + (q ? '?' + q : ''),
+                {revalidate: true});
+}
+
 export const stats = () => call(PREFIX + '/stats', {revalidate: true});
 
 export function workunits(query = {}) {
@@ -204,4 +222,13 @@ export async function setServing(serving) {
 export async function probe() {
     await call(PREFIX + '/info');
     return true;
+}
+
+/* How long the last round of polling took. The dashboard uses it to
+ * back off: a server that is slow to answer is a server busy handing
+ * out workunits, and a monitor has no business elbowing in. */
+export let lastRoundTripMs = 0;
+
+export function noteRoundTrip(ms) {
+    lastRoundTripMs = ms;
 }

@@ -24,6 +24,16 @@ import {dial, stackedBar, legend, barRows, miniBar} from './charts.js';
 const FAST = 2000;
 const SLOW = 10000;
 
+/* ... but not at the computation's expense. cado-nfs.py serves clients
+ * from a single thread unless server.threaded is set, so every request
+ * this page makes is a request some client is not being served. When
+ * the server takes a long time to answer -- which is exactly when it is
+ * busy -- wait proportionally longer before asking again. Observed on a
+ * 1400-client run: answers took seconds, and polling every two seconds
+ * regardless would have been taking a real bite out of the pool. */
+const BACKOFF_FACTOR = 4;
+const MAX_INTERVAL = 60000;
+
 const WU_SEGMENTS = [
     {key: 'VERIFIED_OK', label: 'verified', colour: '--ok'},
     {key: 'RECEIVED_OK', label: 'received', colour: '--idle'},
@@ -48,12 +58,14 @@ const state = {
     progress: null,
     summary: null,
     clients: null,
+    clientsSummary: null,
     workunits: null,
     log: null,
     error: null,
     notice: null,
     lastOk: null,
     clientSort: {sort: 'completed', desc: true},
+    clientPage: {limit: 100, offset: 0},
     wuFilters: {status: '', assigned_to: '', task: '', limit: 50},
     logTail: 200,
 };
@@ -72,10 +84,12 @@ function heartbeat() {
         dot.classList.add('beat');
         setTimeout(() => dot.classList.remove('beat'), 200);
     }
-    dot.title = state.lastOk
+    dot.title = (state.lastOk
         ? 'last successful update ' + duration((Date.now() - state.lastOk)
                                                / 1000) + ' ago'
-        : 'no update yet';
+        : 'no update yet')
+        + '; last round trip ' + Math.round(api.lastRoundTripMs)
+        + ' ms, polling every ' + Math.round(pollInterval() / 1000) + ' s';
 }
 
 function renderTopbar() {
@@ -230,9 +244,11 @@ function workunitsCard() {
 }
 
 function clientsSummaryCard() {
-    const payload = state.clients || {};
-    const rows = payload.clients || [];
-    if (!rows.length) {
+    /* Fed by /api/v1/clients?summary=1, never by the full list: on a
+     * pool of any size that list is far too big to poll. */
+    const payload = state.clientsSummary || {};
+    const rows = payload.top || [];
+    if (!payload.total) {
         return card('Clients', empty('No client has asked for work yet.'));
     }
     const counts = payload.counts || {};
@@ -241,7 +257,7 @@ function clientsSummaryCard() {
         .map((k) => h('span', {style: 'margin-right:8px'},
                       pill(counts[k] + ' ' + k, k)));
 
-    const top = rows.slice(0, 8).map((c) => ({
+    const top = rows.map((c) => ({
         label: c.clientid,
         value: c.completed,
         colour: c.state === 'gone' ? '--bad'
@@ -249,21 +265,38 @@ function clientsSummaryCard() {
     }));
 
     return card('Clients',
-                h('div', {}, chips),
+                h('div', {}, chips, ' ',
+                  h('span', {class: 'faint'}, payload.total + ' in all')),
                 h('div', {style: 'margin-top:12px'},
                   barRows(top, {format: count})),
-                rows.length > top.length
+                payload.truncated
                     ? h('div', {class: 'faint',
                                 style: 'margin-top:8px;font-size:12px'},
-                        'and ' + (rows.length - top.length) + ' more')
+                        'and ' + payload.truncated + ' more \u2014 ',
+                        h('a', {href: '#clients'}, 'see all'))
                     : null);
 }
 
 function strandedCard() {
+    const summary = state.clientsSummary || {};
+    const counts = summary.counts || {};
+    const quiet = (counts.stale || 0) + (counts.gone || 0);
+    if (!quiet) return null;
+    /* Naming them needs the full list, which the overview does not
+     * poll. Point at the clients view instead of dragging it in. */
     const rows = ((state.clients || {}).clients || [])
         .filter((c) => c.in_flight
                 && (c.state === 'stale' || c.state === 'gone'));
-    if (!rows.length) return null;
+    if (!rows.length) {
+        return h('section', {class: 'card span2'},
+                 banner('warn',
+                        h('strong', {}, quiet + ' client'
+                          + (quiet === 1 ? '' : 's')),
+                        ' have gone quiet. ',
+                        h('a', {href: '#clients'},
+                          'Look at them on the clients page'),
+                        ' to reclaim what they are holding.'));
+    }
     const held = rows.reduce((s, c) => s + c.in_flight, 0);
     return h('section', {class: 'card span2'},
              banner('warn',
@@ -327,6 +360,29 @@ function clientsView() {
         return;
     }
     const totalDone = rows.reduce((s, c) => s + c.completed, 0) || 1;
+    const page = state.clientPage;
+    const total = payload.total || rows.length;
+    const pager = total > rows.length
+        ? h('div', {class: 'controls', style: 'margin-bottom:0'},
+            h('button', {
+                class: 'small', disabled: page.offset <= 0,
+                onclick: () => {
+                    page.offset = Math.max(0, page.offset - page.limit);
+                    refresh(true);
+                },
+            }, '\u2190 previous'),
+            h('span', {class: 'muted'},
+              (page.offset + 1) + '\u2013'
+              + (page.offset + rows.length) + ' of ' + total),
+            h('button', {
+                class: 'small',
+                disabled: page.offset + rows.length >= total,
+                onclick: () => {
+                    page.offset += page.limit;
+                    refresh(true);
+                },
+            }, 'next \u2192'))
+        : null;
     main.appendChild(card(
         'Clients',
         h('p', {class: 'muted', style: 'margin-top:-6px'},
@@ -338,6 +394,7 @@ function clientsView() {
           'reassigned anyway, and while few workunits back the ',
           'estimate it is held down to a couple of ',
           'tasks.wutimeoutcheck intervals.'),
+        pager,
         table([
             {key: 'clientid', label: 'client', mono: true},
             {key: 'state', label: 'state',
@@ -376,7 +433,15 @@ function clientsView() {
                      onclick: (e) => reclaim(e.target, r.clientid),
                  }, 'Reclaim')
                  : null},
-        ], rows, {state: state.clientSort, onsort: () => clientsView()})));
+        ], rows, {state: state.clientSort, onsort: () => clientsView()}),
+        pager ? h('div', {class: 'faint',
+                          style: 'margin-top:10px;font-size:12px'},
+                  'Sorting applies to this page only: the server orders'
+                  + ' clients by what they have contributed, and the'
+                  + ' dashboard asks for one page at a time so that a'
+                  + ' large pool does not cost the computation'
+                  + ' bandwidth it needs for workunits.')
+              : null));
 }
 
 /* ---------------- workunits ---------------- */
@@ -593,16 +658,30 @@ function render() {
 }
 
 async function refresh(immediate = false) {
+    const started = Date.now();
     try {
-        /* Everything the header and the overview need, every time: they
-         * are cheap, and a 304 makes them cheaper still. */
+        /* Only what the view on screen actually needs. Fetching the
+         * full client list on every tick regardless -- which is what
+         * this used to do -- is half a megabyte every two seconds on a
+         * 1400-client run, taken straight out of the server's capacity
+         * to hand out workunits. */
         const wanted = [
             api.info().then((r) => { state.info = r; }),
             api.progress().then((r) => { state.progress = r; }),
-            api.summary().then((r) => { state.summary = r; }),
-            api.clients().then((r) => { state.clients = r; }),
         ];
+        if (state.view === 'overview') {
+            wanted.push(api.summary().then((r) => { state.summary = r; }));
+            wanted.push(api.clientsSummary()
+                .then((r) => { state.clientsSummary = r; }));
+        }
+        if (state.view === 'clients') {
+            wanted.push(api.clientsSummary()
+                .then((r) => { state.clientsSummary = r; }));
+            wanted.push(api.clients(state.clientPage)
+                .then((r) => { state.clients = r; }));
+        }
         if (state.view === 'workunits') {
+            wanted.push(api.summary().then((r) => { state.summary = r; }));
             wanted.push(api.workunits(state.wuFilters)
                 .then((r) => { state.workunits = r; }));
         }
@@ -621,18 +700,28 @@ async function refresh(immediate = false) {
         }
         state.error = e.message;
     }
+    api.noteRoundTrip(Date.now() - started);
     render();
     if (immediate) schedule();
 }
 
+function pollInterval() {
+    /* Never ask again sooner than a few times what the last round
+     * actually cost. On an idle server this is the nominal interval; on
+     * a busy one the page quietly gets out of the way. */
+    const nominal = state.view === 'overview' ? FAST : SLOW;
+    return Math.min(MAX_INTERVAL,
+                    Math.max(nominal,
+                             BACKOFF_FACTOR * api.lastRoundTripMs));
+}
+
 function schedule() {
     if (timer) clearTimeout(timer);
-    const interval = state.view === 'overview' ? FAST : SLOW;
     timer = setTimeout(async () => {
         /* A hidden tab has nobody looking at it; do not poll it. */
         if (!document.hidden) await refresh();
         schedule();
-    }, interval);
+    }, pollInterval());
 }
 
 function route() {
