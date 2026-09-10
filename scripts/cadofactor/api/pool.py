@@ -24,11 +24,9 @@ how many writers can queue up against sqlite at once -- there is
 nothing to be gained by letting a thousand threads contend for a lock
 that only one of them can hold.
 
-Sessions must not be shared between threads while in use: sqlite
-connections are bound to the thread that created them unless
-check_same_thread is off, and cado-nfs does not set it. Borrowing hands
-a session to exactly one thread at a time, which satisfies that -- with
-the caveat noted in DbSession.
+Sessions must not be used by two threads at once. Borrowing guarantees
+that, which is what makes it safe to open their connections with
+DBFactory.connect(shared_across_threads=True) -- see DbSession.
 """
 
 import logging
@@ -38,7 +36,8 @@ import threading
 from cadofactor import wudb
 from cadofactor.database import DictDbDirectAccess
 from cadofactor.database.base import conn_close
-from cadofactor.api.views import SERVER_STATE_TABLE, API_OVERRIDES_TABLE
+from cadofactor.api.views import (SERVER_STATE_TABLE, API_OVERRIDES_TABLE,
+                                  CLIENT_INFO_TABLE)
 
 logger = logging.getLogger("API server")
 
@@ -59,15 +58,14 @@ class DbSession(object):
     table if it is missing, which is exactly the cost this class exists
     to stop paying per request.
 
-    A caveat on threads: sqlite3 connections are checked against the
-    thread that opened them, so a session created by one thread and
-    later borrowed by another would raise. Sessions are therefore
-    created lazily by whichever thread first needs one, and a session
-    is only ever handed to one thread at a time; but a pooled session
-    can be borrowed by a *different* thread later, which sqlite3 does
-    not allow. That is why connect() below passes check_same_thread as
-    the backend allows, and why the pool falls back to a fresh session
-    if a borrowed one turns out to be unusable.
+    On threads: a pooled session outlives the request that created it,
+    so it will sooner or later be borrowed by a different thread than
+    the one that opened its connection. sqlite3 forbids that by
+    default, and rightly. The caller therefore opens the connection
+    with DBFactory.connect(shared_across_threads=True), which lifts
+    that specific guard -- permissible only because the pool hands a
+    session to exactly one borrower at a time, which is the condition
+    the guard exists to enforce.
     """
 
     def __init__(self, connect):
@@ -79,6 +77,8 @@ class DbSession(object):
                                                SERVER_STATE_TABLE)
         self.overrides = DictDbDirectAccess(self.connection,
                                             API_OVERRIDES_TABLE)
+        self.client_info = DictDbDirectAccess(self.connection,
+                                              CLIENT_INFO_TABLE)
 
     def close(self):
         try:
@@ -94,8 +94,6 @@ class DbSessionPool(object):
     """
     A bounded pool of DbSession objects.
 
-    >>> class FakeConn:
-    ...     def __init__(self): self.closed = False
     >>> made = []
     >>> class FakeSession:
     ...     def __init__(self): made.append(self); self.closed = False

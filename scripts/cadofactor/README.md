@@ -115,6 +115,7 @@ are one-shot subcommands:
 ```
 ./cado-nfs-monitor.py ... status
 ./cado-nfs-monitor.py ... clients
+./cado-nfs-monitor.py ... clients --group-by cluster
 ./cado-nfs-monitor.py ... clients --reclaim grvingt-42
 ./cado-nfs-monitor.py ... client grvingt-42
 ./cado-nfs-monitor.py ... wu show c180_sieving_990000-991000

@@ -67,6 +67,7 @@ const state = {
     lastOk: null,
     clientSort: {sort: 'completed', desc: true},
     clientPage: {limit: 100, offset: 0},
+    clientGroupBy: '',
     wuFilters: {status: '', assigned_to: '', task: '', limit: 50},
     logTail: 200,
     parameters: null,
@@ -402,7 +403,62 @@ function overview() {
 
 /* ---------------- clients ---------------- */
 
+/* Roll-up or flat list. On a pool of any size the roll-up is the only
+ * readable option, and it is also the only bounded one. */
+function groupControl() {
+    return h('label', {}, 'group by',
+        h('select', {
+            onchange: (e) => {
+                state.clientGroupBy = e.target.value;
+                state.clientPage.offset = 0;
+                refresh(true);
+            },
+        }, [['', 'nothing (list every client)'],
+            ['host', 'machine'],
+            ['cluster', 'cluster'],
+            ['domain', 'domain']].map(([v, label]) => h('option', {
+            value: v, selected: v === state.clientGroupBy,
+        }, label))));
+}
+
+function clientGroupsView() {
+    const main = document.getElementById('main');
+    clear(main);
+    if (state.notice) main.appendChild(state.notice);
+    const payload = state.clients || {};
+    const groups = payload.groups || [];
+    main.appendChild(card('Clients by ' + payload.group_by,
+        h('div', {class: 'controls'}, groupControl(),
+          h('span', {class: 'muted'},
+            (payload.total || 0) + ' clients in '
+            + (payload.groups_total || 0) + ' '
+            + (payload.group_by || 'group') + 's')),
+        groups.length
+            ? table([
+                {key: 'key', label: payload.group_by, mono: true},
+                {key: 'clients', label: 'clients', num: true},
+                {key: 'cores', label: 'cores', num: true,
+                 render: (g) => g.cores
+                     || h('span', {class: 'faint'}, '–')},
+                {key: 'in_flight', label: 'in flight', num: true},
+                {key: 'completed', label: 'completed', num: true},
+                {key: 'failed', label: 'failed', num: true,
+                 render: (g) => g.failed
+                     ? h('span', {style: 'color:var(--bad)'}, g.failed)
+                     : h('span', {class: 'faint'}, '0')},
+                {key: 'share', label: 'share', num: true,
+                 render: (g) => percent(g.share, 0)},
+                {key: 'states', label: 'states', sort: false,
+                 render: (g) => Object.keys(g.states).sort().map(
+                     (k) => h('span', {style: 'margin-right:5px'},
+                              pill(g.states[k] + ' ' + k, k)))},
+            ], groups, {state: state.clientSort,
+                        onsort: () => clientGroupsView()})
+            : empty('Nothing to group yet.')));
+}
+
 function clientsView() {
+    if (state.clientGroupBy) return clientGroupsView();
     const main = document.getElementById('main');
     clear(main);
     if (state.notice) main.appendChild(state.notice);
@@ -439,6 +495,7 @@ function clientsView() {
         : null;
     main.appendChild(card(
         'Clients',
+        h('div', {class: 'controls'}, groupControl()),
         h('p', {class: 'muted', style: 'margin-top:-6px'},
           'How long a client may be silent before it counts as stale is ',
           'judged per client, from how long its own workunits have ',
@@ -540,6 +597,16 @@ function clientDetailView() {
           h('div', {class: 'detail'},
             h('div', {class: 'title mono'}, c.clientid, ' ', statePill(c)),
             h('div', {class: 'sub'}, livenessTitle(c)),
+            h('div', {class: 'sub faint'},
+              c.fqdn || c.host || '\u2013',
+              c.cluster ? ' \u00b7 cluster ' + c.cluster : '',
+              c.cores ? ' \u00b7 ' + c.cores + ' cores' : '',
+              c.platform ? ' \u00b7 ' + c.platform : '',
+              Object.keys(c.overrides || {}).length
+                  ? ' \u00b7 overrides ' + Object.entries(c.overrides)
+                      .map(([k, v]) => k + '=' + v).join(' ')
+                  : '',
+              c.self_reported ? '' : ' (inferred from its name)'),
             h('div', {class: 'figures'},
               figure(count(c.completed), 'completed'),
               figure(count(c.failed), 'failed'),
@@ -921,7 +988,10 @@ async function refresh(immediate = false) {
         } else if (state.view === 'clients') {
             wanted.push(api.clientsSummary()
                 .then((r) => { state.clientsSummary = r; }));
-            wanted.push(api.clients(state.clientPage)
+            wanted.push(api.clients(
+                state.clientGroupBy
+                    ? {group_by: state.clientGroupBy}
+                    : state.clientPage)
                 .then((r) => { state.clients = r; }));
         }
         if (state.view === 'workunits' && !state.detailKind) {

@@ -728,6 +728,26 @@ def watch_plain(server, args):
 
 
 def cmd_clients(server, args):
+    if args.group_by:
+        payload = server.request("/api/v1/clients?group_by="
+                                 + urllib.parse.quote(args.group_by))
+        lines = ["%-28s %7s %7s %8s %8s %6s  %s"
+                 % (args.group_by, "clients", "cores", "flight",
+                    "done", "share", "states")]
+        for g in payload.get("groups", []):
+            lines.append("%-28s %7d %7s %8d %8d %5.0f%%  %s"
+                         % (g["key"][:28], g["clients"],
+                            g["cores"] or "-", g["in_flight"],
+                            g["completed"], 100.0 * g["share"],
+                            ", ".join("%d %s" % (n, s) for s, n
+                                      in sorted(g["states"].items()))))
+        lines.append("")
+        lines.append("%d client(s) in %d %s(s)"
+                     % (payload.get("total", 0),
+                        payload.get("groups_total", 0), args.group_by))
+        emit(args, payload, "\n".join(lines))
+        return 0
+
     if args.reclaim:
         result = server.request("/api/v1/clients/%s/reclaim"
                                 % urllib.parse.quote(args.reclaim, safe=""),
@@ -1047,6 +1067,9 @@ def build_parser():
     p.add_argument("--reclaim", metavar="CLIENTID",
                    help="put the workunits this client holds back in the"
                         " pool")
+    p.add_argument("--group-by", choices=["host", "cluster", "domain"],
+                   help="roll the pool up instead of listing every"
+                        " client, which a large pool needs")
     p.set_defaults(func=cmd_clients)
 
     p = sub.add_parser("client", help="one client in detail")

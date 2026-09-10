@@ -28,6 +28,7 @@ Three properties of the database layer shape this module.
 
 import json
 import logging
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -93,6 +94,20 @@ AGGREGATE_TTL = 5.0
 # How many clients the summary form of /api/v1/clients names. The
 # point of that form is that its size does not grow with the pool.
 TOP_CLIENTS_LIMIT = 10
+
+# The ways a pool may be rolled up for display. "host" separates
+# clients that differ only by --override, since those are genuinely
+# doing different work on the same machine.
+GROUPABLE = ("host", "cluster", "domain")
+
+# Table in which clients record what they are, when they introduce
+# themselves. Written by the unauthenticated /clientinfo endpoint;
+# see cadofactor/api/admin.py.
+CLIENT_INFO_TABLE = "client_info"
+
+# Client metadata changes only when a client starts, so it can be
+# cached for far longer than the tallies it decorates.
+CLIENT_INFO_TTL = 30.0
 
 # How cadotask.Task.make_wuname separates a retry number from the rest.
 ATTEMPT_MARKER = "__R"
@@ -290,6 +305,60 @@ def liveness(age, in_flight, threshold):
     if age > threshold:
         return "stale"
     return "working" if in_flight else "idle"
+
+
+def split_clientid(clientid):
+    """
+    Guess the machine and the cluster a client is running on, from its
+    name alone.
+
+    This is the fallback for clients that have not introduced
+    themselves, and it works because cado-nfs names them predictably:
+    several clients on one host get "+1", "+2" suffixes, and a client
+    that was given no --clientid takes <hostname>.<random>.
+
+    The cluster is the first dotted component with a trailing -<digits>
+    removed, which is the same rule that cado-nfs's own local.sh uses
+    to name build trees:
+
+        hostname | cut -d. -f1 | sed -e 's/-[0-9]*$//'
+
+    >>> split_clientid('grdix-15+101')
+    ('grdix-15', 'grdix')
+    >>> split_clientid('grvingt-9')
+    ('grvingt-9', 'grvingt')
+    >>> split_clientid('quiche.loria.fr+3')
+    ('quiche.loria.fr', 'quiche')
+    >>> split_clientid('coffee.1a2b3c')
+    ('coffee.1a2b3c', 'coffee')
+    >>> split_clientid('localhost')
+    ('localhost', 'localhost')
+    >>> split_clientid('')
+    ('', '')
+    """
+    host = clientid
+    plus = host.rfind("+")
+    if plus > 0 and host[plus + 1:].isdigit():
+        host = host[:plus]
+    cluster = host.split(".")[0]
+    cluster = re.sub(r"-\d+$", "", cluster)
+    return (host, cluster)
+
+
+def domain_of(fqdn):
+    """
+    The domain part of a fully qualified name, or None.
+
+    >>> domain_of('grvingt-9.nancy.grid5000.fr')
+    'nancy.grid5000.fr'
+    >>> domain_of('localhost') is None
+    True
+    >>> domain_of(None) is None
+    True
+    """
+    if not fqdn or "." not in fqdn:
+        return None
+    return fqdn.split(".", 1)[1]
 
 
 def split_wuid(wuid, name, task_names):
@@ -665,12 +734,67 @@ class DbViews(object):
 
         return self._cached("turnarounds", produce)
 
+    def client_info(self):
+        """
+        What clients have said about themselves, keyed by clientid.
+
+        Written by the unauthenticated /clientinfo endpoint, so treat
+        every field as something a machine on the whitelist chose to
+        say -- fine to display, never to trust.
+        """
+        def produce():
+            raw = self.read_state_table(CLIENT_INFO_TABLE)
+            out = {}
+            for clientid, blob in raw.items():
+                try:
+                    entry = json.loads(blob)
+                except (ValueError, TypeError):
+                    continue
+                if isinstance(entry, dict):
+                    out[clientid] = entry
+            return out
+
+        return self._cached("client_info", produce, ttl=CLIENT_INFO_TTL)
+
+    def describe_origin(self, clientid, info):
+        """
+        Where a client is: what it told us if it did, and what its name
+        implies otherwise.
+        """
+        guessed_host, guessed_cluster = split_clientid(clientid)
+        reported = info or {}
+        fqdn = reported.get("fqdn") or None
+        host = reported.get("host") or guessed_host
+        # Derive the cluster from whatever we settled on as the host,
+        # not from the client id: if a client told us its real
+        # hostname, saying it is on machine X but in cluster Y --
+        # where Y came from its name rather than from X -- would be
+        # incoherent. Only fall back to the id when nothing was said.
+        if reported.get("cluster"):
+            cluster = reported["cluster"]
+        elif reported.get("fqdn") or reported.get("host"):
+            cluster = split_clientid(fqdn or host)[1]
+        else:
+            cluster = guessed_cluster
+        return {
+            "host": host,
+            "cluster": cluster,
+            "fqdn": fqdn,
+            "domain": domain_of(fqdn) or None,
+            "cores": reported.get("cores"),
+            "platform": reported.get("platform"),
+            "overrides": reported.get("overrides") or {},
+            "client_version": reported.get("client_version"),
+            "self_reported": bool(reported),
+        }
+
     def clients(self):
         """
         Per-client view, with liveness and contribution share.
         """
         aggregates = self.client_aggregates()
         samples = self.turnarounds()
+        info = self.client_info()
         timeout = self.wutimeout()
         check = self.wutimeoutcheck()
         now = time.time()
@@ -707,8 +831,60 @@ class DbViews(object):
                                        client["stale_after"])
             client["share"] = (entry["completed"] / total_completed
                                if total_completed else 0.0)
+            client.update(self.describe_origin(entry["clientid"],
+                                               info.get(
+                                                   entry["clientid"])))
             out.append(client)
         out.sort(key=lambda c: (-c["completed"], c["clientid"]))
+        return out
+
+    def group_clients(self, key, clients=None):
+        """
+        Roll the clients up by host, cluster or domain.
+
+        A pool of any size is unreadable one row at a time, and on a
+        cluster the interesting unit is rarely the individual process:
+        several clients share a machine, and many machines share a
+        cluster. Grouping is what makes ten thousand of them fit on a
+        screen -- and what makes the answer a bounded size.
+        """
+        if key not in GROUPABLE:
+            raise ValueError("cannot group by %r; try one of %s"
+                             % (key, ", ".join(sorted(GROUPABLE))))
+        rows = self.clients() if clients is None else clients
+        groups = {}
+        for client in rows:
+            name = client.get(key) or "unknown"
+            group = groups.get(name)
+            if group is None:
+                group = groups[name] = {
+                    "key": name,
+                    "clients": 0,
+                    "in_flight": 0,
+                    "completed": 0,
+                    "failed": 0,
+                    "share": 0.0,
+                    "states": {},
+                    "cores": 0,
+                    "last_seen": None,
+                }
+            group["clients"] += 1
+            for field in ("in_flight", "completed", "failed"):
+                group[field] += client[field]
+            group["share"] += client["share"]
+            state = client["state"]
+            group["states"][state] = group["states"].get(state, 0) + 1
+            if client.get("cores"):
+                try:
+                    group["cores"] += int(client["cores"])
+                except (TypeError, ValueError):
+                    pass
+            seen = client.get("last_seen")
+            if seen is not None and (group["last_seen"] is None
+                                     or seen > group["last_seen"]):
+                group["last_seen"] = seen
+        out = sorted(groups.values(),
+                     key=lambda g: (-g["completed"], g["key"]))
         return out
 
     def list_workunits(self, status=None, assigned_to=None,

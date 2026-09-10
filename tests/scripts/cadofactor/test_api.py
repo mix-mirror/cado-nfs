@@ -314,6 +314,69 @@ def section_views(app, f):
             clients_payload["clients"][1]["clientid"],
             "the offset lands where it should")
 
+    # --- grouping -------------------------------------------------
+    # No client in the fixture has introduced itself, so this is the
+    # fallback path: where a machine is, inferred from its name.
+    f.check(all(not c["self_reported"] for c in clients.values()),
+            "the fixture's clients have not introduced themselves")
+    f.equal(clients[GONE]["host"], GONE.split("+")[0],
+            "the machine is inferred from the client id")
+    f.equal(clients[GONE]["cluster"], "grvingt",
+            "and so is the cluster")
+
+    for key in views.GROUPABLE:
+        grouped = get("/api/v1/clients?group_by=%s" % key).get_json()
+        f.equal(grouped["group_by"], key, "grouped by %s" % key)
+        f.check("clients" not in grouped,
+                "%s roll-up omits the per-client array" % key)
+        f.equal(sum(g["clients"] for g in grouped["groups"]),
+                len(EXPECT["clients"]),
+                "%s roll-up accounts for every client" % key)
+        f.equal(sum(g["completed"] for g in grouped["groups"]),
+                sum(c["completed"] for c in clients.values()),
+                "%s roll-up totals agree with the list" % key)
+
+    by_cluster = get("/api/v1/clients?group_by=cluster").get_json()
+    f.equal([g["key"] for g in by_cluster["groups"]], ["grvingt"],
+            "all the fixture's clients are one cluster")
+    f.equal(by_cluster["groups"][0]["clients"], len(EXPECT["clients"]),
+            "with all of them in it")
+    f.check(abs(sum(g["share"] for g in by_cluster["groups"]) - 1.0)
+            < 1e-9, "and the shares still add to one")
+
+    f.equal(client.get("/api/v1/clients?group_by=colour",
+                       headers=headers).status_code, 400,
+            "an unknown grouping is refused")
+
+    # A client that does introduce itself is believed, and what it says
+    # is bounded and coerced -- it arrives unauthenticated.
+    told = client.post("/clientinfo", json={
+        "clientid": GONE,
+        "host": "compute-7",
+        "fqdn": "compute-7.example.org",
+        "cores": 64,
+        "platform": "Linux-x86_64",
+        "overrides": {"t": "2"},
+        "peer": "ignored",
+        "junk": "x" * 5000,
+    })
+    f.equal(told.status_code, 200, "a client may introduce itself")
+    f.equal(client.post("/clientinfo", json={}).status_code, 400,
+            "but not anonymously")
+
+    fresh = {c["clientid"]: c for c
+             in get("/api/v1/clients").get_json()["clients"]}
+    told_us = fresh[GONE]
+    f.check(told_us["self_reported"], "%s is now self-reported" % GONE)
+    f.equal(told_us["host"], "compute-7", "its own hostname is used")
+    f.equal(told_us["domain"], "example.org", "its domain is derived")
+    f.equal(told_us["cluster"], "compute",
+            "and its cluster from the name it gave, not from its id")
+    f.equal(told_us["cores"], 64, "its core count is kept")
+    f.equal(told_us["overrides"], {"t": "2"}, "so are its overrides")
+    f.check("junk" not in told_us,
+            "unrecognised fields are dropped rather than stored")
+
     # Ages must not be in the body, or no answer would ever revalidate.
     f.check("idle_seconds" not in clients[list(clients)[0]],
             "client entries carry timestamps, not ages")

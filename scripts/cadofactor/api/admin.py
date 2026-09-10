@@ -38,7 +38,7 @@ import flask
 
 from cadofactor.api.auth import require_token
 from cadofactor.api.spec import api_route, json_body, query_parameter
-from cadofactor.api.views import (TOP_CLIENTS_LIMIT,
+from cadofactor.api.views import (GROUPABLE, TOP_CLIENTS_LIMIT,
                                   TUNABLE_PARAMETERS)
 from cadofactor.workunit import STATUS_NAMES, WuStatus
 
@@ -662,6 +662,23 @@ class AdminEndpoints(object):
                                    "Return only counts by state and the"
                                    " top %d contributors, omitting the"
                                    " per-client array" % TOP_CLIENTS),
+                   query_parameter("group_by",
+                                   {"type": "string",
+                                    "enum": list(GROUPABLE)},
+                                   "Roll the pool up by machine,"
+                                   " cluster or domain instead of"
+                                   " listing every client. The answer"
+                                   " is then bounded by the number of"
+                                   " groups, not of clients."),
+                   query_parameter("group", {"type": "string"},
+                                   "List only the clients in this"
+                                   " group; group_by_key says which"
+                                   " kind of group is meant"),
+                   query_parameter("group_by_key",
+                                   {"type": "string",
+                                    "enum": list(GROUPABLE)},
+                                   "What 'group' refers to"
+                                   " (default: cluster)"),
                    query_parameter("limit", {"type": "integer"},
                                    "Page size, at most %d"
                                    % MAX_CLIENT_PAGE),
@@ -694,6 +711,26 @@ class AdminEndpoints(object):
         # asked for it every couple of seconds would be taking capacity
         # away from the computation it is supposed to be watching. So
         # the whole list is opt-in, and paginated.
+        group_by = flask.request.args.get("group_by")
+        if group_by:
+            if group_by not in GROUPABLE:
+                flask.abort(400, "cannot group by %r; try one of %s"
+                            % (group_by, ", ".join(sorted(GROUPABLE))))
+            groups = self.views.group_clients(group_by, clients)
+            payload["group_by"] = group_by
+            payload["groups"] = groups[:MAX_CLIENT_PAGE]
+            payload["groups_total"] = len(groups)
+            return json_response(payload)
+
+        member_of = flask.request.args.get("group")
+        if member_of is not None:
+            key = flask.request.args.get("group_by_key", "cluster")
+            if key not in GROUPABLE:
+                flask.abort(400, "cannot group by %r" % key)
+            clients = [c for c in clients
+                       if (c.get(key) or "unknown") == member_of]
+            payload["total"] = len(clients)
+
         if flask.request.args.get("summary") in ("1", "true", "yes"):
             # Ten rows, so a couple of extra fields cost nothing and
             # save the caller from needing the full list to draw a
@@ -848,6 +885,68 @@ class AdminEndpoints(object):
                                          limit=MAX_PAGE)
         marked, skipped = self._mark_for_resubmit(rows)
         return self._action_result(marked, skipped)
+
+    @api_route("/clientinfo", methods=["POST"], tags=["client"],
+               summary="A client says what and where it is",
+               description="Called once by cado-nfs-client.py when it"
+                           " starts. Unauthenticated, like the other"
+                           " client endpoints and for the same reason:"
+                           " a client is given a url and a certificate"
+                           " fingerprint, never a secret. What it says"
+                           " is therefore whatever a machine on"
+                           " server.whitelist chose to say -- it is"
+                           " used to label and group the pool for"
+                           " display, and for nothing else. Clients"
+                           " that never call this are grouped from"
+                           " their name instead, which works because"
+                           " cado-nfs names them predictably.",
+               request_body=json_body(
+                   {"type": "object",
+                    "required": ["clientid"],
+                    "properties": {
+                        "clientid": {"type": "string"},
+                        "fqdn": {"type": "string"},
+                        "host": {"type": "string"},
+                        "cluster": {"type": "string"},
+                        "cores": {"type": "integer"},
+                        "platform": {"type": "string"},
+                        "client_version": {"type": "string"},
+                        "overrides": {"type": "object"}}}),
+               responses={200: "Recorded",
+                          400: "No clientid, or the payload is too big"})
+    def api_clientinfo(self):
+        body = flask.request.get_json(silent=True) or {}
+        clientid = body.get("clientid")
+        if not clientid or not isinstance(clientid, str):
+            flask.abort(400, "clientid must be given")
+        if len(clientid) > 512:
+            flask.abort(400, "clientid is too long")
+
+        # Keep only what we know how to display, coerce it, and bound
+        # it. This is unauthenticated input.
+        entry = {}
+        for key in ("fqdn", "host", "cluster", "platform",
+                    "client_version"):
+            value = body.get(key)
+            if isinstance(value, str) and value:
+                entry[key] = value[:255]
+        cores = body.get("cores")
+        if isinstance(cores, int) and 0 < cores < 100000:
+            entry["cores"] = cores
+        overrides = body.get("overrides")
+        if isinstance(overrides, dict):
+            entry["overrides"] = {
+                str(k)[:64]: str(v)[:64]
+                for k, v in list(overrides.items())[:32]}
+        entry["peer"] = flask.request.remote_addr
+        entry["said_at"] = time.time()
+
+        self.app.session().client_info[clientid] = json.dumps(entry)
+        self.views.invalidate()
+        self.app.logger.info("client %s is %s", clientid,
+                             entry.get("fqdn") or entry.get("host")
+                             or "unnamed")
+        return json_response({"message": "recorded"})
 
     @api_route(API + "/parameters", tags=["actions"], auth=True,
                summary="The ceilings that may be raised while running",

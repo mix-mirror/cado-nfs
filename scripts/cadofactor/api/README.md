@@ -179,6 +179,51 @@ handed stale work; and the actions are refused with 409, because
 setting `NEED_RESUBMIT` with no task running would leave a trap for
 whichever task started next.
 
+## Large pools: what a client is, and rolling them up
+
+A pool of any size is unreadable one row at a time, and the useful
+unit on a cluster is rarely the individual process: several clients
+share a machine, and many machines share a cluster.
+
+    GET /api/v1/clients?group_by=host|cluster|domain
+    GET /api/v1/clients?group=<key>&group_by_key=cluster
+
+The roll-up is bounded by the number of groups rather than of clients,
+which is what makes it usable when the flat list is not.
+
+Grouping works with no client cooperation at all, because cado-nfs
+names clients predictably: several on one host get `+1`, `+2`
+suffixes, and one given no `--clientid` takes `<hostname>.<random>`.
+The cluster is then the first dotted component with a trailing
+`-<digits>` removed — the same rule `local.sh` uses to name build
+trees. `grdix-15+101` is thus machine `grdix-15` in cluster `grdix`.
+
+That is only a guess, though, and it cannot see a domain at all. So a
+client introduces itself when it starts:
+
+    POST /clientinfo   {"clientid": ..., "fqdn": ..., "host": ...,
+                        "cores": ..., "platform": ...,
+                        "overrides": {...}}
+
+which gives the real fully qualified name, the core count, and the
+`--override` settings in force — the last of these being how two
+clients on one machine that are deliberately configured differently
+can be told apart. `self_reported` says which clients did this;
+`cado-nfs-client.py` calls it once at startup, best-effort, and an
+older server that answers 404 changes nothing.
+
+This endpoint is **unauthenticated**, like the other client endpoints
+and for the same reason: a client is given a url and a certificate
+fingerprint, never a secret. So what it says is whatever a machine on
+`server.whitelist` chose to say. It is used to label and group the
+pool for display and for nothing else; fields are coerced, truncated
+and whitelisted on the way in, and unrecognised ones are dropped.
+
+If a client reports a hostname, the cluster is derived from *that*
+rather than from its client id — saying a machine is `compute-7` but
+in cluster `grvingt`, because its name happened to start that way,
+would be incoherent.
+
 ## Drilling into one client or one workunit
 
     GET /api/v1/clients/<clientid>

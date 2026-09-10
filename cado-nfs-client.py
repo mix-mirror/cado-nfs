@@ -23,6 +23,7 @@ import subprocess
 import hashlib
 import logging
 import socket
+import platform
 import signal
 import re
 import json
@@ -373,6 +374,47 @@ def close_exclusive(fileobj):
 
 
 # {{{ run shell command, capture std streams
+def announce_self(settings, server_pool):
+    """
+    Tell the server what and where this client is.
+
+    Purely so that the monitoring interface can label and group the
+    pool: on a cluster the useful unit is rarely the individual
+    process, and a client id alone cannot say which machines share a
+    domain, or which of two clients on one host is the one running
+    with different --override settings.
+
+    Entirely best-effort. A server that does not know this endpoint,
+    or a name lookup that hangs, must not stop the client from doing
+    the work it came to do.
+    """
+    info = {"clientid": settings["CLIENTID"]}
+    try:
+        info["host"] = socket.gethostname()
+        # getfqdn() can go to the network; it is called once, here, and
+        # never on the path that fetches work.
+        info["fqdn"] = socket.getfqdn()
+        info["platform"] = platform.platform()
+        info["cores"] = os.cpu_count()
+    except Exception as e:
+        logging.debug("Could not describe this host (%s)", e)
+    overrides = settings.get("OVERRIDE")
+    if overrides:
+        info["overrides"] = {str(k): str(v) for k, v in overrides}
+
+    try:
+        server = server_pool.get_current_server()
+        response = server.post("clientinfo", json=info, timeout=20)
+        if response.status_code == 200:
+            logging.info("Told the server what this client is")
+        else:
+            logging.debug("Server did not record client info (%s)",
+                          response.status_code)
+    except Exception as e:
+        # An older server has no such endpoint; that is not an error.
+        logging.debug("Could not tell the server what we are (%s)", e)
+
+
 def run_command(command, stdin=None, print_error=True, statuschecker=None,
                 **kwargs):
     """ Run command, wait for it to finish, return exit status, stdout
@@ -2041,6 +2083,8 @@ if __name__ == '__main__':
     uploader = ResultUploader(SETTINGS, serv_pool)
 
     client = WorkunitClient(SETTINGS, serv_pool, downloader, uploader)
+
+    announce_self(SETTINGS, serv_pool)
 
     while client_ok:
         try:
