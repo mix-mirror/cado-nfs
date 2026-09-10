@@ -198,3 +198,39 @@ export function miniBar(fraction, width = 70, height = 7) {
             fill: css('--accent'),
         }));
 }
+
+/* A sparkline of successive values. Used for how long a client's
+ * workunits have been taking, where the shape -- steady, drifting,
+ * suddenly worse -- says more than any single number. */
+export function sparkline(values, {width = 260, height = 44} = {}) {
+    const svg = svgel('svg', {
+        class: 'chart',
+        viewBox: `0 0 ${width} ${height}`,
+        height,
+        preserveAspectRatio: 'none',
+        role: 'img',
+        'aria-label': 'recent turnaround per workunit',
+    });
+    if (!values.length) return svg;
+    const max = Math.max(...values);
+    const min = Math.min(...values);
+    const span = (max - min) || max || 1;
+    const step = values.length > 1 ? width / (values.length - 1) : width;
+    const y = (v) => height - 3 - ((v - min) / span) * (height - 8);
+    const points = values.map((v, i) => `${i * step},${y(v)}`).join(' ');
+
+    svg.appendChild(svgel('polyline', {
+        points: `0,${height} ` + points + ` ${(values.length - 1) * step},`
+            + height,
+        fill: css('--accent-soft'),
+        stroke: 'none',
+    }));
+    svg.appendChild(svgel('polyline', {
+        points,
+        fill: 'none',
+        stroke: css('--accent'),
+        'stroke-width': 1.6,
+        'vector-effect': 'non-scaling-stroke',
+    }));
+    return svg;
+}

@@ -179,6 +179,35 @@ handed stale work; and the actions are refused with 409, because
 setting `NEED_RESUBMIT` with no task running would leave a trap for
 whichever task started next.
 
+## Drilling into one client or one workunit
+
+    GET /api/v1/clients/<clientid>
+    GET /api/v1/workunits/<wuid>
+
+These are the detailed views, and they can afford to be detailed
+because they are bounded by construction — one client, one workunit —
+unlike the lists, which have a whole pool to worry about.
+
+The client view adds, to what the list already reports, the workunits
+it is holding right now, a page of what it has recently handed back
+with how long each took, and the raw turnarounds behind its pace
+estimate, which the dashboard draws as a sparkline. Whether a machine
+is steady, drifting or suddenly much slower says more than any single
+number does.
+
+The workunit view adds every attempt at the same piece of work, so a
+range that keeps failing shows its whole history and which client had
+it each time, and the tail of whatever the client's commands printed —
+normally the first thing anybody wants when one has failed. Pass
+`output=0` to leave that out.
+
+Attempts are named `<base>` and `<base>__R2`, `__R3` and so on. A
+prefix match alone would reach too far, since `c60_sieving_100-200` is
+a prefix of `c60_sieving_100-2000`, so the prefix only narrows the
+query and the remainder is then checked properly. The captured output
+is read off disk, so the path from the database is checked to be
+inside the working directory before anything is opened.
+
 ## Changing a parameter while the computation runs
 
 Almost nothing may be changed. A cado-nfs run is meant to be

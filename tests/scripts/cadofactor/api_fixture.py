@@ -73,15 +73,22 @@ BRISK = "grvingt-05"
 BRISK_TURNAROUND = 2
 BRISK_SAMPLES = 12
 
+# A piece of work that failed once and was retried. RETRY_DECOY exists
+# to catch a prefix match that reaches too far: its id begins with
+# RETRY_BASE, but it is a different workunit, not another attempt.
+RETRY_BASE = NAME + "_sieving_990000-991000"
+RETRY_SECOND = RETRY_BASE + "__R2"
+RETRY_DECOY = NAME + "_sieving_990000-9910000"
+
 # What the tests expect to find, so that a change to the population
 # above shows up as a failure here rather than as a silent drift.
 EXPECT = {
     "current_task": "sieving",
     "clients": {
-        BUSY: {"state": "working", "in_flight": 4, "completed": 90,
+        BUSY: {"state": "working", "in_flight": 4, "completed": 92,
                "failed": 0},
         SLOW: {"state": "working", "in_flight": 1, "completed": 60,
-               "failed": 2},
+               "failed": 3},
         GONE: {"state": "gone", "in_flight": 4, "completed": 28,
                "failed": 0},
         FAST: {"state": "stale", "in_flight": 1, "completed": 12,
@@ -213,6 +220,15 @@ def populate(db, workdir):
             assigned=4 + BRISK_TURNAROUND + i * 10, client=BRISK,
             result_age=4 + i * 10, resultclient=BRISK)
 
+    # One workunit that failed and was retried, plus the decoy whose
+    # id merely starts with the same text.
+    add(RETRY_BASE, WuStatus.VERIFIED_ERROR, assigned=900, client=SLOW,
+        result_age=850, resultclient=SLOW, errorcode=1)
+    add(RETRY_SECOND, WuStatus.VERIFIED_OK, assigned=800, client=BUSY,
+        result_age=700, resultclient=BUSY)
+    add(RETRY_DECOY, WuStatus.VERIFIED_OK, assigned=600, client=BUSY,
+        result_age=560, resultclient=BUSY)
+
     for i in range(2):
         add("%s_sieving_%d-%d" % (NAME, 800000 + i * 1000,
                                   801000 + i * 1000),
@@ -241,6 +257,26 @@ def populate(db, workdir):
             table.insert(cursor, d)
 
     conn.harness_transaction(EXCLUSIVE, insert)
+
+    # A captured stderr for the attempt that failed, so that the detail
+    # view has something to show. This is what the server itself writes
+    # when a client uploads.
+    upload = os.path.join(workdir, NAME + ".upload")
+    if not os.path.isdir(upload):
+        os.makedirs(upload)
+    stderr_name = RETRY_BASE + ".stderr0"
+    stderr_path = os.path.join(upload, stderr_name)
+    with open(stderr_path, "w") as f:
+        for i in range(200):
+            f.write("las: some chatter on line %d\n" % i)
+        f.write("las: Error: sieve region is empty, giving up\n")
+
+    def attach(cursor):
+        wuaccess._add_files(cursor,
+                            [(stderr_name, stderr_path, "stderr0", 0)],
+                            wuid=RETRY_BASE)
+
+    conn.harness_transaction(EXCLUSIVE, attach)
     del tasks, progress
 
 

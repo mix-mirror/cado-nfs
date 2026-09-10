@@ -17,7 +17,8 @@ import {
     h, append, clear, card, banner, empty, table, pill, figure, tokenGate,
     duration, count, percent, ago,
 } from './components.js';
-import {dial, stackedBar, legend, barRows, miniBar} from './charts.js';
+import {dial, stackedBar, legend, barRows, miniBar,
+        sparkline} from './charts.js';
 
 /* Poll intervals, in milliseconds. The overview is what people leave
  * open, so it refreshes briskly; the rest is on demand. */
@@ -69,6 +70,9 @@ const state = {
     wuFilters: {status: '', assigned_to: '', task: '', limit: 50},
     logTail: 200,
     parameters: null,
+    detail: null,          /* the drill-down currently on screen */
+    detailKind: null,      /* 'client' or 'workunit' */
+    detailId: null,
 };
 
 let timer = null;
@@ -446,7 +450,10 @@ function clientsView() {
           'tasks.wutimeoutcheck intervals.'),
         pager,
         table([
-            {key: 'clientid', label: 'client', mono: true},
+            {key: 'clientid', label: 'client', mono: true,
+             render: (r) => h('a', {href: '#clients/'
+                                    + encodeURIComponent(r.clientid)},
+                              r.clientid)},
             {key: 'state', label: 'state',
              render: (r) => statePill(r)},
             {key: 'typical_turnaround', label: 'usual pace', num: true,
@@ -492,6 +499,175 @@ function clientsView() {
                   + ' large pool does not cost the computation'
                   + ' bandwidth it needs for workunits.')
               : null));
+}
+
+/* ---------------- drill-downs ---------------- */
+
+function backLink(where, label) {
+    return h('a', {href: '#' + where, style: 'font-size:13px'},
+             '\u2190 ' + label);
+}
+
+function timeline(entries) {
+    const rows = entries.filter((e) => e[1])
+        .map(([label, stamp]) => h('tr', {},
+            h('td', {class: 'faint'}, label),
+            h('td', {class: 'num'}, ago(stamp, api.now()) + ' ago')));
+    if (!rows.length) return null;
+    return h('div', {class: 'tablewrap'},
+             h('table', {}, h('tbody', {}, rows)));
+}
+
+function clientDetailView() {
+    const main = document.getElementById('main');
+    clear(main);
+    if (state.notice) main.appendChild(state.notice);
+    const c = state.detail;
+    if (!c) {
+        main.appendChild(card('Client', empty('Loading\u2026')));
+        return;
+    }
+
+    const pace = c.typical_turnaround === null
+        ? h('span', {class: 'faint'}, 'not enough workunits yet')
+        : h('span', {}, duration(c.typical_turnaround),
+            h('span', {class: 'faint'},
+              ' (median of ' + c.turnaround_samples + ')'));
+
+    main.appendChild(card(null,
+        h('div', {}, backLink('clients', 'all clients')),
+        h('div', {class: 'current', style: 'margin-top:10px'},
+          h('div', {class: 'detail'},
+            h('div', {class: 'title mono'}, c.clientid, ' ', statePill(c)),
+            h('div', {class: 'sub'}, livenessTitle(c)),
+            h('div', {class: 'figures'},
+              figure(count(c.completed), 'completed'),
+              figure(count(c.failed), 'failed'),
+              figure(count(c.in_flight), 'in flight'),
+              figure(percent(c.share, 0), 'share of all work'),
+              figure(pace, 'usual pace'),
+              figure(ago(c.last_seen, api.now()), 'last seen'))),
+          c.turnarounds && c.turnarounds.length > 1
+              ? h('div', {},
+                  h('div', {class: 'label',
+                            style: 'text-align:right'},
+                    'recent turnaround'),
+                  sparkline(c.turnarounds.slice().reverse()))
+              : null),
+        c.in_flight
+            ? h('div', {style: 'margin-top:14px'},
+                h('button', {
+                    onclick: (e) => reclaim(e.target, c.clientid),
+                }, 'Reclaim its ' + c.in_flight + ' workunit'
+                   + (c.in_flight === 1 ? '' : 's')))
+            : null));
+
+    const columns = [
+        {key: 'wuid', label: 'workunit', mono: true,
+         render: (w) => h('a', {href: '#workunits/'
+                                + encodeURIComponent(w.wuid)}, w.wuid)},
+        {key: 'status_name', label: 'status',
+         render: (w) => statusPill(w.status_name)},
+        {key: 'attempt', label: 'try', num: true},
+        {key: 'duration', label: 'took', num: true,
+         render: (w) => duration(w.duration)},
+        {key: 'timeresult', label: 'returned', num: true,
+         render: (w) => ago(w.timeresult || w.timeassigned, api.now())},
+    ];
+
+    main.appendChild(h('div', {style: 'height:16px'}));
+    main.appendChild(card('Holding now',
+        (c.in_flight_workunits || []).length
+            ? table(columns, c.in_flight_workunits, {state: {}})
+            : empty('Nothing.')));
+    main.appendChild(h('div', {style: 'height:16px'}));
+    main.appendChild(card('Recently returned',
+        (c.recent_workunits || []).length
+            ? table(columns, c.recent_workunits, {state: {}})
+            : empty('Nothing yet.')));
+}
+
+function workunitDetailView() {
+    const main = document.getElementById('main');
+    clear(main);
+    if (state.notice) main.appendChild(state.notice);
+    const w = state.detail;
+    if (!w) {
+        main.appendChild(card('Workunit', empty('Loading\u2026')));
+        return;
+    }
+
+    const who = (id) => id
+        ? h('a', {href: '#clients/' + encodeURIComponent(id),
+                  class: 'mono'}, id)
+        : h('span', {class: 'faint'}, '\u2013');
+
+    main.appendChild(card(null,
+        h('div', {}, backLink('workunits', 'all workunits')),
+        h('div', {style: 'margin-top:10px'},
+          h('div', {class: 'title mono'}, w.wuid, ' ',
+            statusPill(w.status_name)),
+          h('div', {class: 'sub'},
+            'task ', h('strong', {}, w.task || '?'),
+            ', range ', h('strong', {}, w.identifier || '?'),
+            ', attempt ', h('strong', {}, String(w.attempt)))),
+        h('div', {class: 'figures'},
+          figure(duration(w.duration), 'time held'),
+          figure(who(w.assignedclient), 'assigned to'),
+          figure(who(w.resultclient), 'returned by'),
+          w.errorcode ? figure(w.errorcode, 'exit code') : null)));
+
+    main.appendChild(h('div', {style: 'height:16px'}));
+    main.appendChild(h('div', {class: 'grid wide'},
+        card('Attempts', (w.attempts_all || []).length
+            ? table([
+                {key: 'attempt', label: 'try', num: true},
+                {key: 'wuid', label: 'workunit', mono: true,
+                 render: (a) => a.wuid === w.wuid
+                     ? h('strong', {}, a.wuid)
+                     : h('a', {href: '#workunits/'
+                                     + encodeURIComponent(a.wuid)},
+                         a.wuid)},
+                {key: 'status_name', label: 'status',
+                 render: (a) => statusPill(a.status_name)},
+                {key: 'resultclient', label: 'client',
+                 render: (a) => who(a.resultclient || a.assignedclient)},
+                {key: 'duration', label: 'took', num: true,
+                 render: (a) => duration(a.duration)},
+            ], w.attempts_all, {state: {}})
+            : empty('Just this one.')),
+        card('Timeline', timeline([
+            ['created', w.timecreated],
+            ['assigned', w.timeassigned],
+            ['returned', w.timeresult],
+            ['verified', w.timeverified],
+        ]) || empty('Not started.'))));
+
+    const commands = ((w.workunit || {}).commands) || [];
+    if (commands.length) {
+        main.appendChild(h('div', {style: 'height:16px'}));
+        main.appendChild(card('Commands',
+            h('pre', {class: 'log'}, commands.join('\n'))));
+    }
+
+    for (const entry of w.output || []) {
+        const pre = h('pre', {class: 'log'},
+                      (entry.lines || []).join('\n'));
+        main.appendChild(h('div', {style: 'height:16px'}));
+        main.appendChild(card(entry.type + ' \u2014 ' + entry.filename,
+                              pre));
+        /* This is a tail, and whatever went wrong is at the end of it. */
+        pre.scrollTop = pre.scrollHeight;
+    }
+
+    if ((w.files || []).length) {
+        main.appendChild(h('div', {style: 'height:16px'}));
+        main.appendChild(card('Files', table([
+            {key: 'type', label: 'type'},
+            {key: 'filename', label: 'name', mono: true},
+            {key: 'path', label: 'path', mono: true},
+        ], w.files, {state: {}})));
+    }
 }
 
 /* ---------------- workunits ---------------- */
@@ -549,14 +725,22 @@ function workunitsView() {
     main.appendChild(card('Workunits', filters,
         rows.length
             ? table([
-                {key: 'wuid', label: 'workunit', mono: true},
+                {key: 'wuid', label: 'workunit', mono: true,
+                 render: (r) => h('a', {href: '#workunits/'
+                                        + encodeURIComponent(r.wuid)},
+                                  r.wuid)},
                 {key: 'status_name', label: 'status',
                  render: (r) => statusPill(r.status_name)},
                 {key: 'task', label: 'task'},
                 {key: 'attempt', label: 'try', num: true},
                 {key: 'assignedclient', label: 'client',
-                 render: (r) => r.assignedclient || r.resultclient
-                     || h('span', {class: 'faint'}, '–')},
+                 render: (r) => {
+                     const id = r.assignedclient || r.resultclient;
+                     return id
+                         ? h('a', {href: '#clients/'
+                                         + encodeURIComponent(id)}, id)
+                         : h('span', {class: 'faint'}, '–');
+                 }},
                 {key: 'timeassigned', label: 'assigned', num: true,
                  render: (r) => ago(r.timeassigned, api.now())},
                 {key: 'timeresult', label: 'returned', num: true,
@@ -699,6 +883,8 @@ function render() {
         main.appendChild(banner('error', state.error));
         return;
     }
+    if (state.detailKind === 'client') return clientDetailView();
+    if (state.detailKind === 'workunit') return workunitDetailView();
     ({
         overview,
         clients: clientsView,
@@ -726,13 +912,19 @@ async function refresh(immediate = false) {
             wanted.push(api.parameters()
                 .then((r) => { state.parameters = r; }));
         }
-        if (state.view === 'clients') {
+        if (state.detailKind === 'client') {
+            wanted.push(api.client(state.detailId)
+                .then((r) => { state.detail = r; }));
+        } else if (state.detailKind === 'workunit') {
+            wanted.push(api.workunit(state.detailId)
+                .then((r) => { state.detail = r; }));
+        } else if (state.view === 'clients') {
             wanted.push(api.clientsSummary()
                 .then((r) => { state.clientsSummary = r; }));
             wanted.push(api.clients(state.clientPage)
                 .then((r) => { state.clients = r; }));
         }
-        if (state.view === 'workunits') {
+        if (state.view === 'workunits' && !state.detailKind) {
             wanted.push(api.summary().then((r) => { state.summary = r; }));
             wanted.push(api.workunits(state.wuFilters)
                 .then((r) => { state.workunits = r; }));
@@ -749,6 +941,11 @@ async function refresh(immediate = false) {
             api.forgetToken();
             location.reload();
             return;
+        }
+        if (e.status === 404 && state.detailKind) {
+            /* A drill-down onto something that is not there is not an
+             * outage; do not leave the previous one on screen. */
+            state.detail = null;
         }
         state.error = e.message;
     }
@@ -777,8 +974,24 @@ function schedule() {
 }
 
 function route() {
-    const id = (location.hash || '#overview').slice(1);
-    state.view = VIEWS.some((v) => v.id === id) ? id : 'overview';
+    const raw = (location.hash || '#overview').slice(1);
+    const slash = raw.indexOf('/');
+    const head = slash < 0 ? raw : raw.slice(0, slash);
+    const rest = slash < 0 ? '' : decodeURIComponent(raw.slice(slash + 1));
+
+    const previous = state.detailId;
+    if (rest && (head === 'clients' || head === 'workunits')) {
+        state.view = head;
+        state.detailKind = head === 'clients' ? 'client' : 'workunit';
+        state.detailId = rest;
+    } else {
+        state.view = VIEWS.some((v) => v.id === head) ? head : 'overview';
+        state.detailKind = null;
+        state.detailId = null;
+    }
+    /* Showing the previous page's detail while the new one loads would
+     * be worse than showing nothing. */
+    if (state.detailId !== previous) state.detail = null;
     render();
     refresh(true);
 }

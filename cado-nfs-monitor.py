@@ -852,14 +852,77 @@ def cmd_wu_show(server, args):
                 "assignedclient", "resultclient", "errorcode"):
         if payload.get(key) is not None:
             lines.append("%-16s %s" % (key, payload[key]))
+    if payload.get("duration") is not None:
+        lines.append("%-16s %s" % ("time held",
+                                   human_duration(payload["duration"])))
     for key in ("timecreated", "timeassigned", "timeresult",
                 "timeverified"):
         if payload.get(key):
             lines.append("%-16s %s ago" % (key,
                                            human_duration(now
                                                           - payload[key])))
+
+    attempts = payload.get("attempts_all") or []
+    if len(attempts) > 1:
+        lines.append("")
+        lines.append("attempts at the same work:")
+        for a in attempts:
+            lines.append("  %d  %-44s %-14s %-16s %s"
+                         % (a["attempt"], a["wuid"][:44],
+                            a["status_name"],
+                            a.get("resultclient")
+                            or a.get("assignedclient") or "-",
+                            human_duration(a.get("duration"))))
+
     for f in payload.get("files") or []:
         lines.append("%-16s %s" % ("file", f.get("path")))
+
+    for entry in payload.get("output") or []:
+        lines.append("")
+        lines.append("--- %s (%s), last %d lines ---"
+                     % (entry["type"], entry["filename"],
+                        len(entry["lines"])))
+        lines.extend(entry["lines"])
+
+    emit(args, payload, "\n".join(lines))
+    return 0
+
+
+def cmd_client_show(server, args):
+    payload = server.request("/api/v1/clients/%s"
+                             % urllib.parse.quote(args.clientid, safe=""))
+    now = server.now()
+    lines = ["%-18s %s" % ("client", payload["clientid"]),
+             "%-18s %s" % ("state", payload["state"]),
+             "%-18s %s" % ("completed", payload["completed"]),
+             "%-18s %s" % ("failed", payload["failed"]),
+             "%-18s %s" % ("in flight", payload["in_flight"]),
+             "%-18s %.0f%%" % ("share", 100.0 * payload.get("share", 0)),
+             "%-18s %s" % ("usual pace",
+                           human_duration(payload
+                                          .get("typical_turnaround"))),
+             "%-18s %s" % ("judged on", payload.get("liveness_basis")),
+             "%-18s %s" % ("stale after",
+                           human_duration(payload.get("stale_after"))),
+             "%-18s %s ago" % ("last seen",
+                               human_duration(
+                                   None if payload.get("last_seen") is None
+                                   else now - payload["last_seen"]))]
+
+    for label, key in (("holding now", "in_flight_workunits"),
+                       ("recently returned", "recent_workunits")):
+        rows = payload.get(key) or []
+        if not rows:
+            continue
+        lines.append("")
+        lines.append("%s (%d):" % (label, len(rows)))
+        for w in rows[:args.limit]:
+            lines.append("  %-44s %-14s %8s"
+                         % (w["wuid"][:44], w["status_name"],
+                            human_duration(w.get("duration"))))
+        if len(rows) > args.limit:
+            lines.append("  ... and %d more" % (len(rows) - args.limit))
+
     emit(args, payload, "\n".join(lines))
     return 0
 
@@ -985,6 +1048,12 @@ def build_parser():
                    help="put the workunits this client holds back in the"
                         " pool")
     p.set_defaults(func=cmd_clients)
+
+    p = sub.add_parser("client", help="one client in detail")
+    p.add_argument("clientid")
+    p.add_argument("--limit", type=int, default=15,
+                   help="workunits to list in each section")
+    p.set_defaults(func=cmd_client_show)
 
     p = sub.add_parser("wu", help="inspect and requeue workunits")
     wusub = p.add_subparsers(dest="wucommand", required=True)

@@ -94,6 +94,9 @@ AGGREGATE_TTL = 5.0
 # point of that form is that its size does not grow with the pool.
 TOP_CLIENTS_LIMIT = 10
 
+# How cadotask.Task.make_wuname separates a retry number from the rest.
+ATTEMPT_MARKER = "__R"
+
 # Fallback when the computation has not told us its tasks.wutimeout.
 DEFAULT_WUTIMEOUT = 10800.0
 
@@ -798,6 +801,14 @@ class DbViews(object):
             "errorcode": row.get("errorcode"),
             "failedcommand": row.get("failedcommand"),
         }
+        # How long the client actually had it. Absolute stamps are what
+        # travel (see json_response), but this one is a difference
+        # between two of them, so it is stable and worth precomputing.
+        if out["timeassigned"] and out["timeresult"]:
+            out["duration"] = max(0.0, out["timeresult"]
+                                  - out["timeassigned"])
+        else:
+            out["duration"] = None
         if with_body:
             try:
                 out["workunit"] = json.loads(row["wu"])
@@ -807,6 +818,73 @@ class DbViews(object):
             out["files"] = [{"filename": f.get("filename"),
                              "path": f.get("path"),
                              "type": f.get("type")} for f in files]
+        return out
+
+    def attempt_siblings(self, wuid, limit=20):
+        """
+        Every attempt at the same piece of work.
+
+        Attempts are named <base> and <base>__R2, __R3 ... A prefix
+        match alone would over-reach -- c60_sieving_100-200 is a prefix
+        of c60_sieving_100-2000 -- so the prefix narrows the query and
+        the remainder is then checked properly.
+        """
+        base = wuid
+        marker = base.rfind(ATTEMPT_MARKER)
+        if marker >= 0 and base[marker + len(ATTEMPT_MARKER):].isdigit():
+            base = base[:marker]
+
+        def query(cursor):
+            return cursor.where_as_dict("workunits",
+                                        limit=int(limit),
+                                        like={"wuid": base + "%"})
+
+        out = []
+        for row in self._read(query):
+            rest = row["wuid"][len(base):]
+            if rest and not rest.startswith(ATTEMPT_MARKER):
+                continue
+            out.append(self.describe_workunit(row))
+        out.sort(key=lambda w: w["attempt"])
+        return out
+
+    def workunit_detail(self, row):
+        """
+        One workunit, with its body, its files and its other attempts.
+        """
+        out = self.describe_workunit(row, with_body=True)
+        out["attempts_all"] = self.attempt_siblings(row["wuid"])
+        return out
+
+    def client_detail(self, clientid, history=40):
+        """
+        One client: the tallies, what it is holding, and what it has
+        recently handed back.
+
+        Bounded by construction -- one client, a page of its history --
+        which is why this can afford to be detailed where
+        /api/v1/clients has to be terse.
+        """
+        summary = None
+        for entry in self.clients():
+            if entry["clientid"] == clientid:
+                summary = entry
+                break
+        if summary is None:
+            return None
+
+        out = dict(summary)
+        out["in_flight_workunits"] = self.list_workunits(
+            status=WuStatus.ASSIGNED, assigned_to=clientid, limit=history)
+        # Ordered by insertion rather than by result time; for "what has
+        # this machine been doing lately" the difference does not
+        # matter, and it keeps the query on an index.
+        recent = self.list_workunits(result_from=clientid, limit=history)
+        out["recent_workunits"] = recent
+        out["turnarounds"] = [w["duration"] for w in recent
+                              if w["duration"] is not None]
+        first = [w["timecreated"] for w in recent if w["timecreated"]]
+        out["first_seen"] = min(first) if first else None
         return out
 
     # ---------------- assembled views ----------------

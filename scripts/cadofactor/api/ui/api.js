@@ -184,7 +184,12 @@ export function workunits(query = {}) {
 }
 
 export const workunit = (wuid) =>
-    call(PREFIX + '/workunits/' + encodeURIComponent(wuid));
+    call(PREFIX + '/workunits/' + encodeURIComponent(wuid),
+         {revalidate: true});
+
+export const client = (clientid) =>
+    call(PREFIX + '/clients/' + encodeURIComponent(clientid),
+         {revalidate: true});
 
 export const log = (tail) =>
     call(PREFIX + '/log?tail=' + encodeURIComponent(tail),

@@ -51,6 +51,11 @@ API = "/api/v1"
 # Bound on how much of the log file one request may pull.
 MAX_LOG_LINES = 5000
 
+# Bound on the captured output shown with a single workunit. This is
+# the tail of what a client's command printed, which is the first thing
+# anybody wants when a workunit failed.
+WU_OUTPUT_LINES = 60
+
 # Bound on a single page of workunits.
 MAX_PAGE = 500
 
@@ -370,6 +375,35 @@ class AdminEndpoints(object):
     def _current_task(self):
         return self.views.progress_state().get("current") or None
 
+    def _captured_output(self, files):
+        """
+        The tail of whatever the client's commands printed.
+
+        Paths come out of the database, where the server itself put
+        them when it saved the upload, so they should already be inside
+        the working directory -- but this reads files off disk on
+        request, so it checks rather than assumes.
+        """
+        root = os.path.realpath(self.app.wdir) if self.app.wdir else None
+        out = []
+        for entry in files or []:
+            kind = (entry.get("type") or "")
+            if not (kind.startswith("stderr") or kind.startswith("stdout")):
+                continue
+            path = entry.get("path")
+            if not path:
+                continue
+            if root is not None:
+                real = os.path.realpath(path)
+                if not (real == root or real.startswith(root + os.sep)):
+                    logger.warning("refusing to read %s: outside %s",
+                                   path, root)
+                    continue
+            out.append({"type": kind,
+                        "filename": entry.get("filename"),
+                        "lines": tail_file(path, WU_OUTPUT_LINES)})
+        return out
+
     def _refuse_if_read_only(self):
         """
         Actions need a running task to pick them up.
@@ -553,7 +587,18 @@ class AdminEndpoints(object):
                               "returned": len(rows)})
 
     @api_route(API + "/workunits/<wuid>", tags=["monitoring"], auth=True,
-               summary="One workunit, with its body and its files",
+               summary="One workunit in full",
+               description="The workunit body, its files, every attempt"
+                           " that has been made at the same piece of"
+                           " work, and the tail of whatever the"
+                           " client's commands printed -- which is"
+                           " normally the first thing wanted when one"
+                           " has failed.",
+               parameters=[
+                   query_parameter("output", {"type": "boolean"},
+                                   "Include the captured stdout and"
+                                   " stderr (default: yes)"),
+               ],
                responses={
                    200: ("The workunit",
                          {"$ref": "#/components/schemas/WorkunitInfo"}),
@@ -563,8 +608,32 @@ class AdminEndpoints(object):
         rows = self.app.get_wuaccess().query(limit=1, eq={"wuid": wuid})
         if not rows:
             flask.abort(404, "wuid does not exist")
-        return json_response(
-            self.views.describe_workunit(rows[0], with_body=True))
+        detail = self.views.workunit_detail(rows[0])
+        if flask.request.args.get("output", "1") not in ("0", "false",
+                                                         "no"):
+            detail["output"] = self._captured_output(detail.get("files"))
+        return json_response(detail)
+
+    @api_route(API + "/clients/<clientid>", tags=["monitoring"],
+               auth=True,
+               summary="One client in full",
+               description="Everything /api/v1/clients reports about"
+                           " this one, plus the workunits it is holding"
+                           " and a page of what it has recently handed"
+                           " back, with how long each took. Bounded by"
+                           " construction, which is why it can afford"
+                           " to be detailed where the list cannot.",
+               responses={
+                   200: ("The client",
+                         {"$ref": "#/components/schemas/Client"}),
+                   404: "No such client has been seen"})
+    @require_token
+    def api_client(self, clientid):
+        detail = self.views.client_detail(clientid)
+        if detail is None:
+            flask.abort(404, "no client called %r has asked for work"
+                        % clientid)
+        return json_response(detail)
 
     @api_route(API + "/clients", tags=["monitoring"], auth=True,
                summary="Clients seen by the server",

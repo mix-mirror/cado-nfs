@@ -19,9 +19,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import api_fixture                                          # noqa: E402
 from api_fixture import (EXPECT, NAME, WUTIMEOUT,          # noqa: E402
-                         WUTIMEOUTCHECK, FAST,             # noqa: E402
+                         WUTIMEOUTCHECK, FAST, GONE,       # noqa: E402
                          FAST_TURNAROUND, FAST_SILENT_FOR,  # noqa: E402
-                         BRISK, BRISK_TURNAROUND)          # noqa: E402
+                         BRISK, BRISK_TURNAROUND,          # noqa: E402
+                         RETRY_BASE, RETRY_SECOND,         # noqa: E402
+                         RETRY_DECOY)                      # noqa: E402
+from cadofactor.api import admin as api_admin              # noqa: E402
 
 
 class Failures(object):
@@ -213,8 +216,8 @@ def section_views(app, f):
     counts = summary["counts"]
     f.equal(counts["AVAILABLE"], 12, "available workunits are counted")
     f.equal(counts["ASSIGNED"], 10, "assigned workunits are counted")
-    f.equal(counts["VERIFIED_OK"], 202, "finished workunits are counted")
-    f.equal(counts["VERIFIED_ERROR"], 2, "failed workunits are counted")
+    f.equal(counts["VERIFIED_OK"], 204, "finished workunits are counted")
+    f.equal(counts["VERIFIED_ERROR"], 3, "failed workunits are counted")
     f.equal(summary["total"], sum(counts.values()), "the total adds up")
 
     clients_payload = get("/api/v1/clients").get_json()
@@ -341,6 +344,46 @@ def section_views(app, f):
     f.equal(client.get("/api/v1/workunits/nonexistent",
                        headers=headers).status_code, 404,
             "an unknown workunit is 404")
+
+    # --- drilling into one client and one workunit ----------------
+    detail = get("/api/v1/clients/%s" % GONE).get_json()
+    f.equal(detail["clientid"], GONE, "the client detail names it")
+    f.equal(detail["state"], EXPECT["clients"][GONE]["state"],
+            "and agrees with the list about its state")
+    f.equal(len(detail["in_flight_workunits"]),
+            EXPECT["clients"][GONE]["in_flight"],
+            "it lists what the client is holding")
+    f.check(detail["recent_workunits"],
+            "and a page of what it has handed back")
+    f.check(all(w["resultclient"] == GONE
+                for w in detail["recent_workunits"]),
+            "all of which really came from this client")
+    f.check(detail["turnarounds"],
+            "with the durations that back the pace estimate")
+    f.equal(client.get("/api/v1/clients/nobody-here",
+                       headers=headers).status_code, 404,
+            "an unknown client is 404")
+
+    wu = get("/api/v1/workunits/%s" % RETRY_BASE).get_json()
+    f.equal([a["wuid"] for a in wu["attempts_all"]],
+            [RETRY_BASE, RETRY_SECOND],
+            "a workunit shows every attempt at the same work")
+    f.equal([a["attempt"] for a in wu["attempts_all"]], [1, 2],
+            "numbered in order")
+    # RETRY_DECOY's id begins with RETRY_BASE but is different work.
+    f.check(RETRY_DECOY not in [a["wuid"] for a in wu["attempts_all"]],
+            "and a merely-prefixed workunit is not mistaken for one")
+    f.check(wu["duration"] and wu["duration"] > 0,
+            "how long the client had it is reported")
+    f.check(wu["output"], "the captured output is included")
+    f.check(any("giving up" in line
+                for entry in wu["output"] for line in entry["lines"]),
+            "and it is the tail, where the error is")
+    f.check(all(len(entry["lines"]) <= api_admin.WU_OUTPUT_LINES
+                for entry in wu["output"]),
+            "bounded, however long the file")
+    bare = get("/api/v1/workunits/%s?output=0" % RETRY_BASE).get_json()
+    f.check("output" not in bare, "output can be left out")
 
     log = get("/api/v1/log?tail=5").get_json()
     f.equal(len(log["lines"]), 5, "the log tail honours its bound")

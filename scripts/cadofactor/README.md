@@ -80,7 +80,10 @@ Web UI: https://quiche.loria.fr:8001/ui/#token=b7f3...c19a
 which shows where the computation stands — the current phase with its
 progress and ETA, the pipeline, how many workunits are in each state,
 which clients are connected, how much each has contributed, and whether
-any of them have gone quiet while still holding work. That last case
+any of them have gone quiet while still holding work. Client names and
+workunit ids are links: following one gives that machine's history and
+how its pace has been drifting, or that workunit's every attempt and
+the tail of what it printed when it failed. That last case
 comes with a button that hands their workunits back to the pool, which
 saves waiting out `tasks.wutimeout`.
 
@@ -113,6 +116,8 @@ are one-shot subcommands:
 ./cado-nfs-monitor.py ... status
 ./cado-nfs-monitor.py ... clients
 ./cado-nfs-monitor.py ... clients --reclaim grvingt-42
+./cado-nfs-monitor.py ... client grvingt-42
+./cado-nfs-monitor.py ... wu show c180_sieving_990000-991000
 ./cado-nfs-monitor.py ... wu list --status=ASSIGNED --older-than=2h
 ./cado-nfs-monitor.py ... wu reclaim --older-than=2h
 ./cado-nfs-monitor.py ... parameters
