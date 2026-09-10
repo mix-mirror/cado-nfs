@@ -32,6 +32,35 @@ cado_define_test(test_python_wudb_cmdline
     TIMEOUT 60
 )
 
+# The monitoring api, and the tools built on it.
+#
+# Unlike the client-server tests further down, these need no compiled
+# binary and no real computation: everything the api reports lives in
+# the database, and tests/scripts/cadofactor/api_fixture.py writes one
+# directly. They are therefore cheap enough to run unconditionally.
+# They do need flask, which is optional for cado-nfs as a whole, and
+# skip themselves when it is absent.
+#
+# Each section is a separate test so that a failure says what broke.
+cado_define_test(test_python_api
+    PROVIDE_TEMPORARY_WDIR
+    SCRIPT
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_api.sh"
+    TIMEOUT 60
+    NO_DEFAULT_RUN
+)
+foreach(section openapi auth views actions doctests)
+    cado_divert_test(test_python_api ${section}
+        APPEND_ARGUMENTS ${section})
+endforeach()
+
+cado_define_test(test_python_api_monitor
+    PROVIDE_TEMPORARY_WDIR
+    SCRIPT
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_monitor_cli.sh"
+    TIMEOUT 120
+)
+
 if(DEFINED ENV{CHECKS_EXPENSIVE})
     cado_define_test(test_python_stress_test
         PROVIDE_TEMPORARY_WDIR

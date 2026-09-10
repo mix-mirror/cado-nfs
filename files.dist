@@ -1372,6 +1372,10 @@ tests/sagemath/cado_sage/purged.py
 tests/sagemath/cado_sage/tools.py
 tests/scripts/CMakeLists.txt
 tests/scripts/cadofactor/CMakeLists.txt
+tests/scripts/cadofactor/api_fixture.py
+tests/scripts/cadofactor/test_api.py
+tests/scripts/cadofactor/test_api.sh
+tests/scripts/cadofactor/test_monitor_cli.sh
 tests/scripts/cadofactor/test_python_resubmit.sh
 tests/scripts/cadofactor/test_python_stress_test.sh
 tests/scripts/cadofactor/test_python_wudb_cmdline.sh
