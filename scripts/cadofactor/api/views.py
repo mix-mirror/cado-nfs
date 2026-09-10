@@ -759,6 +759,7 @@ class DbViews(object):
         started = published.get("current_started") or None
         return {
             "computation": published.get("computation"),
+            "computation_desc": published.get("computation_desc"),
             "algorithm": published.get("algo"),
             "current": current,
             "current_started": started,

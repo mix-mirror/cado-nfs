@@ -7690,7 +7690,13 @@ class CompleteFactorization(HasState,
 
         self.publish_progress(pipeline=json.dumps(
             [{"name": t.name, "title": t.title} for t in self.tasks]),
+            # Both the short code and the label a human should read:
+            # Computation.FACT reads "FACT" but describes itself as
+            # "Factorization", and the api should not have to know that.
             computation=str(self.params["computation"]),
+            computation_desc=getattr(
+                Computation(self.params["computation"]), "desc",
+                str(self.params["computation"])),
             algo=str(self.params["algo"]),
             name=str(self.params["name"]),
             wutimeout=int(wutimeout["wutimeout"]),

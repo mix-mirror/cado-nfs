@@ -384,6 +384,7 @@ class AdminEndpoints(object):
             "url": getattr(self.app, "url", None),
             "database": self.app.database_uri.uri_without_credentials,
             "computation": published.get("computation"),
+            "computation_desc": published.get("computation_desc"),
             "algorithm": published.get("algo"),
             "N": state.get("N"),
             "starttime": started,
@@ -649,7 +650,13 @@ class AdminEndpoints(object):
                            " everything currently assigned to it"
                            " NEED_RESUBMIT, so that the running task"
                            " hands the work to somebody else instead of"
-                           " waiting out the full timeout.",
+                           " waiting out the full timeout."
+                           " If the client turns out to be alive after"
+                           " all, its upload of the reclaimed workunit"
+                           " is refused with 403 because the"
+                           " replacement got there first; it gives up"
+                           " on that one and carries on. Nothing is"
+                           " lost.",
                responses={200: ("What was marked",
                                 {"$ref": "#/components/schemas"
                                          "/ActionResult"})})

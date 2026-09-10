@@ -90,7 +90,8 @@ function renderTopbar() {
                     h('strong', {},
                       duration(api.now() - Number(info.starttime)))));
     }
-    if (info.computation) meta.push(h('span', {}, info.computation));
+    const kind = info.computation_desc || info.computation;
+    if (kind) meta.push(h('span', {}, kind));
     if (progress.finished) {
         meta.push(pill('finished', 'working'));
     } else if (info.serving_workunits === false) {
@@ -366,7 +367,10 @@ function clientsView() {
              render: (r) => r.in_flight
                  ? h('button', {
                      class: 'small',
-                     title: 'put this client\'s workunits back in the pool',
+                     title: 'Put this client\'s workunits back in the'
+                         + ' pool. If it turns out to be alive, its'
+                         + ' upload is refused as a duplicate and it'
+                         + ' moves on; nothing is lost.',
                      onclick: (e) => reclaim(e.target, r.clientid),
                  }, 'Reclaim')
                  : null},

@@ -132,6 +132,18 @@ counters straight. The effect is therefore not instantaneous: it lands
 within `tasks.wutimeoutcheck` seconds, 60 by default, and the api says
 so in its answer.
 
+One consequence is worth knowing about. If you reclaim a client that
+turns out not to have gone away after all, it will eventually finish
+the workunit and try to upload a result file that the replacement has
+already produced. The server refuses the overwrite with 403, the client
+retries with exponential backoff and then gives up on that upload and
+carries on with fresh work. Nothing is lost and nothing wedges -- the
+work was redone by somebody else, which is what you asked for -- but
+the client's log will show a handful of "File already exists" errors.
+This is not new: the same thing happens whenever
+resubmit_timed_out_wus() reassigns the workunit of a client that is
+merely slow. Reclaiming simply makes it reachable on demand.
+
 Two things are missing on purpose:
 
 * **There is no raw cancel.** Setting `CANCELLED` from outside would

@@ -53,7 +53,14 @@ export function duration(seconds) {
     if (seconds === null || seconds === undefined || isNaN(seconds)) {
         return '–';
     }
-    seconds = Math.max(0, Math.round(seconds));
+    seconds = Math.max(0, seconds);
+    /* Keep a decimal below ten seconds: on a small computation a
+     * workunit comes back in a fraction of a second, and rounding that
+     * to "0s" hides the very number the reader is after. */
+    if (seconds < 10) {
+        return seconds.toFixed(1).replace(/\.0$/, '') + 's';
+    }
+    seconds = Math.round(seconds);
     if (seconds < 60) return seconds + 's';
     if (seconds < 3600) {
         return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';

@@ -280,8 +280,16 @@ def human_duration(seconds):
     """
     A duration, at two significant units.
 
+    Short durations keep a decimal: workunits on a small computation
+    come back in a fraction of a second, and rounding those to "0s"
+    hides exactly the number the reader wanted.
+
     >>> human_duration(0)
     '0s'
+    >>> human_duration(0.42)
+    '0.4s'
+    >>> human_duration(3.25)
+    '3.2s'
     >>> human_duration(45)
     '45s'
     >>> human_duration(3601)
@@ -293,7 +301,10 @@ def human_duration(seconds):
     """
     if seconds is None:
         return "-"
-    seconds = int(max(0, seconds))
+    seconds = max(0, seconds)
+    if seconds < 10:
+        return ("%.1f" % seconds).rstrip("0").rstrip(".") + "s"
+    seconds = int(seconds)
     if seconds < 60:
         return "%ds" % seconds
     if seconds < 3600:
@@ -443,7 +454,8 @@ def render_plain(snapshot, verbose=True):
     now = snapshot["now"]
     out = []
 
-    kind = info.get("computation") or "computation"
+    kind = (info.get("computation_desc")
+            or info.get("computation") or "computation")
     header = "cado-nfs %s -- %s" % (kind, info.get("name") or "?")
     if info.get("starttime"):
         header += "   running for %s" % human_duration(
@@ -532,7 +544,8 @@ def render_rich(snapshot):
 
     title = rich.text.Text()
     title.append("cado-nfs ", style="bold")
-    title.append(str(info.get("computation") or "computation"))
+    title.append(str(info.get("computation_desc")
+                     or info.get("computation") or "computation"))
     title.append("  %s" % (info.get("name") or "?"), style="bold cyan")
     if info.get("starttime"):
         title.append("   running for %s"
