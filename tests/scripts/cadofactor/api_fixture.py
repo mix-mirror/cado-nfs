@@ -56,6 +56,14 @@ PIPELINE = [
 BUSY = "grvingt-01"
 SLOW = "grvingt-02"
 GONE = "grvingt-03"
+# A brisk client that has just gone quiet. It is the case that
+# distinguishes the per-client staleness threshold from the global one:
+# 20 minutes of silence is nothing next to a one-hour wutimeout, but it
+# is a long time for a machine that returns a workunit every two
+# minutes.
+FAST = "grvingt-04"
+FAST_TURNAROUND = 120
+FAST_SILENT_FOR = 1200
 
 # What the tests expect to find, so that a change to the population
 # above shows up as a failure here rather than as a silent drift.
@@ -68,7 +76,12 @@ EXPECT = {
                "failed": 2},
         GONE: {"state": "gone", "in_flight": 4, "completed": 28,
                "failed": 0},
+        FAST: {"state": "stale", "in_flight": 1, "completed": 10,
+               "failed": 0, "liveness_basis": "turnaround"},
     },
+    # What the old, global-only rule would have said about FAST. The
+    # point of the per-client threshold is that these differ.
+    "fast_state_under_wutimeout_only": "working",
     # Reclaiming GONE must take its three sieving workunits and leave
     # the polyselect leftover alone.
     "reclaimable_from_gone": 3,
@@ -167,6 +180,17 @@ def populate(db, workdir):
                 WuStatus.VERIFIED_OK,
                 assigned=newest + 1000 + i * 20, client=client,
                 result_age=newest + i * 20, resultclient=client)
+
+    # FAST: a short, very regular turnaround, and then silence.
+    for i in range(10):
+        add("%s_sieving_%d-%d" % (NAME, 600000 + i * 1000,
+                                  601000 + i * 1000),
+            WuStatus.VERIFIED_OK,
+            assigned=FAST_SILENT_FOR + FAST_TURNAROUND + i * 300,
+            client=FAST,
+            result_age=FAST_SILENT_FOR + i * 300, resultclient=FAST)
+    add("%s_sieving_650000-651000" % NAME, WuStatus.ASSIGNED,
+        assigned=FAST_SILENT_FOR, client=FAST)
 
     for i in range(2):
         add("%s_sieving_%d-%d" % (NAME, 800000 + i * 1000,

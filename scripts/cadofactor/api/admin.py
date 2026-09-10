@@ -117,6 +117,27 @@ def spec_schemas():
                 "state": {"type": "string",
                           "enum": ["working", "idle", "stale", "gone",
                                    "unknown"]},
+                "typical_turnaround": {
+                    "type": ["number", "null"],
+                    "description": "Median seconds this client has"
+                                   " recently taken to return a"
+                                   " workunit, or null if too few"
+                                   " samples"},
+                "turnaround_samples": {
+                    "type": "integer",
+                    "description": "How many recent workunits that"
+                                   " median rests on"},
+                "stale_after": {
+                    "type": "number",
+                    "description": "Seconds of silence after which this"
+                                   " client is called stale. Derived"
+                                   " from its own turnaround when known,"
+                                   " capped by tasks.wutimeout."},
+                "liveness_basis": {
+                    "type": "string",
+                    "enum": ["turnaround", "wutimeout"],
+                    "description": "Which of the two the threshold came"
+                                   " from"},
             },
         },
         "WorkunitInfo": {
@@ -480,10 +501,17 @@ class AdminEndpoints(object):
                description="Derived from the workunits table: what each"
                            " client holds now, what it has returned,"
                            " when we last heard from it, and whether it"
-                           " still looks alive. A client is stale once"
-                           " it has been silent for longer than"
-                           " tasks.wutimeout, which is when its work"
-                           " starts being reassigned anyway.",
+                           " still looks alive."
+                           " The staleness threshold is per client:"
+                           " a client that has returned enough"
+                           " workunits has shown how long its workunits"
+                           " take, and being silent for several times"
+                           " that is suspicious well before"
+                           " tasks.wutimeout would say so. See"
+                           " stale_after and liveness_basis. The"
+                           " threshold is never longer than"
+                           " tasks.wutimeout, since the work is"
+                           " reassigned at that point regardless.",
                responses={200: ("Client list",
                                 {"type": "object",
                                  "properties": {

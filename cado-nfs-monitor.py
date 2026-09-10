@@ -606,6 +606,7 @@ def render_rich(snapshot):
     table.add_column("failed", justify="right", width=6)
     table.add_column("share", justify="right", width=6)
     table.add_column("last seen", justify="right", width=10)
+    table.add_column("pace", justify="right", width=9)
     for client in clients.get("clients", []):
         style = STATE_STYLE.get(client["state"], ("dim", "?"))[0]
         last = client.get("last_seen")
@@ -618,7 +619,11 @@ def render_rich(snapshot):
                                      else "dim"),
                       "%.0f%%" % (100.0 * client.get("share", 0.0)),
                       human_duration(None if last is None
-                                     else now - last))
+                                     else now - last),
+                      rich.text.Text(
+                          human_duration(client.get("typical_turnaround")),
+                          style="dim" if client.get("typical_turnaround")
+                          is None else ""))
     tally = "  ".join("%d %s" % (n, s) for s, n
                       in sorted(clients.get("counts", {}).items()))
     clients_panel = rich.panel.Panel(
@@ -712,18 +717,36 @@ def cmd_clients(server, args):
         return report_action(args, result)
     payload = server.request("/api/v1/clients")
     now = server.now()
-    lines = ["%-24s %-8s %7s %7s %7s %6s %10s"
+    lines = ["%-24s %-8s %7s %7s %7s %6s %10s %10s"
              % ("client", "state", "flight", "done", "failed", "share",
-                "last seen")]
+                "last seen", "pace")]
     for client in payload.get("clients", []):
         last = client.get("last_seen")
-        lines.append("%-24s %-8s %7d %7d %7d %5.0f%% %10s"
+        lines.append("%-24s %-8s %7d %7d %7d %5.0f%% %10s %10s"
                      % (client["clientid"][:24], client["state"],
                         client["in_flight"], client["completed"],
                         client["failed"],
                         100.0 * client.get("share", 0.0),
                         human_duration(None if last is None
-                                       else now - last)))
+                                       else now - last),
+                        human_duration(client.get("typical_turnaround"))))
+    stale = [c for c in payload.get("clients", [])
+             if c["state"] in ("stale", "gone")]
+    if stale:
+        lines.append("")
+        lines.append("'pace' is how long this client's workunits have"
+                     " recently been taking, and")
+        lines.append("is what its staleness threshold is derived from:")
+        for c in stale:
+            lines.append("  %-24s silent for %s, counted stale after %s"
+                         " (%s)"
+                         % (c["clientid"][:24],
+                            human_duration(None if c.get("last_seen") is None
+                                           else now - c["last_seen"]),
+                            human_duration(c.get("stale_after")),
+                            "its own pace"
+                            if c.get("liveness_basis") == "turnaround"
+                            else "tasks.wutimeout; too few samples yet"))
     emit(args, payload, "\n".join(lines))
     return 0
 

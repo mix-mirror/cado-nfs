@@ -274,8 +274,13 @@ function strandedCard() {
              table([
                  {key: 'clientid', label: 'client', mono: true},
                  {key: 'state', label: 'state',
-                  render: (r) => pill(r.state, r.state)},
+                  render: (r) => statePill(r)},
                  {key: 'in_flight', label: 'holding', num: true},
+                 {key: 'typical_turnaround', label: 'usual pace',
+                  num: true,
+                  render: (r) => r.typical_turnaround === null
+                      ? h('span', {class: 'faint'}, '–')
+                      : duration(r.typical_turnaround)},
                  {key: 'last_seen', label: 'last seen', num: true,
                   render: (r) => ago(r.last_seen, api.now())},
                  {key: 'act', label: '', sort: false,
@@ -324,14 +329,25 @@ function clientsView() {
     main.appendChild(card(
         'Clients',
         h('p', {class: 'muted', style: 'margin-top:-6px'},
-          'A client counts as stale once it has been silent for longer ',
-          'than tasks.wutimeout (',
-          duration(payload.wutimeout), '), which is when its work starts ',
-          'being reassigned anyway.'),
+          'How long a client may be silent before it counts as stale is ',
+          'judged per client, from how long its own workunits have ',
+          'recently been taking \u2014 hover a state to see the ',
+          'reasoning. It is never longer than tasks.wutimeout (',
+          duration(payload.wutimeout), '), which is when its work gets ',
+          'reassigned anyway.'),
         table([
             {key: 'clientid', label: 'client', mono: true},
             {key: 'state', label: 'state',
-             render: (r) => pill(r.state, r.state)},
+             render: (r) => statePill(r)},
+            {key: 'typical_turnaround', label: 'usual pace', num: true,
+             render: (r) => r.typical_turnaround === null
+                 ? h('span', {class: 'faint',
+                              title: 'not enough recent workunits'
+                                     + ' from this client yet'}, '–')
+                 : h('span', {title: 'median of '
+                                     + r.turnaround_samples
+                                     + ' recent workunits'},
+                     duration(r.typical_turnaround))},
             {key: 'in_flight', label: 'in flight', num: true},
             {key: 'completed', label: 'completed', num: true},
             {key: 'failed', label: 'failed', num: true,
@@ -433,6 +449,30 @@ function workunitsView() {
                      : null},
             ], rows, {state: {}, onsort: () => workunitsView()})
             : empty('No workunit matches these filters.')));
+}
+
+/* Why a client is in the state it is in. The threshold is per client
+ * and derived from its own history, so asserting "stale" without
+ * saying what that was measured against would be unhelpful. */
+function livenessTitle(client) {
+    const seen = client.last_seen === null || client.last_seen === undefined
+        ? 'never heard from'
+        : 'last heard from ' + ago(client.last_seen, api.now()) + ' ago';
+    if (client.liveness_basis === 'turnaround') {
+        return seen + '; usually returns a workunit in '
+            + duration(client.typical_turnaround) + ' (median of '
+            + client.turnaround_samples + '), so counted stale after '
+            + duration(client.stale_after);
+    }
+    return seen + '; too few recent workunits to know its usual pace,'
+        + ' so counted stale after tasks.wutimeout ('
+        + duration(client.stale_after) + ')';
+}
+
+function statePill(client) {
+    const el = pill(client.state, client.state);
+    el.title = livenessTitle(client);
+    return el;
 }
 
 function statusPill(name) {

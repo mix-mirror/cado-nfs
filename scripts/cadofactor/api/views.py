@@ -60,6 +60,25 @@ AGGREGATE_TTL = 5.0
 # Fallback when the computation has not told us its tasks.wutimeout.
 DEFAULT_WUTIMEOUT = 10800.0
 
+# How many recently finished workunits to look at when learning how long
+# a client's workunits usually take. Bounded because the table reaches
+# millions of rows; recent because a client's turnaround changes with
+# the phase -- polyselect and sieving workunits are not the same size --
+# and because machines get busy.
+TURNAROUND_WINDOW = 2000
+
+# A client needs at least this many workunits inside that window before
+# we trust what it says about its own speed.
+TURNAROUND_MIN_SAMPLES = 4
+
+# How many typical turnarounds a client may be silent for before we stop
+# believing it is merely slow. Generous, because turnaround is noisy.
+TURNAROUND_FACTOR = 6
+
+# ... but never call a client stale sooner than this, however brisk it
+# usually is.
+MIN_STALE_AFTER = 600.0
+
 
 def status_name(status):
     """
@@ -107,15 +126,79 @@ def parse_dbtime(text):
     return None
 
 
-def liveness(age, in_flight, wutimeout):
+def median(values):
+    """
+    Median of a non-empty sequence, or None.
+
+    The median rather than the mean, because one workunit that got
+    stuck behind a swapping machine should not move the estimate.
+
+    >>> median([5])
+    5
+    >>> median([1, 2, 3, 4])
+    2.5
+    >>> median([3, 1, 2])
+    2
+    >>> median([1, 1, 1, 1, 900])
+    1
+    >>> median([]) is None
+    True
+    """
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
+def stale_after(typical, wutimeout):
+    """
+    How long a client may be silent before we call it stale.
+
+    tasks.wutimeout is a blunt instrument: it is one number for the
+    whole computation, chosen so that the slowest machine is not
+    cheated, and it says nothing about any particular client. But a
+    client that has been running for a while has told us how long its
+    workunits take, and that is a far sharper signal. A machine that
+    reliably returns a workunit every four minutes and has now been
+    silent for forty is in trouble, even though wutimeout may be three
+    hours away.
+
+    So the threshold is the client's own typical turnaround, times a
+    generous factor, bounded at both ends:
+
+     - never longer than wutimeout, because the server reassigns the
+       work at that point regardless, so claiming the client is still
+       working past it would be a lie;
+     - never shorter than MIN_STALE_AFTER, because turnaround varies
+       and a fast client should not be declared stale over one slow
+       workunit.
+
+    >>> stale_after(240, 10800)          # 4 min turnaround, 3 h timeout
+    1440
+    >>> stale_after(7200, 10800)         # slower than the cap allows
+    10800
+    >>> stale_after(2, 10800)            # very fast: the floor applies
+    600.0
+    >>> stale_after(None, 10800)         # nothing learnt yet
+    10800
+    """
+    if typical is None:
+        return wutimeout
+    return min(wutimeout, max(MIN_STALE_AFTER, TURNAROUND_FACTOR * typical))
+
+
+def liveness(age, in_flight, threshold):
     """
     Classify a client from how long ago we last heard from it.
 
     A client is working if it holds a workunit and we heard from it
     recently; idle if we heard from it recently but it holds nothing;
-    stale once it has been silent for longer than the workunit timeout,
-    which is the point at which its work starts being reassigned; and
-    gone well past that.
+    stale once it has been silent for longer than `threshold`, which
+    stale_after() derives from that client's own habits; and gone well
+    past that.
 
     >>> liveness(10, 1, 3600)
     'working'
@@ -127,12 +210,20 @@ def liveness(age, in_flight, wutimeout):
     'gone'
     >>> liveness(None, 0, 3600)
     'unknown'
+
+    A client whose workunits usually take four minutes is stale long
+    before a three-hour wutimeout would say so:
+
+    >>> liveness(2400, 1, stale_after(240, 10800))
+    'stale'
+    >>> liveness(2400, 1, stale_after(None, 10800))
+    'working'
     """
     if age is None:
         return "unknown"
-    if age > 3 * wutimeout:
+    if age > 3 * threshold:
         return "gone"
-    if age > wutimeout:
+    if age > threshold:
         return "stale"
     return "working" if in_flight else "idle"
 
@@ -440,11 +531,57 @@ class DbViews(object):
 
         return self._cached("clients", produce)
 
+    def turnarounds(self):
+        """
+        How long each client's workunits have recently been taking.
+
+        One bounded, recent sample rather than the whole table: the
+        workunits table reaches millions of rows, and old rows would be
+        misleading anyway, since a client's turnaround depends on which
+        task is running and on what else the machine is doing.
+
+        The cost is that a client which finishes rarely may have no
+        workunit at all inside the window, and then simply gets no
+        estimate -- which is reported, so that a caller can tell "we
+        have not learnt anything about this one" from "this one is
+        fast".
+        """
+        def produce():
+            def query(cursor):
+                qm = cursor.parameter_auto_increment
+                # wurowid is the primary key and increases with
+                # insertion, so this walks backwards from the newest
+                # rows and stops early. No ASC anywhere: the MySQL
+                # cursor rewrites that word to AUTO_INCREMENT.
+                cursor.execute(
+                    "SELECT resultclient, timeassigned, timeresult"
+                    " FROM workunits"
+                    " WHERE resultclient IS NOT NULL"
+                    " AND timeassigned IS NOT NULL"
+                    " AND timeresult IS NOT NULL"
+                    " AND status >= " + qm +
+                    " ORDER BY wurowid DESC LIMIT %d"
+                    % int(TURNAROUND_WINDOW),
+                    [int(min(DONE_STATUSES))])
+                return cursor.cursor.fetchall()
+
+            samples = {}
+            for name, assigned, result in self._read(query):
+                start = parse_dbtime(assigned)
+                end = parse_dbtime(result)
+                if start is None or end is None or end < start:
+                    continue
+                samples.setdefault(name, []).append(end - start)
+            return samples
+
+        return self._cached("turnarounds", produce)
+
     def clients(self):
         """
         Per-client view, with liveness and contribution share.
         """
         aggregates = self.client_aggregates()
+        samples = self.turnarounds()
         timeout = self.wutimeout()
         now = time.time()
         total_completed = sum(c["completed"] for c in aggregates.values())
@@ -456,13 +593,27 @@ class DbViews(object):
                                   entry["last_result"]) if s is not None]
             last_seen = max(stamps) if stamps else None
             client["last_seen"] = last_seen
-            # Only the liveness verdict is computed here, because it
-            # needs tasks.wutimeout, which the client does not have. The
-            # ages themselves stay out of the body so that an unchanged
-            # answer revalidates as a 304; consumers subtract last_seen
-            # from the X-Cado-Server-Time header instead.
+
+            # What this client's own history says about how long it
+            # should be taking, and therefore how patient to be with it.
+            observed = samples.get(entry["clientid"], [])
+            typical = (median(observed)
+                       if len(observed) >= TURNAROUND_MIN_SAMPLES
+                       else None)
+            client["typical_turnaround"] = typical
+            client["turnaround_samples"] = len(observed)
+            client["stale_after"] = stale_after(typical, timeout)
+            client["liveness_basis"] = ("turnaround" if typical is not None
+                                        else "wutimeout")
+
+            # Only the verdict is computed here, since it needs figures
+            # the caller does not have. The ages themselves stay out of
+            # the body so that an unchanged answer revalidates as a 304;
+            # consumers subtract last_seen from the X-Cado-Server-Time
+            # response header instead.
             age = None if last_seen is None else max(0.0, now - last_seen)
-            client["state"] = liveness(age, entry["in_flight"], timeout)
+            client["state"] = liveness(age, entry["in_flight"],
+                                       client["stale_after"])
             client["share"] = (entry["completed"] / total_completed
                                if total_completed else 0.0)
             out.append(client)

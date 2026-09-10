@@ -17,7 +17,8 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import api_fixture                                          # noqa: E402
-from api_fixture import EXPECT, NAME, WUTIMEOUT             # noqa: E402
+from api_fixture import (EXPECT, NAME, WUTIMEOUT, FAST,     # noqa: E402
+                         FAST_TURNAROUND, FAST_SILENT_FOR)  # noqa: E402
 
 
 class Failures(object):
@@ -208,8 +209,8 @@ def section_views(app, f):
     summary = get("/api/v1/workunits/summary").get_json()
     counts = summary["counts"]
     f.equal(counts["AVAILABLE"], 12, "available workunits are counted")
-    f.equal(counts["ASSIGNED"], 9, "assigned workunits are counted")
-    f.equal(counts["VERIFIED_OK"], 178, "finished workunits are counted")
+    f.equal(counts["ASSIGNED"], 10, "assigned workunits are counted")
+    f.equal(counts["VERIFIED_OK"], 188, "finished workunits are counted")
     f.equal(counts["VERIFIED_ERROR"], 2, "failed workunits are counted")
     f.equal(summary["total"], sum(counts.values()), "the total adds up")
 
@@ -224,12 +225,45 @@ def section_views(app, f):
     f.check(abs(sum(c["share"] for c in clients.values()) - 1.0) < 1e-9,
             "the contribution shares add up to one")
 
+    # The staleness threshold is per client, learnt from how long its
+    # workunits have recently been taking. FAST is the case that
+    # separates that from the old global rule: it has been silent for
+    # 20 minutes, which is nothing against a one-hour wutimeout but a
+    # long time for a machine that returns a workunit every two.
+    from cadofactor.api import views
+    fast = clients[FAST]
+    f.check(fast["turnaround_samples"] >= views.TURNAROUND_MIN_SAMPLES,
+            "%s: enough samples to judge its turnaround" % FAST)
+    f.check(abs(fast["typical_turnaround"] - FAST_TURNAROUND) < 1.0,
+            "%s: its typical turnaround is measured" % FAST,
+            "got %r, want about %d" % (fast["typical_turnaround"],
+                                       FAST_TURNAROUND))
+    f.equal(fast["liveness_basis"], "turnaround",
+            "%s: judged on its own turnaround, not on wutimeout" % FAST)
+    f.check(fast["stale_after"] < WUTIMEOUT,
+            "%s: is given less rope than wutimeout would" % FAST,
+            "stale_after=%r wutimeout=%r" % (fast["stale_after"],
+                                             WUTIMEOUT))
+    f.equal(views.liveness(FAST_SILENT_FOR, 1, WUTIMEOUT),
+            EXPECT["fast_state_under_wutimeout_only"],
+            "%s: the global rule alone would have called it %s"
+            % (FAST, EXPECT["fast_state_under_wutimeout_only"]))
+
+    # A client we have learnt nothing about falls back to wutimeout,
+    # and the threshold never exceeds it.
+    for name, entry in clients.items():
+        f.check(entry["stale_after"] <= WUTIMEOUT,
+                "%s: threshold never exceeds wutimeout" % name)
+        if entry["turnaround_samples"] < views.TURNAROUND_MIN_SAMPLES:
+            f.equal(entry["liveness_basis"], "wutimeout",
+                    "%s: too few samples, so falls back" % name)
+
     # Ages must not be in the body, or no answer would ever revalidate.
     f.check("idle_seconds" not in clients[list(clients)[0]],
             "client entries carry timestamps, not ages")
 
     listing = get("/api/v1/workunits?status=ASSIGNED&limit=100").get_json()
-    f.equal(len(listing["workunits"]), 9,
+    f.equal(len(listing["workunits"]), 10,
             "filtering by status returns the right count")
     f.check(all(w["status_name"] == "ASSIGNED"
                 for w in listing["workunits"]),

@@ -78,6 +78,39 @@ If you would rather expose it directly, widen it explicitly:
 
     cado-nfs.py ... server.ui_whitelist=127.0.0.1/32,192.168.0.0/24
 
+## Deciding that a client has gone away
+
+`tasks.wutimeout` is one number for the whole computation, chosen so
+that the slowest machine in the pool is not cheated. As a staleness
+signal it is therefore blunt: it says nothing about any particular
+client, and on a heterogeneous pool it is far too patient for most of
+them.
+
+But a client that has been running for a while has already told us how
+long its workunits take — the workunits table records `timeassigned`
+and `timeresult` for everything it has handed back. So the threshold is
+per client: `stale_after` is `TURNAROUND_FACTOR` (6) times the median
+turnaround of that client's recent workunits, bounded below by
+`MIN_STALE_AFTER` (10 min, since turnaround is noisy and one slow
+workunit should not condemn a machine) and above by `tasks.wutimeout`
+(past which the server reassigns the work anyway, so calling the client
+"working" would be a lie).
+
+A machine that returns a workunit every two minutes and has been silent
+for twenty is thus flagged long before a three-hour `wutimeout` would
+notice, which is the whole point.
+
+The sample is bounded and recent — the last `TURNAROUND_WINDOW` (2000)
+finished workunits overall, walked backwards from the newest by primary
+key. Recent matters as much as bounded: turnaround depends on which
+task is running, and polyselect and sieving workunits are nothing
+alike. The cost is that a client which finishes rarely may have nothing
+inside the window; it then falls back to `wutimeout`, and says so.
+`/api/v1/clients` reports `typical_turnaround`, `turnaround_samples`,
+`stale_after` and `liveness_basis` for every client, so the verdict can
+be checked rather than taken on faith — and both uis show the
+reasoning.
+
 ## What the actions do, and what they deliberately do not
 
 The interesting action is reclaiming the workunits held by a client that
