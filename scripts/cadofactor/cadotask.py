@@ -7725,6 +7725,21 @@ class CompleteFactorization(HasState,
         # cadofactor/api/views.py
         self.progress = self.make_db_dict('api_progress',
                                           connection=self.db_connection)
+
+        # Ceilings raised through the api last for the run that raised
+        # them, and no longer. Nothing auto-discovers the newest
+        # parameters snapshot -- a resume uses whatever file you hand
+        # it -- so an override that outlived the run would silently
+        # beat the snapshot you passed, and the parameters in force
+        # would no longer be the ones you asked for. The api records
+        # each change by writing the next snapshot; that file is how a
+        # change survives, and it survives by being passed to the next
+        # run like any other parameter.
+        try:
+            DictDbDirectAccess(self.db_connection,
+                               API_OVERRIDES_TABLE).clear()
+        except Exception as e:
+            self.logger.warning("Could not clear api overrides (%s)", e)
         # tasks.wutimeout is what the api server uses to decide when a
         # client has been silent long enough to be worth reporting as
         # stale. Individual client-server tasks may override it under
