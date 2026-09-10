@@ -425,7 +425,11 @@ def gather(server, want_log=0):
         "info": server.request("/api/v1/info"),
         "progress": server.request("/api/v1/progress"),
         "summary": server.request("/api/v1/workunits/summary"),
-        "clients": server.request("/api/v1/clients"),
+        # The summary form, never the full list: on a pool of any size
+        # that list is hundreds of kilobytes, and asking for it every
+        # few seconds takes capacity away from the very computation we
+        # are watching. "clients" shows the whole thing, on demand.
+        "clients": server.request("/api/v1/clients?summary=1"),
         "now": None,
     }
     if want_log:
@@ -490,34 +494,32 @@ def render_plain(snapshot, verbose=True):
                   summary.get("total", 0)))
     out.append("")
 
-    rows = clients.get("clients", [])
-    tally = ", ".join("%d %s" % (n, s)
-                      for s, n in sorted(clients.get("counts", {}).items()))
-    out.append("Clients (%d): %s" % (len(rows), tally or "none yet"))
+    rows = clients.get("top", [])
+    total = clients.get("total", len(rows))
+    counts = clients.get("counts", {})
+    tally = ", ".join("%d %s" % (n, s) for s, n in sorted(counts.items()))
+    out.append("Clients (%d): %s" % (total, tally or "none yet"))
     if rows:
-        out.append("  %-24s %-8s %7s %7s %7s %9s"
-                   % ("client", "state", "flight", "done", "failed",
-                      "last seen"))
+        out.append("  top contributors")
+        out.append("  %-24s %-8s %7s %7s %7s"
+                   % ("client", "state", "flight", "done", "failed"))
         for client in rows:
-            last = client.get("last_seen")
-            out.append("  %s %-22s %-8s %7d %7d %7d %9s"
+            out.append("  %s %-22s %-8s %7d %7d %7d"
                        % (STATE_STYLE.get(client["state"], ("", "?"))[1],
                           client["clientid"][:22],
                           client["state"],
                           client["in_flight"], client["completed"],
-                          client["failed"],
-                          human_duration(None if last is None
-                                         else now - last)))
-    stale = [c for c in rows if c["state"] in ("stale", "gone")
-             and c["in_flight"]]
-    if stale:
+                          client["failed"]))
+        if clients.get("truncated"):
+            out.append("  ... and %d more (use the 'clients'"
+                       " subcommand)" % clients["truncated"])
+    quiet = (counts.get("stale", 0) + counts.get("gone", 0))
+    if quiet:
         out.append("")
-        out.append("  %d client(s) hold %d workunit(s) but have gone"
-                   " quiet. Reclaim with:" %
-                   (len(stale), sum(c["in_flight"] for c in stale)))
-        for client in stale:
-            out.append("      cado-nfs-monitor.py ... clients reclaim %s"
-                       % client["clientid"])
+        out.append("  %d client(s) have gone quiet. To see which, and"
+                   " to hand their work back:" % quiet)
+        out.append("      cado-nfs-monitor.py ... clients")
+        out.append("      cado-nfs-monitor.py ... clients --reclaim ID")
 
     if "log" in snapshot:
         out.append("")
@@ -620,7 +622,7 @@ def render_rich(snapshot):
     table.add_column("share", justify="right", width=6)
     table.add_column("last seen", justify="right", width=10)
     table.add_column("pace", justify="right", width=9)
-    for client in clients.get("clients", []):
+    for client in clients.get("top", []):
         style = STATE_STYLE.get(client["state"], ("dim", "?"))[0]
         last = client.get("last_seen")
         table.add_row(client["clientid"],
@@ -639,6 +641,9 @@ def render_rich(snapshot):
                           is None else ""))
     tally = "  ".join("%d %s" % (n, s) for s, n
                       in sorted(clients.get("counts", {}).items()))
+    if clients.get("truncated"):
+        tally += "  (top %d of %d)" % (len(clients.get("top", [])),
+                                       clients.get("total", 0))
     clients_panel = rich.panel.Panel(
         table, title="clients", subtitle=tally or None,
         border_style="blue", box=rich.box.ROUNDED)
@@ -761,6 +766,50 @@ def cmd_clients(server, args):
                             if c.get("liveness_basis") == "turnaround"
                             else "tasks.wutimeout; too few samples yet"))
     emit(args, payload, "\n".join(lines))
+    return 0
+
+
+def cmd_parameters(server, args):
+    """
+    Show, and optionally raise, the ceilings that may be changed while
+    the computation runs.
+    """
+    if args.name is None:
+        payload = server.request("/api/v1/parameters")
+        lines = ["%-14s %10s %10s %10s  %s"
+                 % ("parameter", "value", "default", "counter", "")]
+        for name, p in sorted(payload["parameters"].items()):
+            lines.append("%-14s %10s %10s %10s  %s"
+                         % (name, p["value"], p["default"],
+                            "%s=%s" % (p["counter"],
+                                       p["counter_value"]),
+                            "(raised)" if p["overridden"] else ""))
+        lines.append("")
+        lines.append("These are the only parameters that may be changed"
+                     " while running: they")
+        lines.append("do nothing but abort the computation when a"
+                     " counter passes them, so")
+        lines.append("raising one cannot change what is computed."
+                     " Everything else lives in")
+        lines.append("the parameter file, so that a run stays"
+                     " reproducible from its snapshot.")
+        emit(args, payload, "\n".join(lines))
+        return 0
+
+    if args.value is None:
+        raise MonitorError("say what to set %s to, e.g."
+                           " 'parameters %s 250'"
+                           % (args.name, args.name))
+    payload = server.request("/api/v1/parameters/"
+                             + urllib.parse.quote(args.name, safe=""),
+                             method="POST", body={"value": args.value})
+    if args.json:
+        json.dump(payload, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
+    print(payload["message"])
+    if payload.get("snapshot"):
+        print("  recorded in %s" % payload["snapshot"])
     return 0
 
 
@@ -967,6 +1016,14 @@ def build_parser():
                    help="age of the assignment; defaults to the"
                         " computation's tasks.wutimeout")
     q.set_defaults(func=cmd_wu_reclaim)
+
+    p = sub.add_parser("parameters",
+                       help="ceilings that may be raised while running")
+    p.add_argument("name", nargs="?",
+                   help="the ceiling to raise; omit to list them")
+    p.add_argument("value", nargs="?", type=int,
+                   help="its new value")
+    p.set_defaults(func=cmd_parameters)
 
     p = sub.add_parser("log", help="tail the computation's log")
     p.add_argument("--tail", type=int, default=40)

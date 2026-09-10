@@ -123,6 +123,8 @@ def populate(db, workdir):
         "name": NAME,
         "wutimeout": WUTIMEOUT,
         "wutimeoutcheck": WUTIMEOUTCHECK,
+        "tunable_defaults": json.dumps({"maxtimedout": 100,
+                                        "maxfailed": 100}),
         "current": "sieving",
         "current_started": time.time() - 5400.0,
         "done": json.dumps([
@@ -242,6 +244,18 @@ def populate(db, workdir):
     del tasks, progress
 
 
+def write_snapshot(workdir):
+    """
+    A parameters snapshot for the api to build the next one on.
+    """
+    path = os.path.join(workdir, NAME + ".parameters_snapshot.0")
+    with open(path, "w") as f:
+        f.write("name = %s\n" % NAME)
+        f.write("tasks.workdir = %s\n" % workdir)
+        f.write("tasks.wutimeout = %d\n" % WUTIMEOUT)
+    return path
+
+
 def write_log(workdir):
     path = os.path.join(workdir, NAME + ".log")
     with open(path, "w") as f:
@@ -263,6 +277,7 @@ def build(workdir, **kwargs):
                         create=True)
     populate(db, workdir)
     write_log(workdir)
+    write_snapshot(workdir)
     options = dict(threaded=False,
                    uploaddir=os.path.join(workdir, NAME + ".upload"),
                    nrsubdir=0,

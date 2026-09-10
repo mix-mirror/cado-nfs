@@ -68,6 +68,7 @@ const state = {
     clientPage: {limit: 100, offset: 0},
     wuFilters: {status: '', assigned_to: '', task: '', limit: 50},
     logTail: 200,
+    parameters: null,
 };
 
 let timer = null;
@@ -332,6 +333,53 @@ function strandedCard() {
                h('span', {class: 'muted'}, 'minutes')));
 }
 
+/* The two ceilings whose only effect is to abort the computation. They
+ * live on the overview because the moment you want them is the moment
+ * a long run is about to be lost. */
+function ceilingsCard() {
+    const tunables = (state.parameters || {}).parameters;
+    if (!tunables) return null;
+    const rows = Object.keys(tunables).sort().map((name) => {
+        const p = tunables[name];
+        const near = p.counter_value !== null
+            && p.counter_value !== undefined
+            && p.value > 0 && p.counter_value / p.value >= 0.8;
+        return h('tr', {},
+            h('td', {class: 'mono'}, name),
+            h('td', {class: 'num'},
+              h('span', {style: near ? 'color:var(--bad);font-weight:600'
+                         : ''},
+                (p.counter_value === null || p.counter_value === undefined
+                 ? '\u2013' : p.counter_value) + ' / ' + p.value),
+              p.overridden
+                  ? h('span', {class: 'faint'}, ' (raised)') : null),
+            h('td', {class: 'num'},
+              h('button', {
+                  class: 'small',
+                  title: 'Double this ceiling. It only decides when the'
+                      + ' computation gives up, so raising it cannot'
+                      + ' change what is computed \u2014 and the change'
+                      + ' is written to a new parameters snapshot.',
+                  onclick: (e) => raiseCeiling(e.target, name,
+                                               2 * p.value),
+              }, 'double')));
+    });
+    return card('Give-up thresholds',
+        h('div', {class: 'tablewrap'}, h('table', {}, h('tbody', {}, rows))),
+        h('p', {class: 'faint', style: 'font-size:12px;margin-bottom:0'},
+          'These abort the computation when the counter reaches them. ',
+          'Raising one changes nothing about what is computed, and is ',
+          'recorded in a fresh parameters snapshot so the run stays ',
+          'reproducible.'));
+}
+
+function raiseCeiling(button, name, value) {
+    return guard(button, async () => {
+        const r = await api.setParameter(name, value);
+        return {marked: [name], skipped: [], message: r.message};
+    });
+}
+
 function overview() {
     const main = document.getElementById('main');
     clear(main);
@@ -343,6 +391,8 @@ function overview() {
         h('div', {class: 'grid wide'}, pipelineCard(), clientsSummaryCard()),
         stranded ? h('div', {style: 'height:16px'}) : null,
         stranded ? h('div', {class: 'grid'}, stranded) : null,
+        h('div', {style: 'height:16px'}),
+        h('div', {class: 'grid wide'}, ceilingsCard() || h('div', {})),
     ]);
 }
 
@@ -673,6 +723,8 @@ async function refresh(immediate = false) {
             wanted.push(api.summary().then((r) => { state.summary = r; }));
             wanted.push(api.clientsSummary()
                 .then((r) => { state.clientsSummary = r; }));
+            wanted.push(api.parameters()
+                .then((r) => { state.parameters = r; }));
         }
         if (state.view === 'clients') {
             wanted.push(api.clientsSummary()

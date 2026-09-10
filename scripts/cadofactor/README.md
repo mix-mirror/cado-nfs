@@ -115,6 +115,8 @@ are one-shot subcommands:
 ./cado-nfs-monitor.py ... clients --reclaim grvingt-42
 ./cado-nfs-monitor.py ... wu list --status=ASSIGNED --older-than=2h
 ./cado-nfs-monitor.py ... wu reclaim --older-than=2h
+./cado-nfs-monitor.py ... parameters
+./cado-nfs-monitor.py ... parameters maxtimedout 500
 ./cado-nfs-monitor.py ... log --follow
 ./cado-nfs-monitor.py ... status --json | jq .progress
 ```
@@ -123,6 +125,16 @@ The script imports nothing from the cado tree and needs nothing beyond
 the standard library, so you can copy it to your laptop on its own. If
 the `rich` package is installed it is used for the full-screen `watch`
 view; without it the same information is repainted as plain text.
+
+**When a run is about to give up.** `tasks.maxtimedout` and
+`tasks.maxfailed` abort the computation once enough workunits have
+timed out or failed, and today that means losing the run and
+restarting it. Those two can be raised from the dashboard or with
+`cado-nfs-monitor.py ... parameters maxtimedout 500`. They are the only
+parameters that can: both do nothing but decide when to give up, so
+raising one cannot change what is computed, and the new value is
+written to a fresh `parameters_snapshot` so the run stays reproducible
+from its snapshots.
 
 **After the fact.** To look at a working directory that no computation
 is currently driving -- one that has finished, or that you stopped --

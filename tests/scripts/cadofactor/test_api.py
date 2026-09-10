@@ -291,10 +291,15 @@ def section_views(app, f):
             "summary=1 still reports the total")
     f.equal(brief["counts"], clients_payload["counts"],
             "summary=1 reports the same tallies")
-    f.check(len(brief["top"]) <= len(EXPECT["clients"]),
-            "summary=1 names only the top contributors")
-    f.check(len(json.dumps(brief)) < len(json.dumps(clients_payload)) / 2,
-            "summary=1 is much smaller than the full list",
+    # The property that matters is not that it is smaller here -- with
+    # a handful of clients the top list *is* all of them -- but that it
+    # is bounded, so that it stays the same size when the pool is a
+    # thousand machines and the full list is half a megabyte.
+    f.equal(len(brief["top"]),
+            min(len(EXPECT["clients"]), views.TOP_CLIENTS_LIMIT),
+            "summary=1 names at most the top few contributors")
+    f.check(len(json.dumps(brief)) < len(json.dumps(clients_payload)),
+            "and is smaller than the full list even at this scale",
             "%d vs %d bytes" % (len(json.dumps(brief)),
                                 len(json.dumps(clients_payload))))
 
@@ -424,6 +429,77 @@ def section_actions(app, f):
                          json={"older_than": 10 * WUTIMEOUT}).get_json()
     f.equal(result["marked"], [],
             "nothing is old enough for a very long cutoff")
+
+    # --- the ceilings the api may raise ---------------------------
+    from cadofactor.api import views
+
+    listing = client.get("/api/v1/parameters", headers=headers)
+    f.equal(listing.status_code, 200, "the tunable ceilings are listed")
+    tunables = listing.get_json()["parameters"]
+    f.equal(sorted(tunables), sorted(views.TUNABLE_PARAMETERS),
+            "and they are exactly the declared ones")
+    f.check(all(k in tunables[n] for n in tunables
+                for k in ("value", "default", "overridden", "counter",
+                          "counter_value")),
+            "each says where it stands")
+
+    # Anything not on the list must be refused outright: this is not a
+    # general parameter-setting endpoint.
+    for forbidden in ("rels_wanted", "qrange", "lpb0", "wutimeout"):
+        f.equal(client.post("/api/v1/parameters/%s" % forbidden,
+                            headers=headers,
+                            json={"value": 1}).status_code, 404,
+                "%s is not tunable" % forbidden)
+
+    f.equal(client.post("/api/v1/parameters/maxtimedout", headers=headers,
+                        json={}).status_code, 400,
+            "a change with no value is refused")
+    f.equal(client.post("/api/v1/parameters/maxtimedout", headers=headers,
+                        json={"value": "lots"}).status_code, 400,
+            "a non-integer value is refused")
+    f.equal(client.post("/api/v1/parameters/maxtimedout", headers=headers,
+                        json={"value": 0}).status_code, 400,
+            "a non-positive value is refused")
+
+    # The sieving task in the fixture has wu_timedout = 3, so a ceiling
+    # at or below that would abort the run at the next timeout.
+    f.equal(client.post("/api/v1/parameters/maxtimedout", headers=headers,
+                        json={"value": 2}).status_code, 409,
+            "a value that would abort the run immediately is refused")
+
+    before = sorted(os.listdir(app.wdir))
+    response = client.post("/api/v1/parameters/maxtimedout",
+                           headers=headers, json={"value": 250})
+    f.equal(response.status_code, 200, "raising a ceiling is accepted")
+    result = response.get_json()
+    f.equal(result["value"], 250, "the new value is reported back")
+
+    f.equal(client.get("/api/v1/parameters",
+                       headers=headers).get_json()
+            ["parameters"]["maxtimedout"]["value"], 250,
+            "and is what the api now reports")
+    f.check(client.get("/api/v1/parameters", headers=headers).get_json()
+            ["parameters"]["maxtimedout"]["overridden"],
+            "marked as overridden rather than as the default")
+
+    # The whole point: the record stays complete. A fresh snapshot must
+    # appear, and resuming from it must reproduce the new value.
+    after = sorted(os.listdir(app.wdir))
+    fresh = [f2 for f2 in after if f2 not in before]
+    f.check(len(fresh) == 1, "exactly one new file was written",
+            "new files: %r" % fresh)
+    f.check(fresh and fresh[0].startswith(NAME + ".parameters_snapshot."),
+            "and it is the next parameters snapshot")
+    f.equal(os.path.basename(result["snapshot"]), fresh[0],
+            "which is the one the response names")
+
+    from cadofactor import cadoparams
+    reread = cadoparams.Parameters()
+    reread.readfile(result["snapshot"])
+    f.equal(reread.get_or_set_default("tasks.maxtimedout", 0), 250,
+            "the snapshot records the value in force")
+    f.equal(reread.get_or_set_default("tasks.wutimeout", 0), WUTIMEOUT,
+            "and still carries what the run started with")
 
     # Actions need the token too.
     f.equal(client.post("/api/v1/clients/grvingt-01/reclaim").status_code,

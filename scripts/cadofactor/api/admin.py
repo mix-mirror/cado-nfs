@@ -38,6 +38,10 @@ import flask
 
 from cadofactor.api.auth import require_token
 from cadofactor.api.spec import api_route, json_body, query_parameter
+from cadofactor.api.views import (API_OVERRIDES_TABLE,
+                                  TOP_CLIENTS_LIMIT,
+                                  TUNABLE_PARAMETERS)
+from cadofactor.database import DictDbDirectAccess
 from cadofactor.workunit import STATUS_NAMES, WuStatus
 
 logger = logging.getLogger("API server")
@@ -54,7 +58,7 @@ MAX_PAGE = 500
 # form names. Both exist because pools get big: 1400 clients is half a
 # megabyte of JSON, and that is a small run.
 MAX_CLIENT_PAGE = 500
-TOP_CLIENTS = 10
+TOP_CLIENTS = TOP_CLIENTS_LIMIT
 
 
 def spec_schemas():
@@ -172,6 +176,65 @@ def spec_schemas():
             },
         },
     }
+
+
+def next_snapshot(workdir, name, overrides):
+    """
+    Record the parameters now in force as a fresh snapshot.
+
+    cado-nfs runs are meant to be reproducible from a
+    <name>.parameters_snapshot.<N> file, and cado-nfs.py writes one at
+    the start of every run. A ceiling raised from the api would
+    otherwise appear in no snapshot at all, so we write the next one in
+    the sequence: the highest-numbered snapshot keeps describing the
+    parameters actually in force, and resuming from it reproduces this
+    configuration rather than the one the run started with.
+
+    Returns the path written, or None if there was no snapshot to build
+    on -- in which case the caller should say so rather than pretend
+    the record is complete.
+    """
+    from cadofactor import cadoparams
+
+    existing = []
+    prefix = name + ".parameters_snapshot."
+    try:
+        for entry in os.listdir(workdir):
+            if entry.startswith(prefix) and entry[len(prefix):].isdigit():
+                existing.append(int(entry[len(prefix):]))
+    except OSError as e:
+        logger.error("Cannot list %s to write a snapshot: %s", workdir, e)
+        return None
+    if not existing:
+        return None
+
+    latest = os.path.join(workdir, prefix + str(max(existing)))
+    parameters = cadoparams.Parameters()
+    try:
+        parameters.readfile(latest)
+    except Exception as e:
+        logger.error("Cannot read %s: %s", latest, e)
+        return None
+
+    for key, value in overrides.items():
+        parameters.set_simple("tasks." + key, value)
+
+    # O_EXCL, and step forward on a clash: cado-nfs.py picks the first
+    # free number the same way, and it may be doing so right now.
+    for number in range(max(existing) + 1, max(existing) + 100):
+        path = os.path.join(workdir, prefix + str(number))
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o666)
+        except FileExistsError:
+            continue
+        except OSError as e:
+            logger.error("Cannot write %s: %s", path, e)
+            return None
+        with os.fdopen(fd, "w") as handle:
+            handle.write(str(parameters))
+            handle.write("\n")
+        return path
+    return None
 
 
 def tail_file(path, lines):
@@ -565,9 +628,13 @@ class AdminEndpoints(object):
         # away from the computation it is supposed to be watching. So
         # the whole list is opt-in, and paginated.
         if flask.request.args.get("summary") in ("1", "true", "yes"):
+            # Ten rows, so a couple of extra fields cost nothing and
+            # save the caller from needing the full list to draw a
+            # useful table.
             payload["top"] = [
                 {k: c[k] for k in ("clientid", "state", "completed",
-                                   "failed", "in_flight", "share")}
+                                   "failed", "in_flight", "share",
+                                   "last_seen", "typical_turnaround")}
                 for c in clients[:TOP_CLIENTS]]
             payload["truncated"] = max(0, len(clients) - TOP_CLIENTS)
             return json_response(payload)
@@ -714,6 +781,115 @@ class AdminEndpoints(object):
                                          limit=MAX_PAGE)
         marked, skipped = self._mark_for_resubmit(rows)
         return self._action_result(marked, skipped)
+
+    @api_route(API + "/parameters", tags=["actions"], auth=True,
+               summary="The ceilings that may be raised while running",
+               description="A deliberately tiny list. Both entries do"
+                           " nothing except abort the computation when"
+                           " a counter passes them, so raising one"
+                           " cannot change what the run computes, only"
+                           " whether it survives long enough to finish."
+                           " Everything else stays in the parameter"
+                           " file, so that a run remains reproducible"
+                           " from its snapshot.",
+               responses={200: ("Current value, default, and how close"
+                                " the running task is to it",
+                                {"type": "object"})})
+    @require_token
+    def api_parameters(self):
+        return json_response({"parameters": self.views.tunables()})
+
+    @api_route(API + "/parameters/<name>", methods=["POST"],
+               tags=["actions"], auth=True,
+               summary="Raise one ceiling",
+               description="Writes the new value where the running"
+                           " tasks will pick it up, and records it by"
+                           " writing the next parameters_snapshot in"
+                           " the sequence, so that the highest-numbered"
+                           " snapshot still describes the parameters in"
+                           " force and resuming from it reproduces"
+                           " them. The change is also logged.",
+               request_body=json_body(
+                   {"type": "object",
+                    "required": ["value"],
+                    "properties": {
+                        "value": {"type": "integer", "minimum": 1}}}),
+               responses={
+                   200: ("The new value, and the snapshot written",
+                         {"type": "object"}),
+                   400: "Not an integer, or not a positive one",
+                   404: "No such tunable parameter",
+                   409: "The value would abort the run immediately, or"
+                        " no task is running to pick it up"})
+    @require_token
+    def api_set_parameter(self, name):
+        self._refuse_if_read_only()
+        if name not in TUNABLE_PARAMETERS:
+            flask.abort(404, "%r is not tunable while the computation"
+                             " runs. Tunable: %s. Everything else"
+                             " belongs in the parameter file, so that"
+                             " the run stays reproducible from its"
+                             " snapshot."
+                        % (name, ", ".join(sorted(TUNABLE_PARAMETERS))))
+
+        body = flask.request.get_json(silent=True) or {}
+        if "value" not in body:
+            flask.abort(400, "expected a JSON body with a 'value'")
+        try:
+            value = int(body["value"])
+        except (TypeError, ValueError):
+            flask.abort(400, "'value' must be an integer")
+        if value < 1:
+            flask.abort(400, "'value' must be positive")
+
+        tunables = self.views.tunables()
+        counter = tunables[name]["counter_value"]
+        if counter is not None and value <= counter:
+            # Lowering a ceiling below where the counter already stands
+            # would abort the computation the next time it moves. That
+            # is almost certainly not what was meant.
+            flask.abort(409,
+                        "%s already stands at %d, so setting %s to %d"
+                        " would abort the computation at the next"
+                        " occurrence. Pass a larger value."
+                        % (tunables[name]["counter"], counter, name,
+                           value))
+
+        overrides = self.views.overrides()
+        overrides[name] = value
+
+        # Write the record before the value takes effect, so that a
+        # crash in between leaves a snapshot promising something the
+        # run did not do, rather than a run doing something no snapshot
+        # records.
+        snapshot = None
+        if self.app.wdir and self.app.computation_name:
+            snapshot = next_snapshot(self.app.wdir,
+                                     self.app.computation_name,
+                                     overrides)
+            if snapshot is None:
+                logger.warning("Could not write a parameters snapshot"
+                               " for the change to %s", name)
+
+        DictDbDirectAccess(self.app.get_db_connection(),
+                           API_OVERRIDES_TABLE)[name] = value
+        self.views.invalidate()
+        logger.info("api: %s raised to %d (was %d)%s",
+                    name, value, tunables[name]["value"],
+                    "; recorded in " + os.path.basename(snapshot)
+                    if snapshot else "; NO snapshot could be written")
+
+        return json_response({
+            "name": name,
+            "value": value,
+            "previous": tunables[name]["value"],
+            "snapshot": snapshot,
+            "message": ("%s is now %d. The running task picks this up"
+                        " the next time it checks." % (name, value))
+            + ("" if snapshot else
+               " WARNING: no parameters snapshot could be written, so"
+               " this change is recorded only in the log."),
+        })
 
     @api_route(API + "/serving", methods=["GET", "POST"],
                tags=["actions"], auth=True,

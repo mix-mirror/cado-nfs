@@ -161,6 +161,15 @@ export function clients(query = {}) {
 }
 
 export const stats = () => call(PREFIX + '/stats', {revalidate: true});
+export const parameters = () =>
+    call(PREFIX + '/parameters', {revalidate: true});
+
+export async function setParameter(name, value) {
+    const r = await call(PREFIX + '/parameters/' + encodeURIComponent(name),
+                         {method: 'POST', body: {value}});
+    invalidate();
+    return r;
+}
 
 export function workunits(query = {}) {
     const params = new URLSearchParams();

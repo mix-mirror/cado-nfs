@@ -48,6 +48,39 @@ SERVER_STATE_TABLE = "api_server_state"
 # Table that cadotask.CompleteFactorization publishes progress into.
 PROGRESS_TABLE = "api_progress"
 
+# Table through which the api may raise a ceiling while a computation
+# runs. See TUNABLE_PARAMETERS below for what may go in it, and
+# cadotask.ClientServerTask.tunable() for how a task picks it up.
+API_OVERRIDES_TABLE = "api_overrides"
+
+# The only parameters the api may change, and deliberately a very short
+# list. Both of these do nothing whatsoever except abort the
+# computation when a counter passes them: they change no workunit, no
+# range, and no relation, so raising one cannot alter what the run
+# computes -- only whether it survives to finish computing it. Every
+# other parameter stays in the parameter file, where a run's snapshot
+# can be trusted to describe it.
+#
+# "counter" names the entry in the task's own state that the ceiling is
+# compared against, so that the api can refuse a value which would
+# abort the run at the next opportunity.
+TUNABLE_PARAMETERS = {
+    "maxtimedout": {
+        "default": 100,
+        "counter": "wu_timedout",
+        "description": "How many workunits may time out before the"
+                       " computation gives up. Raise this when clients"
+                       " are being lost faster than expected but the"
+                       " run is otherwise healthy.",
+    },
+    "maxfailed": {
+        "default": 100,
+        "counter": "wu_failed",
+        "description": "How many workunits may fail before the"
+                       " computation gives up.",
+    },
+}
+
 # Statuses that mean "this client returned something".
 DONE_STATUSES = (WuStatus.RECEIVED_OK,
                  WuStatus.VERIFIED_OK)
@@ -56,6 +89,10 @@ FAILED_STATUSES = (WuStatus.RECEIVED_ERROR,
 
 # How long a cheap aggregate stays good enough to serve again.
 AGGREGATE_TTL = 5.0
+
+# How many clients the summary form of /api/v1/clients names. The
+# point of that form is that its size does not grow with the pool.
+TOP_CLIENTS_LIMIT = 10
 
 # Fallback when the computation has not told us its tasks.wutimeout.
 DEFAULT_WUTIMEOUT = 10800.0
@@ -458,6 +495,47 @@ class DbViews(object):
                 out[key] = json.loads(raw.get(key, "[]"))
             except ValueError:
                 out[key] = []
+        return out
+
+    def overrides(self):
+        """
+        The ceilings the api has raised, as {name: int}.
+        """
+        raw = self.read_state_table(API_OVERRIDES_TABLE)
+        out = {}
+        for key, value in raw.items():
+            if key in TUNABLE_PARAMETERS:
+                try:
+                    out[key] = int(value)
+                except (TypeError, ValueError):
+                    pass
+        return out
+
+    def tunables(self):
+        """
+        What each tunable ceiling is set to, where that came from, and
+        how close the running task is to hitting it.
+        """
+        published = self.progress_state()
+        try:
+            defaults = json.loads(published.get("tunable_defaults", "{}"))
+        except ValueError:
+            defaults = {}
+        overrides = self.overrides()
+        current = published.get("current") or None
+        state = self.read_state_table(current) if current else {}
+
+        out = {}
+        for name, spec in TUNABLE_PARAMETERS.items():
+            default = defaults.get(name, spec["default"])
+            out[name] = {
+                "value": overrides.get(name, default),
+                "default": default,
+                "overridden": name in overrides,
+                "counter": spec["counter"],
+                "counter_value": state.get(spec["counter"]),
+                "description": spec["description"],
+            }
         return out
 
     def task_names(self):

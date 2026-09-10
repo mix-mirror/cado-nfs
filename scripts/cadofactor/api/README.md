@@ -179,6 +179,56 @@ handed stale work; and the actions are refused with 409, because
 setting `NEED_RESUBMIT` with no task running would leave a trap for
 whichever task started next.
 
+## Changing a parameter while the computation runs
+
+Almost nothing may be changed. A cado-nfs run is meant to be
+reproducible from its `<name>.parameters_snapshot.<N>`, and a knob
+turned at three in the morning that appears in no snapshot would break
+that quietly, which is the worst way for it to break.
+
+Exactly two parameters are tunable, and they were chosen because
+neither can affect what the run computes:
+
+| Parameter | Counter | What it does |
+|---|---|---|
+| `maxtimedout` | `wu_timedout` | aborts the computation when this many workunits have timed out |
+| `maxfailed` | `wu_failed` | aborts the computation when this many have failed |
+
+Both do *nothing at all* except decide when to give up. They change no
+workunit, no range and no relation, so raising one cannot alter the
+result — only whether the run survives long enough to produce it. That
+is also why they are worth exposing: today, when a long run trips one
+of these, it dies and you restart it.
+
+    GET  /api/v1/parameters              what they are, and how close
+    POST /api/v1/parameters/maxtimedout  {"value": 500}
+
+Everything else — `rels_wanted`, `qrange`, `lpb*`, `admin`/`admax`,
+`wutimeout` — is refused with 404, and is meant to be. Note in
+particular that `rels_wanted` lives in the task's own state and already
+has `request_more_relations()` to mediate it.
+
+Two things keep the record straight:
+
+* **The change is written to the next snapshot in the sequence.** The
+  api reads the highest-numbered `parameters_snapshot`, applies the
+  override and writes the next one, so "the highest-numbered snapshot
+  describes the parameters in force" stays true and resuming from it
+  reproduces the configuration rather than the one the run started
+  with. If no snapshot can be written the api says so, loudly, in its
+  answer and in the log.
+* **The change is logged**, by the api when it is made and by each task
+  the first time it notices.
+
+A value at or below where the counter already stands is refused with
+409: it would abort the computation at the next occurrence, which is
+not what anybody means by raising a ceiling.
+
+Tasks read these through `ClientServerTask.tunable()`, which goes to
+the database every time rather than through `make_db_dict()` — the
+cached flavour would keep serving the value read at startup, which is
+precisely the case this exists for.
+
 ## Where things live
 
     api/spec.py     the @api_route decorator, and OpenAPI assembly

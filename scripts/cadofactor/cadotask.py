@@ -23,6 +23,8 @@ from cadofactor.workunit import Workunit
 from struct import error as structerror
 from shutil import rmtree
 from cadofactor.api_server import ApiServer
+from cadofactor.api.views import API_OVERRIDES_TABLE, TUNABLE_PARAMETERS
+from cadofactor.database import DictDbDirectAccess
 from cadofactor.cadoutils import Algorithm, Computation
 from cadofactor.cadoutils import xgcd, CRT, next_prime
 
@@ -1893,6 +1895,48 @@ class ClientServerTask(Task, wudb.UsesWorkunitDb, patterns.Observer):
         self.send_notification(Notification.SUBSCRIBE_WU_NOTIFICATIONS, None)
         self.clients = None
 
+        # Ceilings that the api may raise while we run. Read through a
+        # *direct* dict, never make_db_dict(): the cached flavour would
+        # keep serving the value we saw at startup, which is precisely
+        # the case this exists for. See cadofactor/api/admin.py.
+        self._overrides = DictDbDirectAccess(self.db_connection,
+                                             API_OVERRIDES_TABLE)
+        self._overrides_seen = {}
+
+    def tunable(self, key):
+        """
+        Value of a parameter that the api is allowed to raise mid-run.
+
+        Only the ceilings whose sole effect is to abort the computation
+        are tunable this way -- see TUNABLE_PARAMETERS. Everything else
+        comes from the parameter file and stays there, so that a run
+        remains reproducible from its snapshot.
+
+        A change is logged the first time this task notices it, and the
+        api has already written a fresh parameters_snapshot recording
+        it, so the highest-numbered snapshot still describes the
+        parameters in force.
+        """
+        fallback = self.params[key]
+        try:
+            value = self._overrides.get(key)
+        except Exception as e:
+            self.logger.warning("Could not read %s override (%s)", key, e)
+            return fallback
+        if value is None:
+            return fallback
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            self.logger.warning("Ignoring non-numeric %s override %r",
+                                key, value)
+            return fallback
+        if self._overrides_seen.get(key) != value:
+            self._overrides_seen[key] = value
+            self.logger.info("%s raised from %s to %s via the api",
+                             key, fallback, value)
+        return value
+
     def submit_wu(self, wu, commit=True):
         """
         Submit a WU and update wu_submitted counter
@@ -1912,7 +1956,7 @@ class ClientServerTask(Task, wudb.UsesWorkunitDb, patterns.Observer):
         """
         self.logger.debug("Cancelling: %s", wuid)
         key = "wu_timedout"
-        maxtimedout = self.params["maxtimedout"]
+        maxtimedout = self.tunable("maxtimedout")
         if not self.state[key] < maxtimedout:
             self.logger.error("Exceeded maximum number of timed out "
                               "workunits, maxtimedout=%d ", maxtimedout)
@@ -2199,7 +2243,7 @@ class ClientServerTask(Task, wudb.UsesWorkunitDb, patterns.Observer):
 
         self.log_failed_command_error(message, 0)
         key = "wu_failed"
-        maxfailed = self.params["maxfailed"]
+        maxfailed = self.tunable("maxfailed")
         maxwuerror = self.params["maxwuerror"]
         if not self.state[key] < maxfailed:
             self.logger.error("Exceeded maximum number of failed "
@@ -7705,6 +7749,12 @@ class CompleteFactorization(HasState,
             name=str(self.params["name"]),
             wutimeout=int(timeouts["wutimeout"]),
             wutimeoutcheck=int(timeouts["wutimeoutcheck"]),
+            # What the parameter file says these ceilings are, so that
+            # the api can show the operator what it would be changing.
+            tunable_defaults=json.dumps(
+                self.parameters.myparams(
+                    {k: TUNABLE_PARAMETERS[k]["default"]
+                     for k in TUNABLE_PARAMETERS})),
             current="",
             current_started=0,
             done=json.dumps([]),
