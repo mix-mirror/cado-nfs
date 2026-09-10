@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<!--
+  The cado-nfs dashboard.
+
+  A static page that talks to /api/v1 and to nothing else. There is no
+  build step, no package manager and no vendored third-party code: what
+  you see in this directory is what runs. It is served by the api server
+  itself, from scripts/cadofactor/api/ui/.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<!--
+  A referrer would leak the page url to anything this page links to.
+  The token never travels in the url, but there is no reason to be
+  chatty either.
+-->
+<meta name="referrer" content="no-referrer">
+<title>cado-nfs</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'&gt;&lt;text y='13' font-size='13'&gt;∏&lt;/text&gt;&lt;/svg&gt;">
+</head>
+<body>
+<div id="root">
+  <main>
+    <section class="card gate">
+      <h2>cado-nfs dashboard</h2>
+      <p>Loading…</p>
+      <noscript>
+        <p>This page needs JavaScript. Without it, use
+        <code>cado-nfs-monitor.py</code>, which does the same thing from a
+        terminal, or read <code>/api/v1/openapi.json</code> and call the
+        api directly.</p>
+      </noscript>
+    </section>
+  </main>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

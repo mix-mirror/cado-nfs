@@ -875,6 +875,13 @@ scripts/cadofactor/api/__init__.py
 scripts/cadofactor/api/admin.py
 scripts/cadofactor/api/auth.py
 scripts/cadofactor/api/spec.py
+scripts/cadofactor/api/ui/api.js
+scripts/cadofactor/api/ui/app.js
+scripts/cadofactor/api/ui/charts.js
+scripts/cadofactor/api/ui/components.js
+scripts/cadofactor/api/ui/docs.html
+scripts/cadofactor/api/ui/index.html
+scripts/cadofactor/api/ui/style.css
 scripts/cadofactor/api/views.py
 scripts/cadofactor/api_server.py
 scripts/cadofactor/cadocommand.py

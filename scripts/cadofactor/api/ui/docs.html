@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<!--
+  Human-readable rendering of the cado-nfs api.
+
+  The document it renders is /api/v1/openapi.json, which the server
+  assembles from the same @api_route declarations that create the
+  routes. This page is a convenience; the JSON is the artefact, and any
+  OpenAPI tool you prefer will read it.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>cado-nfs api</title>
+<!-- Absolute: this page is served at /api/docs, so a relative
+     href would resolve to /api/style.css. -->
+<link rel="stylesheet" href="/ui/style.css">
+<style>
+main { max-width: 940px; }
+.op { border-bottom: 1px solid var(--border); padding: 14px 0; }
+.op:last-child { border-bottom: none; }
+.op .line { display: flex; gap: 10px; align-items: baseline;
+            flex-wrap: wrap; }
+.method { font-family: var(--mono); font-weight: 700; font-size: 12px;
+          padding: 1px 7px; border-radius: 5px; }
+.method.get { background: var(--accent-soft); color: var(--accent); }
+.method.post { background: var(--warn-soft); color: var(--warn); }
+.path { font-family: var(--mono); font-size: 13.5px; font-weight: 600; }
+.op p { margin: 6px 0 0; color: var(--muted); }
+.op .summary { color: var(--text); }
+dl { margin: 10px 0 0; display: grid;
+     grid-template-columns: max-content 1fr; gap: 3px 14px; }
+dt { font-family: var(--mono); font-size: 12.5px; color: var(--accent); }
+dd { margin: 0; color: var(--muted); font-size: 13px; }
+h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em;
+     color: var(--faint); margin: 12px 0 4px; }
+pre.schema { background: var(--panel-2); padding: 10px 12px;
+             border-radius: 7px; font-family: var(--mono); font-size: 12px;
+             overflow-x: auto; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">cado-nfs <span class="name">api</span></div>
+  <div class="meta"><span id="version"></span></div>
+  <div class="spacer"></div>
+  <a href="/api/v1/openapi.json">openapi.json</a>
+  <a href="/ui/">dashboard</a>
+</header>
+<main id="main"><p class="muted">Loading…</p></main>
+
+<script type="module">
+const main = document.getElementById('main');
+
+function h(tag, attrs = {}, ...children) {
+    const el = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+        if (v === null || v === undefined || v === false) continue;
+        if (k === 'class') el.className = v; else el.setAttribute(k, v);
+    }
+    for (const c of children.flat(Infinity)) {
+        if (c === null || c === undefined || c === false) continue;
+        el.appendChild(c instanceof Node ? c : document.createTextNode(c));
+    }
+    return el;
+}
+
+function schemaOf(content) {
+    if (!content) return null;
+    const json = content['application/json'];
+    return json ? json.schema : null;
+}
+
+function describeSchema(schema) {
+    if (!schema) return null;
+    if (schema.$ref) {
+        return h('pre', {class: 'schema'}, schema.$ref.split('/').pop());
+    }
+    return h('pre', {class: 'schema'}, JSON.stringify(schema, null, 2));
+}
+
+function operation(path, method, op, secured) {
+    const params = op.parameters || [];
+    const body = schemaOf((op.requestBody || {}).content);
+    return h('div', {class: 'op'},
+        h('div', {class: 'line'},
+            h('span', {class: 'method ' + method}, method.toUpperCase()),
+            h('span', {class: 'path'}, path),
+            secured ? h('span', {class: 'pill accent'}, 'token') : null,
+            h('span', {class: 'faint mono', style: 'font-size:12px'},
+              op.operationId)),
+        op.summary ? h('p', {class: 'summary'}, op.summary) : null,
+        op.description ? h('p', {}, op.description) : null,
+        params.length ? h('div', {},
+            h('h3', {}, 'parameters'),
+            h('dl', {}, params.flatMap((p) => [
+                h('dt', {}, p.name + (p.required ? '*' : '')),
+                h('dd', {}, (p.in === 'path' ? 'in path. ' : '')
+                    + (p.description || '')
+                    + ((p.schema && p.schema.type)
+                        ? ' (' + p.schema.type + ')' : '')),
+            ]))) : null,
+        body ? h('div', {},
+            h('h3', {}, 'request body'), describeSchema(body)) : null,
+        op.responses ? h('div', {},
+            h('h3', {}, 'responses'),
+            h('dl', {}, Object.entries(op.responses).flatMap(
+                ([code, r]) => [
+                    h('dt', {}, code),
+                    h('dd', {}, r.description || '',
+                      describeSchema(schemaOf(r.content))),
+                ]))) : null);
+}
+
+fetch('/api/v1/openapi.json', {headers: {Accept: 'application/json'}})
+    .then((r) => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+    })
+    .then((doc) => {
+        document.getElementById('version').textContent =
+            'OpenAPI ' + doc.openapi + ' · version ' + doc.info.version
+            + (doc.info.license ? ' · ' + doc.info.license.name : '');
+        main.textContent = '';
+        if (doc.info.description) {
+            main.appendChild(h('p', {class: 'muted'},
+                               doc.info.description));
+        }
+
+        /* Group by tag, in the order the document lists them, so that
+         * the client endpoints and the operator endpoints do not get
+         * mixed up. */
+        const tags = (doc.tags || []).map((t) => t.name);
+        const seen = new Set();
+        const byTag = new Map();
+        for (const [path, entry] of Object.entries(doc.paths)) {
+            for (const [method, op] of Object.entries(entry)) {
+                for (const tag of (op.tags || ['misc'])) {
+                    if (!byTag.has(tag)) byTag.set(tag, []);
+                    byTag.get(tag).push([path, method, op]);
+                    seen.add(tag);
+                }
+            }
+        }
+        const order = tags.filter((t) => seen.has(t))
+            .concat([...seen].filter((t) => !tags.includes(t)));
+
+        for (const tag of order) {
+            const ops = byTag.get(tag)
+                .sort((a, b) => a[0].localeCompare(b[0]));
+            main.appendChild(h('section', {class: 'card',
+                                           style: 'margin-bottom:16px'},
+                h('h2', {}, tag),
+                ...ops.map(([path, method, op]) =>
+                    operation(path, method, op, !!op.security))));
+        }
+    })
+    .catch((e) => {
+        main.textContent = '';
+        main.appendChild(h('div', {class: 'banner error'},
+            'Could not load /api/v1/openapi.json: ' + e.message));
+    });
+</script>
+</body>
+</html>

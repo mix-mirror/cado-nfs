@@ -18,6 +18,13 @@ set(cadofactor_scripts
     api/auth.py
     api/spec.py
     api/views.py
+    api/ui/api.js
+    api/ui/app.js
+    api/ui/charts.js
+    api/ui/components.js
+    api/ui/docs.html
+    api/ui/index.html
+    api/ui/style.css
     cadofactor_tools/__init__.py
     cadofactor_tools/certificate.py
     cadofactor_tools/upload_dir.py
