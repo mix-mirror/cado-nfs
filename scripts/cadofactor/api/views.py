@@ -68,16 +68,27 @@ DEFAULT_WUTIMEOUT = 10800.0
 TURNAROUND_WINDOW = 2000
 
 # A client needs at least this many workunits inside that window before
-# we trust what it says about its own speed.
+# we will estimate its speed at all.
 TURNAROUND_MIN_SAMPLES = 4
+
+# ... and this many before we believe the estimate enough to drop the
+# floor below and go purely on what the client has shown us.
+TURNAROUND_TRUSTED_SAMPLES = 10
 
 # How many typical turnarounds a client may be silent for before we stop
 # believing it is merely slow. Generous, because turnaround is noisy.
 TURNAROUND_FACTOR = 6
 
-# ... but never call a client stale sooner than this, however brisk it
-# usually is.
-MIN_STALE_AFTER = 600.0
+# While the estimate still rests on few samples, do not call a client
+# stale sooner than this many times tasks.wutimeoutcheck. That is the
+# interval at which the running task looks for work to reassign, so
+# there is nothing to be gained by being twitchier than a small
+# multiple of it -- and a floor expressed in absolute seconds would be
+# arbitrary.
+MIN_STALE_AFTER_CHECKS = 2
+
+# Used only when the computation has not told us its wutimeoutcheck.
+DEFAULT_WUTIMEOUTCHECK = 60.0
 
 
 def status_name(status):
@@ -153,7 +164,8 @@ def median(values):
     return (ordered[middle - 1] + ordered[middle]) / 2
 
 
-def stale_after(typical, wutimeout):
+def stale_after(typical, wutimeout, wutimeoutcheck=DEFAULT_WUTIMEOUTCHECK,
+                samples=0):
     """
     How long a client may be silent before we call it stale.
 
@@ -166,28 +178,40 @@ def stale_after(typical, wutimeout):
     silent for forty is in trouble, even though wutimeout may be three
     hours away.
 
-    So the threshold is the client's own typical turnaround, times a
-    generous factor, bounded at both ends:
+    So the threshold is that client's own typical turnaround times a
+    generous factor, capped at wutimeout -- past which the server
+    reassigns the work regardless, so calling the client "working"
+    would be a lie.
 
-     - never longer than wutimeout, because the server reassigns the
-       work at that point regardless, so claiming the client is still
-       working past it would be a lie;
-     - never shorter than MIN_STALE_AFTER, because turnaround varies
-       and a fast client should not be declared stale over one slow
-       workunit.
+    While the estimate still rests on few samples it is also floored,
+    at a small multiple of tasks.wutimeoutcheck: that is how often the
+    running task looks for work to reassign, so being twitchier than
+    that buys nothing. Once enough workunits agree with each other,
+    the floor is dropped -- consistent evidence is exactly the case
+    where an arbitrary floor has no rationale left.
 
-    >>> stale_after(240, 10800)          # 4 min turnaround, 3 h timeout
+    >>> stale_after(240, 10800, 60, samples=50)   # 4 min, well attested
     1440
-    >>> stale_after(7200, 10800)         # slower than the cap allows
+    >>> stale_after(7200, 10800, 60, samples=50)  # slower than the cap
     10800
-    >>> stale_after(2, 10800)            # very fast: the floor applies
-    600.0
-    >>> stale_after(None, 10800)         # nothing learnt yet
+    >>> stale_after(2, 10800, 60, samples=50)     # fast, and believed
+    12
+
+    The same brisk client, with only a handful of workunits behind it,
+    is given the benefit of the doubt:
+
+    >>> stale_after(2, 10800, 60, samples=5)
+    120
+
+    >>> stale_after(None, 10800, 60)              # nothing learnt yet
     10800
     """
     if typical is None:
         return wutimeout
-    return min(wutimeout, max(MIN_STALE_AFTER, TURNAROUND_FACTOR * typical))
+    threshold = TURNAROUND_FACTOR * typical
+    if samples < TURNAROUND_TRUSTED_SAMPLES:
+        threshold = max(threshold, MIN_STALE_AFTER_CHECKS * wutimeoutcheck)
+    return min(wutimeout, threshold)
 
 
 def liveness(age, in_flight, threshold):
@@ -214,9 +238,9 @@ def liveness(age, in_flight, threshold):
     A client whose workunits usually take four minutes is stale long
     before a three-hour wutimeout would say so:
 
-    >>> liveness(2400, 1, stale_after(240, 10800))
+    >>> liveness(2400, 1, stale_after(240, 10800, 60, samples=50))
     'stale'
-    >>> liveness(2400, 1, stale_after(None, 10800))
+    >>> liveness(2400, 1, stale_after(None, 10800, 60))
     'working'
     """
     if age is None:
@@ -447,6 +471,13 @@ class DbViews(object):
         except (TypeError, ValueError):
             return DEFAULT_WUTIMEOUT
 
+    def wutimeoutcheck(self):
+        try:
+            return float(self.progress_state().get("wutimeoutcheck")
+                         or DEFAULT_WUTIMEOUTCHECK)
+        except (TypeError, ValueError):
+            return DEFAULT_WUTIMEOUTCHECK
+
     # ---------------- workunits ----------------
 
     def status_counts(self):
@@ -583,6 +614,7 @@ class DbViews(object):
         aggregates = self.client_aggregates()
         samples = self.turnarounds()
         timeout = self.wutimeout()
+        check = self.wutimeoutcheck()
         now = time.time()
         total_completed = sum(c["completed"] for c in aggregates.values())
 
@@ -602,7 +634,8 @@ class DbViews(object):
                        else None)
             client["typical_turnaround"] = typical
             client["turnaround_samples"] = len(observed)
-            client["stale_after"] = stale_after(typical, timeout)
+            client["stale_after"] = stale_after(typical, timeout, check,
+                                                samples=len(observed))
             client["liveness_basis"] = ("turnaround" if typical is not None
                                         else "wutimeout")
 

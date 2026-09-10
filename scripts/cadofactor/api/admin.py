@@ -512,7 +512,10 @@ class AdminEndpoints(object):
                            " stale_after and liveness_basis. The"
                            " threshold is never longer than"
                            " tasks.wutimeout, since the work is"
-                           " reassigned at that point regardless.",
+                           " reassigned at that point regardless, and"
+                           " while few workunits back the estimate it"
+                           " is also floored at a small multiple of"
+                           " tasks.wutimeoutcheck.",
                responses={200: ("Client list",
                                 {"type": "object",
                                  "properties": {

@@ -90,11 +90,18 @@ But a client that has been running for a while has already told us how
 long its workunits take — the workunits table records `timeassigned`
 and `timeresult` for everything it has handed back. So the threshold is
 per client: `stale_after` is `TURNAROUND_FACTOR` (6) times the median
-turnaround of that client's recent workunits, bounded below by
-`MIN_STALE_AFTER` (10 min, since turnaround is noisy and one slow
-workunit should not condemn a machine) and above by `tasks.wutimeout`
-(past which the server reassigns the work anyway, so calling the client
-"working" would be a lie).
+turnaround of that client's recent workunits, capped at
+`tasks.wutimeout`, past which the server reassigns the work anyway and
+calling the client "working" would be a lie.
+
+While that estimate still rests on fewer than
+`TURNAROUND_TRUSTED_SAMPLES` (10) workunits it is also floored, at
+`MIN_STALE_AFTER_CHECKS` (2) times `tasks.wutimeoutcheck` — the
+interval at which the running task actually looks for work to reassign,
+so there is nothing to be gained by being twitchier than a small
+multiple of it. Once enough workunits agree with each other the floor
+is dropped: consistent evidence is precisely the case where an
+arbitrary floor has no rationale left.
 
 A machine that returns a workunit every two minutes and has been silent
 for twenty is thus flagged long before a three-hour `wutimeout` would

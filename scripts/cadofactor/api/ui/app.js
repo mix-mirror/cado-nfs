@@ -335,7 +335,9 @@ function clientsView() {
           'recently been taking \u2014 hover a state to see the ',
           'reasoning. It is never longer than tasks.wutimeout (',
           duration(payload.wutimeout), '), which is when its work gets ',
-          'reassigned anyway.'),
+          'reassigned anyway, and while few workunits back the ',
+          'estimate it is held down to a couple of ',
+          'tasks.wutimeoutcheck intervals.'),
         table([
             {key: 'clientid', label: 'client', mono: true},
             {key: 'state', label: 'state',

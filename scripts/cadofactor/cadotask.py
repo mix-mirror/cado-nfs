@@ -7686,7 +7686,11 @@ class CompleteFactorization(HasState,
         # stale. Individual client-server tasks may override it under
         # their own node; the top-level value is a good enough basis for
         # a liveness heuristic.
-        wutimeout = self.parameters.myparams({"wutimeout": 10800})
+        # wutimeoutcheck matters too: it is how often the running task
+        # looks for timed-out workunits, and therefore the granularity
+        # at which anything can actually be acted on.
+        timeouts = self.parameters.myparams({"wutimeout": 10800,
+                                             "wutimeoutcheck": 60})
 
         self.publish_progress(pipeline=json.dumps(
             [{"name": t.name, "title": t.title} for t in self.tasks]),
@@ -7699,7 +7703,8 @@ class CompleteFactorization(HasState,
                 str(self.params["computation"])),
             algo=str(self.params["algo"]),
             name=str(self.params["name"]),
-            wutimeout=int(wutimeout["wutimeout"]),
+            wutimeout=int(timeouts["wutimeout"]),
+            wutimeoutcheck=int(timeouts["wutimeoutcheck"]),
             current="",
             current_started=0,
             done=json.dumps([]),

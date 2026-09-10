@@ -35,6 +35,7 @@ NAME = "c60"
 # tasks.wutimeout as the fixture publishes it. Client liveness is
 # expressed in multiples of this.
 WUTIMEOUT = 3600
+WUTIMEOUTCHECK = 60
 
 PIPELINE = [
     {"name": "polyselect",
@@ -64,6 +65,13 @@ GONE = "grvingt-03"
 FAST = "grvingt-04"
 FAST_TURNAROUND = 120
 FAST_SILENT_FOR = 1200
+# A client so brisk that six times its pace is below the small-sample
+# floor. With enough samples agreeing, the floor is dropped and the
+# threshold is purely what this client has shown us -- which is the
+# case that tells us the sample count is really reaching stale_after.
+BRISK = "grvingt-05"
+BRISK_TURNAROUND = 2
+BRISK_SAMPLES = 12
 
 # What the tests expect to find, so that a change to the population
 # above shows up as a failure here rather than as a silent drift.
@@ -76,8 +84,11 @@ EXPECT = {
                "failed": 2},
         GONE: {"state": "gone", "in_flight": 4, "completed": 28,
                "failed": 0},
-        FAST: {"state": "stale", "in_flight": 1, "completed": 10,
+        FAST: {"state": "stale", "in_flight": 1, "completed": 12,
                "failed": 0, "liveness_basis": "turnaround"},
+        BRISK: {"state": "idle", "in_flight": 0,
+                "completed": BRISK_SAMPLES, "failed": 0,
+                "liveness_basis": "turnaround"},
     },
     # What the old, global-only rule would have said about FAST. The
     # point of the per-client threshold is that these differ.
@@ -111,6 +122,7 @@ def populate(db, workdir):
         "algo": "nfs",
         "name": NAME,
         "wutimeout": WUTIMEOUT,
+        "wutimeoutcheck": WUTIMEOUTCHECK,
         "current": "sieving",
         "current_started": time.time() - 5400.0,
         "done": json.dumps([
@@ -182,7 +194,7 @@ def populate(db, workdir):
                 result_age=newest + i * 20, resultclient=client)
 
     # FAST: a short, very regular turnaround, and then silence.
-    for i in range(10):
+    for i in range(12):
         add("%s_sieving_%d-%d" % (NAME, 600000 + i * 1000,
                                   601000 + i * 1000),
             WuStatus.VERIFIED_OK,
@@ -191,6 +203,13 @@ def populate(db, workdir):
             result_age=FAST_SILENT_FOR + i * 300, resultclient=FAST)
     add("%s_sieving_650000-651000" % NAME, WuStatus.ASSIGNED,
         assigned=FAST_SILENT_FOR, client=FAST)
+
+    for i in range(BRISK_SAMPLES):
+        add("%s_sieving_%d-%d" % (NAME, 300000 + i * 1000,
+                                  301000 + i * 1000),
+            WuStatus.VERIFIED_OK,
+            assigned=4 + BRISK_TURNAROUND + i * 10, client=BRISK,
+            result_age=4 + i * 10, resultclient=BRISK)
 
     for i in range(2):
         add("%s_sieving_%d-%d" % (NAME, 800000 + i * 1000,

@@ -17,8 +17,10 @@ import threading
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import api_fixture                                          # noqa: E402
-from api_fixture import (EXPECT, NAME, WUTIMEOUT, FAST,     # noqa: E402
-                         FAST_TURNAROUND, FAST_SILENT_FOR)  # noqa: E402
+from api_fixture import (EXPECT, NAME, WUTIMEOUT,          # noqa: E402
+                         WUTIMEOUTCHECK, FAST,             # noqa: E402
+                         FAST_TURNAROUND, FAST_SILENT_FOR,  # noqa: E402
+                         BRISK, BRISK_TURNAROUND)          # noqa: E402
 
 
 class Failures(object):
@@ -210,7 +212,7 @@ def section_views(app, f):
     counts = summary["counts"]
     f.equal(counts["AVAILABLE"], 12, "available workunits are counted")
     f.equal(counts["ASSIGNED"], 10, "assigned workunits are counted")
-    f.equal(counts["VERIFIED_OK"], 188, "finished workunits are counted")
+    f.equal(counts["VERIFIED_OK"], 202, "finished workunits are counted")
     f.equal(counts["VERIFIED_ERROR"], 2, "failed workunits are counted")
     f.equal(summary["total"], sum(counts.values()), "the total adds up")
 
@@ -244,6 +246,27 @@ def section_views(app, f):
             "%s: is given less rope than wutimeout would" % FAST,
             "stale_after=%r wutimeout=%r" % (fast["stale_after"],
                                              WUTIMEOUT))
+    # A client brisk enough that six times its pace falls below the
+    # small-sample floor. With enough workunits agreeing, the floor is
+    # dropped -- and since it would otherwise have applied, this is
+    # what shows the sample count really reaches stale_after.
+    floor = views.MIN_STALE_AFTER_CHECKS * WUTIMEOUTCHECK
+    brisk = clients[BRISK]
+    f.check(brisk["turnaround_samples"] >= views.TURNAROUND_TRUSTED_SAMPLES,
+            "%s: well enough attested to drop the floor" % BRISK)
+    f.check(abs(brisk["typical_turnaround"] - BRISK_TURNAROUND) < 1.0,
+            "%s: its typical turnaround is measured" % BRISK,
+            "got %r" % brisk["typical_turnaround"])
+    f.check(views.TURNAROUND_FACTOR * brisk["typical_turnaround"] < floor,
+            "%s: six times its pace is below the floor" % BRISK)
+    f.check(abs(brisk["stale_after"]
+                - views.TURNAROUND_FACTOR * brisk["typical_turnaround"])
+            < 1.0,
+            "%s: so the threshold is its own pace, floor dropped" % BRISK,
+            "stale_after=%r floor=%r" % (brisk["stale_after"], floor))
+    f.equal(views.stale_after(BRISK_TURNAROUND, WUTIMEOUT, WUTIMEOUTCHECK,
+                              samples=3), floor,
+            "with few samples the same pace would have got the floor")
     f.equal(views.liveness(FAST_SILENT_FOR, 1, WUTIMEOUT),
             EXPECT["fast_state_under_wutimeout_only"],
             "%s: the global rule alone would have called it %s"
