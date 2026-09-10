@@ -53,8 +53,25 @@ class DB_SQLite(DB_base):
                              **kwargs)
             self.pending = pending_transactions.new_db(self)
 
-    def connect(self):
-        c = self.ConnectionWrapper(self.path)
+    def connect(self, shared_across_threads=False):
+        """
+        Open a connection to the database.
+
+        sqlite3 refuses, by default, to let a connection be used from a
+        thread other than the one that opened it. That guard is right
+        for the tasks, which each keep their own connection in the main
+        thread. It is wrong for a pool: a pooled connection is used by
+        one thread at a time, but not always by the *same* thread.
+
+        shared_across_threads lifts the guard, and may only be passed
+        by a caller that guarantees the exclusivity itself -- which is
+        what cadofactor/api/pool.py does by handing a session to
+        exactly one borrower at a time.
+        """
+        kwargs = {}
+        if shared_across_threads:
+            kwargs['check_same_thread'] = False
+        c = self.ConnectionWrapper(self.path, **kwargs)
         self.advertise_connection()
         return c
 

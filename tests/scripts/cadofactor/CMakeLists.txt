@@ -49,7 +49,7 @@ cado_define_test(test_python_api
     TIMEOUT 60
     NO_DEFAULT_RUN
 )
-foreach(section openapi auth views actions doctests)
+foreach(section openapi auth views actions doctests threading)
     cado_divert_test(test_python_api ${section}
         APPEND_ARGUMENTS ${section})
 endforeach()

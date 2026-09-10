@@ -147,7 +147,9 @@ class DB_MySQL(DB_base):
         def in_transaction(self):
             return self._conn.in_transaction
 
-    def connect(self, *args, **kwargs):
+    def connect(self, *args, shared_across_threads=False, **kwargs):
+        # Accepted and ignored: unlike sqlite3, the mysql connector has
+        # no same-thread guard to lift. See DB_SQLite.connect().
         return self.ConnectionWrapper(self, *args, **kwargs)
 
     def __init__(self, uri, create=False):

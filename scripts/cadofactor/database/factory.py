@@ -25,8 +25,9 @@ class DBFactory(object):
                 msg += "\n" + "Error from %s: %s" % (c, error[c])
             raise ValueError(msg)
 
-    def connect(self):
-        return self.base.connect()
+    def connect(self, shared_across_threads=False):
+        return self.base.connect(
+            shared_across_threads=shared_across_threads)
 
     @property
     def uri_without_credentials(self):

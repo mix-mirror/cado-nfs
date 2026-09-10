@@ -565,6 +565,70 @@ def section_actions(app, f):
 
 
 # ------------------------------------------------------------------
+# threading
+# ------------------------------------------------------------------
+
+
+def section_threading(app, f):
+    """
+    The configuration that used to be a trap: server.threaded=True.
+
+    werkzeug's threaded server starts a new thread for every request.
+    The old per-thread connection dictionary therefore meant a fresh
+    sqlite connection *and* three EXCLUSIVE CREATE TABLE statements per
+    request, against the database the computation is using, plus a
+    dictionary that grew forever. What this checks is that a burst of
+    concurrent requests is served correctly from a bounded pool.
+    """
+    import collections
+    import threading
+    import urllib.error
+    import urllib.request
+
+    app.serve()
+    url = app.url
+    token = app.api_token
+    f.check(app._pool._maxsize >= 2, "the session pool is sized")
+
+    results = collections.Counter()
+    errors = []
+
+    def hammer(rounds):
+        for _ in range(rounds):
+            for path in ("/api/v1/progress", "/api/v1/clients?summary=1",
+                         "/api/v1/workunits/summary"):
+                request = urllib.request.Request(url + path)
+                request.add_header("Authorization", "Bearer " + token)
+                try:
+                    with urllib.request.urlopen(request,
+                                                timeout=30) as answer:
+                        results[answer.status] += 1
+                except Exception as e:                  # noqa: BLE001
+                    errors.append("%s: %s" % (path, e))
+
+    threads = [threading.Thread(target=hammer, args=(20,))
+               for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    f.equal(errors, [], "600 concurrent requests all succeeded")
+    f.equal(sorted(results), [200], "and all answered 200")
+    f.equal(results[200], 600, "with none lost")
+
+    # The point of the pool: a bounded number of connections, however
+    # many requests and however many threads went through it.
+    f.check(app._pool._created <= app._pool._maxsize,
+            "the pool stayed within its bound",
+            "created %d, max %d" % (app._pool._created,
+                                    app._pool._maxsize))
+    f.check(app._pool._created < 50,
+            "far fewer sessions than requests were created",
+            "created %d for 600 requests" % app._pool._created)
+
+
+# ------------------------------------------------------------------
 # doctests
 # ------------------------------------------------------------------
 
@@ -609,6 +673,7 @@ SECTIONS = {
     "views": section_views,
     "actions": section_actions,
     "doctests": section_doctests,
+    "threading": section_threading,
 }
 
 
@@ -621,7 +686,9 @@ def main(argv):
     import logging
     logging.getLogger().setLevel(logging.CRITICAL)
 
-    app = api_fixture.build(workdir)
+    app = api_fixture.build(workdir,
+                            **({"threaded": True}
+                               if section == "threading" else {}))
 
     if section == "serve":
         section_serve(app, workdir)

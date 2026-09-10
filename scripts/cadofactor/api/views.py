@@ -330,30 +330,6 @@ def split_wuid(wuid, name, task_names):
     return (None, None, attempt)
 
 
-class _PerThread(object):
-    """
-    Keeps one object per thread.
-
-    sqlite3 connections may only be used from the thread that created
-    them, which is why ApiServer keeps a per-thread connection pool.
-    Anything built on top of such a connection inherits the constraint.
-    """
-
-    def __init__(self, factory):
-        self._factory = factory
-        self._objects = {}
-        self._lock = threading.Lock()
-
-    def get(self):
-        tid = threading.current_thread().ident
-        with self._lock:
-            obj = self._objects.get(tid)
-            if obj is None:
-                obj = self._factory()
-                self._objects[tid] = obj
-            return obj
-
-
 class ServingState(object):
     """
     The "are we still handing workunits out" flag, kept in the database.
@@ -370,15 +346,16 @@ class ServingState(object):
     KEY = "serving_wus"
     TTL = 1.0
 
-    def __init__(self, connection_factory):
-        self._dicts = _PerThread(
-            lambda: DictDbDirectAccess(connection_factory(),
-                                       SERVER_STATE_TABLE))
+    def __init__(self, session_factory):
+        # A session carries the dictionary already built on its own
+        # connection, so nothing here creates tables or connections.
+        # See cadofactor/api/pool.py.
+        self._session = session_factory
         self._cached = None
         self._cached_at = 0.0
 
     def set(self, serving):
-        self._dicts.get()[self.KEY] = bool(serving)
+        self._session().server_state[self.KEY] = bool(serving)
         self._cached = bool(serving)
         self._cached_at = time.time()
 
@@ -387,7 +364,7 @@ class ServingState(object):
         if self._cached is not None and now - self._cached_at < self.TTL:
             return self._cached
         try:
-            value = self._dicts.get().get(self.KEY, True)
+            value = self._session().server_state.get(self.KEY, True)
         except Exception as e:
             logger.warning("Could not read serving state (%s),"
                            " assuming we still serve workunits", e)
@@ -405,8 +382,8 @@ class DbViews(object):
     so that it is usable from any request thread.
     """
 
-    def __init__(self, connection_factory):
-        self._connection_factory = connection_factory
+    def __init__(self, session_factory):
+        self._session = session_factory
         self._cache = {}
         self._lock = threading.Lock()
 
@@ -416,7 +393,7 @@ class DbViews(object):
         """
         Run function(cursor, ...) under a read-only transaction.
         """
-        connection = self._connection_factory()
+        connection = self._session().connection
         return connection.harness_transaction(READONLY, function,
                                               *args, **kwargs)
 

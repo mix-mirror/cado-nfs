@@ -875,6 +875,7 @@ scripts/cadofactor/api/README.md
 scripts/cadofactor/api/__init__.py
 scripts/cadofactor/api/admin.py
 scripts/cadofactor/api/auth.py
+scripts/cadofactor/api/pool.py
 scripts/cadofactor/api/spec.py
 scripts/cadofactor/api/ui/api.js
 scripts/cadofactor/api/ui/app.js

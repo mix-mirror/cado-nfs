@@ -38,10 +38,8 @@ import flask
 
 from cadofactor.api.auth import require_token
 from cadofactor.api.spec import api_route, json_body, query_parameter
-from cadofactor.api.views import (API_OVERRIDES_TABLE,
-                                  TOP_CLIENTS_LIMIT,
+from cadofactor.api.views import (TOP_CLIENTS_LIMIT,
                                   TUNABLE_PARAMETERS)
-from cadofactor.database import DictDbDirectAccess
 from cadofactor.workunit import STATUS_NAMES, WuStatus
 
 logger = logging.getLogger("API server")
@@ -940,8 +938,7 @@ class AdminEndpoints(object):
                 logger.warning("Could not write a parameters snapshot"
                                " for the change to %s", name)
 
-        DictDbDirectAccess(self.app.get_db_connection(),
-                           API_OVERRIDES_TABLE)[name] = value
+        self.app.session().overrides[name] = value
         self.views.invalidate()
         logger.info("api: %s raised to %d (was %d)%s",
                     name, value, tunables[name]["value"],

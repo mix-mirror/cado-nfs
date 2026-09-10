@@ -16,6 +16,7 @@ set(cadofactor_scripts
     api/__init__.py
     api/admin.py
     api/auth.py
+    api/pool.py
     api/spec.py
     api/views.py
     api/ui/api.js

@@ -42,13 +42,13 @@ import threading
 import time
 
 from cadofactor.cadofactor_tools import UploadDirProvider
-from cadofactor.database import DictDbDirectAccess
 from cadofactor import wudb
 from cadofactor.api import auth
 from cadofactor.api import spec
 from cadofactor.api.spec import api_route
 from cadofactor.api.admin import AdminEndpoints, spec_schemas
 from cadofactor.api.views import ServingState, DbViews
+from cadofactor.api.pool import DbSession, DbSessionPool
 from werkzeug import serving
 
 from ipaddress import ip_address, ip_network
@@ -233,10 +233,28 @@ recent than 3.1.3) fixes this.
         if threaded is None:
             threaded = False if debug else True
 
+        # How many requests we intend to have in flight at once. Note
+        # that werkzeug's threaded server does not limit its threads to
+        # this -- it starts one per request -- so this is a target for
+        # sizing the database pool, and the pool is then what actually
+        # bounds concurrent database work.
+        if not threaded:
+            self.nthreads = 1
+        elif type(threaded) is int:
+            self.nthreads = threaded
+        else:
+            self.nthreads = min(multiprocessing.cpu_count() * 2, 4) + 1
+
         # inject fields to the api app object.
 
         self.database_uri = dbdata
-        self._db_connection_pool = {}
+        # One pooled session per server thread, plus a little slack for
+        # the odd concurrent request. Bounding it also bounds how many
+        # writers queue against sqlite, which is no bad thing.
+        self._pool = DbSessionPool(self._new_session,
+                                   maxsize=self.nthreads + 2)
+        self._offline_session = None
+        self._offline_lock = threading.Lock()
         self.wuaccess = None
         self.only_registered = only_registered
         self.upload_dir_provider = UploadDirProvider(uploaddir, nrsubdir)
@@ -259,14 +277,14 @@ recent than 3.1.3) fixes this.
         # connections are bound to the thread that created them, which
         # is why _get_db_things keeps a per-thread pool.
         self.read_only = read_only
-        self.serving = ServingState(self.get_db_connection)
+        self.serving = ServingState(self.session)
         # Starting up means we are serving again -- unless we are only
         # here to look, in which case we must not resurrect a flag that
         # an earlier run left cleared.
         self.serving.set(not read_only)
 
         # Read-only queries behind the monitoring endpoints.
-        self.views = DbViews(self.get_db_connection)
+        self.views = DbViews(self.session)
 
         # The authenticated part of the api needs somewhere private to
         # put its token. Without a workdir we simply do not offer it.
@@ -392,14 +410,9 @@ recent than 3.1.3) fixes this.
 
         options = {}
 
-        nthreads = 1
+        nthreads = self.nthreads
 
         if threaded:
-            if type(threaded) is int:
-                nthreads = threaded
-            else:
-                nthreads = min(multiprocessing.cpu_count() * 2, 4) + 1
-
             options['threaded'] = nthreads
 
         if self._ssl_context is not None:
@@ -483,25 +496,55 @@ recent than 3.1.3) fixes this.
         # app.shutdown()
         self.server.shutdown()
 
-    def _get_db_things(self):
-        tid = threading.current_thread().ident
-        m = self._db_connection_pool.get(tid)
-        if m is None:
-            c = self.database_uri.connect()
-            wuaccess = wudb.WuAccess(c)
-            files = DictDbDirectAccess(c, 'server_registered_filenames')
-            self._db_connection_pool[tid] = (c, wuaccess, files)
+    def _new_session(self):
+        return DbSession(
+            lambda: self.database_uri.connect(shared_across_threads=True))
 
-        return self._db_connection_pool[tid]
+    def session(self):
+        """
+        The database session belonging to the work in hand.
+
+        Inside a request it is borrowed from the pool and given back
+        when the request ends, so the cost of opening a connection and
+        of creating the dictionary tables is paid once per pooled
+        session rather than once per request. That matters because
+        werkzeug's threaded server runs a *new thread for every
+        request*: keyed by thread, as this used to be, every request
+        opened a connection and took an EXCLUSIVE lock to create tables
+        that already existed, on the very database the computation is
+        trying to use.
+
+        Outside a request -- cado-nfs.py's own thread calling
+        stop_serving_wus(), say -- a single long-lived session is used
+        instead, under a lock.
+        """
+        if flask.has_request_context():
+            session = getattr(flask.g, "cado_session", None)
+            if session is None:
+                session = self._pool.borrow()
+                flask.g.cado_session = session
+            return session
+        with self._offline_lock:
+            if self._offline_session is None:
+                self._offline_session = self._new_session()
+            return self._offline_session
+
+    def _release_session(self, exc=None):
+        session = getattr(flask.g, "cado_session", None)
+        if session is not None:
+            flask.g.cado_session = None
+            # A request that blew up may have left a transaction open;
+            # do not hand that to the next borrower.
+            self._pool.release(session, discard=exc is not None)
 
     def get_db_connection(self):
-        return self._get_db_things()[0]
+        return self.session().connection
 
     def get_wuaccess(self):
-        return self._get_db_things()[1]
+        return self.session().wuaccess
 
     def get_registered_filenames(self):
-        return self._get_db_things()[2]
+        return self.session().registered_filenames
 
     def get_upload_folder(self, key):
         """
@@ -541,6 +584,7 @@ recent than 3.1.3) fixes this.
     def _route_endpoints(self):
         self.errorhandler(HTTPException)(self.api_errorhandler)
         self.before_request(self.api_limit_remote_addr)
+        self.teardown_request(self._release_session)
 
         # Routes and their documentation come from the same @api_route
         # declaration, so an endpoint cannot be reachable and yet absent
