@@ -115,6 +115,18 @@ Two things are missing on purpose:
   it already has enough relations drops its outstanding workunits
   without cancelling them.
 
+## Looking at a computation that is not running
+
+    cado-nfs.py --ui-only /tmp/c120/c120.parameters_snapshot.0
+
+serves the monitoring api and the dashboard for an existing working
+directory and does nothing else. The read endpoints behave as usual.
+Workunit requests are answered 410 and uploads 409, so a client that
+happens to still be pointed at that address is told to stop rather than
+handed stale work; and the actions are refused with 409, because
+setting `NEED_RESUBMIT` with no task running would leave a trap for
+whichever task started next.
+
 ## Where things live
 
     api/spec.py     the @api_route decorator, and OpenAPI assembly

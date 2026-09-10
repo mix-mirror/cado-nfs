@@ -121,6 +121,7 @@ class ApiServer(flask.Flask):
                  timeout_hint=None,
                  workdir=None,
                  name=None,
+                 read_only=False,
                  # linger_before_quit=False
                  ):
         # some parameters are currently not targeted by the
@@ -166,6 +167,14 @@ class ApiServer(flask.Flask):
         /api/v1/log endpoint tails. Without them the api server still
         serves clients, but the authenticated part of the api is
         disabled, since there is nowhere to put the token.
+
+        read_only is for looking at a working directory that no
+        computation is currently driving (cado-nfs.py --ui-only). The
+        monitoring endpoints work as usual, but no workunit is handed
+        out and no action is accepted: with no task running, there is
+        nobody to pick up a resubmission, and handing leftover
+        workunits to a client that happened to connect would be
+        actively wrong.
         """
 
         self.name = "API server"
@@ -249,8 +258,12 @@ recent than 3.1.3) fixes this.
         # get_db_connection is passed as a callable, not called: sqlite3
         # connections are bound to the thread that created them, which
         # is why _get_db_things keeps a per-thread pool.
+        self.read_only = read_only
         self.serving = ServingState(self.get_db_connection)
-        self.serving.set(True)
+        # Starting up means we are serving again -- unless we are only
+        # here to look, in which case we must not resurrect a flag that
+        # an earlier run left cleared.
+        self.serving.set(not read_only)
 
         # Read-only queries behind the monitoring endpoints.
         self.views = DbViews(self.get_db_connection)
@@ -670,6 +683,9 @@ recent than 3.1.3) fixes this.
         #                   f" from {flask.request.remote_addr}"
         #                   f" with client identification {clientid}")
 
+        if self.read_only:
+            flask.abort(410, "This server is only serving the monitoring"
+                             " interface; no computation is running")
         if not self.serving.get():
             flask.abort(410, "Distributed computation finished")
 
@@ -747,6 +763,9 @@ recent than 3.1.3) fixes this.
                           400: "Missing WUid, clientid or fileinfo",
                           403: "A file of that name already exists"})
     def api_upload_file(self):
+        if self.read_only:
+            flask.abort(409, "This server is only serving the monitoring"
+                             " interface; no computation is running")
         clientid = flask.request.form.get('clientid')
         wuid = flask.request.form.get('WUid')
         errorcode = flask.request.form.get('errorcode')

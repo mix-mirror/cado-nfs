@@ -280,6 +280,20 @@ class AdminEndpoints(object):
     def _current_task(self):
         return self.views.progress_state().get("current") or None
 
+    def _refuse_if_read_only(self):
+        """
+        Actions need a running task to pick them up.
+
+        In --ui-only mode there is none, so a NEED_RESUBMIT we set here
+        would simply sit there until somebody started a computation
+        again -- at which point it would be charged to whatever task
+        happened to be running. Refuse instead of leaving that trap.
+        """
+        if getattr(self.app, "read_only", False):
+            flask.abort(409, "This server is only serving the monitoring"
+                             " interface; no task is running to act on"
+                             " what you would be asking for")
+
     def _mark_for_resubmit(self, rows):
         """
         Put workunits back in the pool, by way of NEED_RESUBMIT.
@@ -555,6 +569,7 @@ class AdminEndpoints(object):
                         " task that is not currently running"})
     @require_token
     def api_workunit_resubmit(self, wuid):
+        self._refuse_if_read_only()
         rows = self.app.get_wuaccess().query(limit=1, eq={"wuid": wuid})
         if not rows:
             flask.abort(404, "wuid does not exist")
@@ -586,6 +601,7 @@ class AdminEndpoints(object):
                                          "/ActionResult"})})
     @require_token
     def api_workunits_reclaim(self):
+        self._refuse_if_read_only()
         body = flask.request.get_json(silent=True) or {}
         try:
             older = float(body.get("older_than")
@@ -611,6 +627,7 @@ class AdminEndpoints(object):
                                          "/ActionResult"})})
     @require_token
     def api_client_reclaim(self, clientid):
+        self._refuse_if_read_only()
         rows = self.views.list_workunits(status=WuStatus.ASSIGNED,
                                          assigned_to=clientid,
                                          limit=MAX_PAGE)
@@ -638,6 +655,7 @@ class AdminEndpoints(object):
     @require_token
     def api_serving(self):
         if flask.request.method == "POST":
+            self._refuse_if_read_only()
             body = flask.request.get_json(silent=True) or {}
             if "serving" not in body:
                 flask.abort(400, "expected a JSON body with a"

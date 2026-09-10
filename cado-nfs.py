@@ -4,6 +4,7 @@ import sys
 import subprocess
 import re
 import itertools
+import threading
 
 if sys.hexversion < 0x03060000:
     sys.exit("Python 3.6 or newer is required to run this program.")
@@ -199,6 +200,29 @@ if __name__ == '__main__':
     logger.info("If this computation gets interrupted,"
                 " it can be resumed with %s %s",
                 sys.argv[0], snapshot_filename)
+
+    if toplevel_params.args.ui_only:
+        # Serve the monitoring api and the web ui for this working
+        # directory, and nothing else. No task is created, so nothing
+        # advances and nothing is handed to a client; this is purely a
+        # way to look at a computation that has finished, or that is
+        # not running at the moment.
+        server = cadotask.StartServerTask(
+                default_workdir=parameters.get_or_set_default(
+                    "tasks.workdir"),
+                parameters=parameters,
+                path_prefix=[],
+                db=db,
+                read_only=True)
+        server.run()
+        logger.info("Serving the monitoring interface only."
+                    " Press CTRL+C to quit.")
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            logger.info("Shutting down")
+        server.shutdown()
+        sys.exit(0)
 
     factorjob = cadotask.CompleteFactorization(db=db,
                                                parameters=parameters,

@@ -6878,7 +6878,8 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
                  parameters,
                  path_prefix,
                  db,
-                 whitelist=None):
+                 whitelist=None,
+                 read_only=False):
         super().__init__(db=db,
                          parameters=parameters,
                          path_prefix=path_prefix)
@@ -6973,6 +6974,7 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
             timeout_hint=servertimeout_hint,
             workdir=basedir,
             name=self.params["name"],
+            read_only=read_only,
             # linger_before_quit=lbq
             )
         self.state["port"] = self.server.get_port()

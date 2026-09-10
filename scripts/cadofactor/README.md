@@ -124,6 +124,18 @@ the standard library, so you can copy it to your laptop on its own. If
 the `rich` package is installed it is used for the full-screen `watch`
 view; without it the same information is repainted as plain text.
 
+**After the fact.** To look at a working directory that no computation
+is currently driving -- one that has finished, or that you stopped --
+start the interface on its own, the same way you would resume:
+
+```
+./cado-nfs.py --ui-only /tmp/c120/c120.parameters_snapshot.0
+```
+
+No task is created, so nothing advances; no workunit is handed out and
+the actions are refused, since with no task running there would be
+nobody to carry them out.
+
 Both are clients of the api and of nothing else. It is documented, and
 the running server serves the documentation:
 `<server>/api/v1/openapi.json`, rendered at `<server>/api/docs`. See

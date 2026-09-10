@@ -1118,8 +1118,9 @@ class Cado_NFS_toplevel(object):
 
         >>> del os.environ["NCPUS_FAKE"]
         '''
-        # Argument --server kills all slaves.* arguments
-        if self.args.server:
+        # Argument --server kills all slaves.* arguments, and so does
+        # --ui-only, which runs no computation at all.
+        if self.args.server or self.args.ui_only:
             for p in self.parameters.find(["slaves"], ""):
                 self.logger.warning("server mode,"
                                     " ignoring " + ".".join(p[0]+[p[1]]))
@@ -1254,6 +1255,14 @@ class Cado_NFS_toplevel(object):
         parser.add_argument(
             "--server",
             help="Run a bare server, do not start any clients",
+            action='store_true')
+        parser.add_argument(
+            "--ui-only",
+            help="Serve the monitoring api and the web ui for an"
+                 " existing working directory, and nothing else."
+                 " No task is run and no workunit is handed out, so"
+                 " this is a way to look at a computation that has"
+                 " finished or is not currently running.",
             action='store_true')
         comp_group = parser.add_mutually_exclusive_group()
         comp_group.add_argument(
