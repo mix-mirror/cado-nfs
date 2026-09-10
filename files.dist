@@ -871,6 +871,7 @@ portability.h
 scripts/CMakeLists.txt
 scripts/build_environment.sh
 scripts/cadofactor/README.md
+scripts/cadofactor/api/README.md
 scripts/cadofactor/api/__init__.py
 scripts/cadofactor/api/admin.py
 scripts/cadofactor/api/auth.py

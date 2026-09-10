@@ -66,6 +66,73 @@ fetched from `scriptpath+"/scripts/cadofactor"`, whence giving the path to
 the source tree as `scriptpath` should be fine.
 
 
+## Watching a computation
+
+A run that takes days does not have to be followed by reading the log.
+The server exposes a small api, and two things are built on it.
+
+**In a browser.** When it starts, `cado-nfs.py` logs a link:
+
+```
+Web UI: https://quiche.loria.fr:8001/ui/#token=b7f3...c19a
+```
+
+which shows where the computation stands — the current phase with its
+progress and ETA, the pipeline, how many workunits are in each state,
+which clients are connected, how much each has contributed, and whether
+any of them have gone quiet while still holding work. That last case
+comes with a button that hands their workunits back to the pool, which
+saves waiting out `tasks.wutimeout`.
+
+The dashboard answers `127.0.0.1` and `::1` only, so from another
+machine the way in is a tunnel:
+
+```
+ssh -L 8001:localhost:8001 quiche.loria.fr
+```
+
+and then <http://localhost:8001/ui/>. Widen `server.ui_whitelist` if you
+would rather expose it directly. Note that this is a *separate*
+whitelist from `server.whitelist`, which governs the clients: adding a
+whole cluster to the latter does not give it the former.
+
+**In a terminal.** `cado-nfs-monitor.py` does the same things over the
+same api:
+
+```
+./cado-nfs-monitor.py --workdir=/tmp/c120 \
+    --server=https://quiche.loria.fr:8001 --certsha1=[SHA1] watch
+```
+
+`--workdir` is a convenience: it is where the server put both the api
+token and its certificate, so giving it saves passing `--token` and
+`--certsha1` by hand. Besides `watch`, which is a live dashboard, there
+are one-shot subcommands:
+
+```
+./cado-nfs-monitor.py ... status
+./cado-nfs-monitor.py ... clients
+./cado-nfs-monitor.py ... clients --reclaim grvingt-42
+./cado-nfs-monitor.py ... wu list --status=ASSIGNED --older-than=2h
+./cado-nfs-monitor.py ... wu reclaim --older-than=2h
+./cado-nfs-monitor.py ... log --follow
+./cado-nfs-monitor.py ... status --json | jq .progress
+```
+
+The script imports nothing from the cado tree and needs nothing beyond
+the standard library, so you can copy it to your laptop on its own. If
+the `rich` package is installed it is used for the full-screen `watch`
+view; without it the same information is repainted as plain text.
+
+Both are clients of the api and of nothing else. It is documented, and
+the running server serves the documentation:
+`<server>/api/v1/openapi.json`, rendered at `<server>/api/docs`. See
+[`scripts/cadofactor/api/README.md`](scripts/cadofactor/api/README.md)
+for the token, the whitelists, and what the actions do and deliberately
+do not do.
+
+## Parameter files
+
 For complex set-ups, it is preferable to write a parameter file. Some
 examples are in
 [`scripts/cadofactor/parameters`](scripts/cadofactor/parameters),
