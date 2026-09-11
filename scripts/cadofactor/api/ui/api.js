@@ -218,6 +218,15 @@ export async function resubmitWorkunit(wuid) {
     return r;
 }
 
+/* The group forms. One request per group rather than one per client:
+ * a cluster can be a few hundred of them. */
+export async function reclaimClients(selector) {
+    const r = await call(PREFIX + '/clients/reclaim',
+                         {method: 'POST', body: selector});
+    invalidate();
+    return r;
+}
+
 export async function reclaimOlderThan(seconds) {
     const r = await call(PREFIX + '/workunits/reclaim',
                          {method: 'POST', body: {older_than: seconds}});

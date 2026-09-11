@@ -750,6 +750,14 @@ class AdminEndpoints(object):
             "total": len(clients),
             "pool_total": len(clients),
             "wutimeout": self.views.wutimeout(),
+            # How many distinct machines, clusters and domains the pool
+            # covers. Three integers, so they cost nothing to send, and
+            # they let a caller pick a sensible grouping before asking
+            # for one -- which otherwise takes a request to find out
+            # and a second request to act on.
+            "groupings": {key: len({(c.get(key) or "unknown")
+                                    for c in clients})
+                          for key in GROUPABLE},
         }
 
         # A real pool is large: a c180 polyselect run with 1400 clients

@@ -245,6 +245,20 @@ ol.pipeline li.running .dot {
 ol.pipeline li.pending .label { color: var(--faint); }
 ol.pipeline li.running .label { font-weight: 600; }
 
+/* A task turned off with tasks.<name>.run=false is not pending: it is
+ * not going to happen, and neither is anything behind it. Struck
+ * through rather than merely dimmed, so it cannot be mistaken for a
+ * task still waiting its turn. */
+ol.pipeline li.disabled .dot { background: var(--bad); opacity: 0.5; }
+ol.pipeline li.disabled .label {
+    color: var(--muted);
+    text-decoration: line-through;
+}
+ol.pipeline li.unreachable .dot { background: transparent;
+                                  border: 1px dashed var(--border); }
+ol.pipeline li.unreachable .label { color: var(--faint);
+                                    font-style: italic; }
+
 ol.pipeline .label {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -275,6 +289,22 @@ ol.pipeline .right {
 .pill.gone { background: var(--bad-soft); color: var(--bad); }
 .pill.unknown { background: var(--panel-2); color: var(--faint); }
 .pill.accent { background: var(--accent-soft); color: var(--accent); }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.done { background: var(--ok-soft); color: var(--ok); }
+.pill.running { background: var(--accent-soft); color: var(--accent); }
+.pill.disabled { background: var(--bad-soft); color: var(--bad); }
+.pill.pending, .pill.unreachable {
+    background: var(--panel-2); color: var(--faint);
+}
+
+/* A pill that is a way in rather than a label. The link carries no
+ * decoration of its own; the pill is the affordance. */
+a.pilllink {
+    text-decoration: none;
+    margin-right: 5px;
+    display: inline-block;
+}
+a.pilllink:hover .pill { outline: 1px solid currentColor; }
 
 /* ---------------- tables ---------------- */
 
@@ -342,6 +372,26 @@ button.primary {
 button.primary:hover { opacity: 0.9; color: #fff; }
 
 button.small { padding: 2px 8px; font-size: 12px; }
+
+/* Paging is done with links, so that a page of results can be
+ * bookmarked and the back button works. They still have to look like
+ * the buttons they sit next to. */
+a.button {
+    display: inline-block;
+    text-decoration: none;
+    color: var(--text);
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 5px 10px;
+}
+
+a.button.small { padding: 2px 8px; font-size: 12px; }
+a.button:hover { border-color: var(--accent); color: var(--accent); }
+a.button.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
 
 .controls {
     display: flex;
@@ -435,6 +485,43 @@ pre.log .lvl-debug { color: var(--faint); }
 
 .heartbeat.beat { opacity: 1; }
 .heartbeat.stale { background: var(--bad); opacity: 1; }
+
+/* A request in flight. On a loaded server the client view takes
+ * seconds, and a page that looks exactly the same while it waits is a
+ * page that looks broken. */
+.busy {
+    display: inline-block;
+    width: 60px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    overflow: hidden;
+    position: relative;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.busy.on { opacity: 1; }
+
+.busy.on::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 40%;
+    border-radius: 2px;
+    background: var(--accent);
+    animation: sweep 0.9s ease-in-out infinite;
+}
+
+@keyframes sweep {
+    from { left: -40%; }
+    to { left: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .busy.on::after { animation: none; left: 0; width: 100%; }
+}
 
 /* ---------------- charts ---------------- */
 

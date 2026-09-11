@@ -727,10 +727,44 @@ def watch_plain(server, args):
             return 0
 
 
+def client_selection(args):
+    """
+    The query string that narrows the client list, and the equivalent
+    selector for the group reclaim.
+
+    The two are kept together on purpose: acting on a selection one has
+    not looked at is how a mass action goes wrong, so the same options
+    do both.
+    """
+    query, selector = {}, {}
+    if args.group is not None:
+        query["group"] = args.group
+        query["group_by_key"] = args.group_by or "cluster"
+        selector["group"] = args.group
+        selector["group_by"] = args.group_by or "cluster"
+    if args.state:
+        query["state"] = args.state
+        selector["states"] = args.state.split(",")
+    return query, selector
+
+
 def cmd_clients(server, args):
-    if args.group_by:
-        payload = server.request("/api/v1/clients?group_by="
-                                 + urllib.parse.quote(args.group_by))
+    query, selector = client_selection(args)
+
+    if args.reclaim:
+        result = server.request("/api/v1/clients/%s/reclaim"
+                                % urllib.parse.quote(args.reclaim, safe=""),
+                                method="POST")
+        return report_action(args, result)
+
+    if args.reclaim_all:
+        result = server.request("/api/v1/clients/reclaim", method="POST",
+                                body=selector)
+        return report_action(args, result)
+
+    if args.group_by and args.group is None:
+        payload = server.request("/api/v1/clients?" + urllib.parse.urlencode(
+            dict(query, group_by=args.group_by)))
         lines = ["%-28s %7s %7s %8s %8s %6s  %s"
                  % (args.group_by, "clients", "cores", "flight",
                     "done", "share", "states")]
@@ -748,12 +782,9 @@ def cmd_clients(server, args):
         emit(args, payload, "\n".join(lines))
         return 0
 
-    if args.reclaim:
-        result = server.request("/api/v1/clients/%s/reclaim"
-                                % urllib.parse.quote(args.reclaim, safe=""),
-                                method="POST")
-        return report_action(args, result)
-    payload = server.request("/api/v1/clients")
+    payload = server.request(
+        "/api/v1/clients"
+        + ("?" + urllib.parse.urlencode(query) if query else ""))
     now = server.now()
     lines = ["%-24s %-8s %7s %7s %7s %6s %10s %10s"
              % ("client", "state", "flight", "done", "failed", "share",
@@ -1064,6 +1095,18 @@ def build_parser():
     p.set_defaults(func=cmd_watch)
 
     p = sub.add_parser("clients", help="what each client is up to")
+    p.add_argument("--state", metavar="STATE",
+                   help="only clients in this liveness state; several"
+                        " may be given, comma separated, as in"
+                        " --state=stale,gone")
+    p.add_argument("--group", metavar="KEY",
+                   help="only the clients of this machine, cluster or"
+                        " domain; --group-by says which is meant")
+    p.add_argument("--reclaim-all", action="store_true",
+                   help="reclaim what every client in the selection is"
+                        " holding. Narrow it with --group and --state"
+                        " first: the server refuses a selection that"
+                        " names nothing in particular.")
     p.add_argument("--reclaim", metavar="CLIENTID",
                    help="put the workunits this client holds back in the"
                         " pool")
