@@ -569,15 +569,44 @@ recent than 3.1.3) fixes this.
         d = wudb.DictDbAccess(self.get_db_connection(), 'tasks')
         return d['workdir']
 
-    def _resolve_whitelist(self, entries):
+    @staticmethod
+    def _resolve_whitelist(entries):
         """
-        Turn host names into /32 networks, leave CIDR strings alone.
+        Turn host names into /32 networks, leave addresses alone.
+
+        Only names are looked up. Handing an address or a CIDR block to
+        gethostbyname() asks the resolver a question with no answer,
+        and on a machine whose resolver is slow to say so -- a mac with
+        search domains and no reachable server, say -- each of those
+        non-answers can take seconds. The server used to do three of
+        them before it could serve anything at all, which was enough to
+        make the test suite time out on such a machine.
+
+        A bare address is left as it is rather than given a /32: it is
+        already a one-address network, and api_limit_remote_addr parses
+        it with the same ip_network() either way.
+
+        >>> ApiServer._resolve_whitelist(['127.0.0.1/32', '::1/128'])
+        ['127.0.0.1/32', '::1/128']
+        >>> ApiServer._resolve_whitelist(['10.0.0.1'])
+        ['10.0.0.1']
+        >>> ApiServer._resolve_whitelist(['0.0.0.0/0'])
+        ['0.0.0.0/0']
+        >>> ApiServer._resolve_whitelist([])
+        []
         """
         resolved = []
         for w in entries or []:
             try:
+                # Already an address or a block: nothing to ask anyone.
+                ip_network(w, strict=False)
+                resolved.append(w)
+                continue
+            except ValueError:
+                pass
+            try:
                 resolved.append(f"{socket.gethostbyname(w)}/32")
-            except socket.gaierror:
+            except OSError:
                 resolved.append(w)
         return resolved
 
