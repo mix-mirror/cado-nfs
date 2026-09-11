@@ -7752,7 +7752,12 @@ class CompleteFactorization(HasState,
                                              "wutimeoutcheck": 60})
 
         self.publish_progress(pipeline=json.dumps(
-            [{"name": t.name, "title": t.title} for t in self.tasks]),
+            # run=false does not merely skip a task: Task.run() raises
+            # EarlyStopException, so the chain stops there. The api
+            # says which tasks are disabled, and the dashboard can then
+            # say that rather than showing them as merely pending.
+            [{"name": t.name, "title": t.title,
+              "run": bool(t.params["run"])} for t in self.tasks]),
             # Both the short code and the label a human should read:
             # Computation.FACT reads "FACT" but describes itself as
             # "Factorization", and the api should not have to know that.
