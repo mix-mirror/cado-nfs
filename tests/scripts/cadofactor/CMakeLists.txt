@@ -65,7 +65,7 @@ cado_define_test(test_python_api_monitor
     "${CMAKE_CURRENT_SOURCE_DIR}/test_monitor_cli.sh"
     # Nominally about three seconds; most of it is interpreter starts,
     # one per subcommand exercised.
-    TIMEOUT 60
+    TIMEOUT 90
 )
 
 if(DEFINED ENV{CHECKS_EXPENSIVE})

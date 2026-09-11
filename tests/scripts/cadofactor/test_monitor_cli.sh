@@ -32,7 +32,7 @@ trap cleanup EXIT
 # A busy runner is much slower than a developer's machine: allow well
 # over the nominal startup, but in whole seconds, since not every sh
 # has a sleep that takes fractions.
-for _ in $(seq 30) ; do
+for _ in $(seq 75) ; do
     [ -s "$server_wdir/URL" ] && break
     sleep 1
 done
