@@ -1359,10 +1359,6 @@ function render() {
         clients: clientsView,
         workunits: workunitsView,
         log: logView,
-        /* A group or a stage with nothing named is the list it came
-         * from; there is no such page on its own. */
-        group: clientsView,
-        stage: overview,
     })[state.view]();
 }
 
@@ -1505,6 +1501,11 @@ function route() {
     const previous = state.view + '/' + state.id;
     state.view = PAGES.includes(parsed.view) ? parsed.view : 'overview';
     state.id = parsed.view === state.view ? parsed.id : null;
+    /* A group or a stage is a page about one thing. Named nothing, it
+     * is the list it came from, not an empty page of its own. */
+    if (state.id === null && TAB_OF[state.view]) {
+        state.view = TAB_OF[state.view];
+    }
     state.params = parsed.params;
     /* Showing the previous page's detail while the new one loads would
      * be worse than showing nothing. */
