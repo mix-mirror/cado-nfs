@@ -38,8 +38,10 @@ import flask
 
 from cadofactor.api.auth import require_token
 from cadofactor.api.spec import api_route, json_body, query_parameter
-from cadofactor.api.views import (GROUPABLE, TOP_CLIENTS_LIMIT,
+from cadofactor.api.views import (GROUPABLE, IN_CLAUSE_CHUNK,
+                                  MAX_RECLAIM, TOP_CLIENTS_LIMIT,
                                   TUNABLE_PARAMETERS)
+from cadofactor.database import EXCLUSIVE
 from cadofactor.workunit import STATUS_NAMES, WuStatus
 
 logger = logging.getLogger("API server")
@@ -97,7 +99,15 @@ def spec_schemas():
                 "name": {"type": "string"},
                 "title": {"type": "string"},
                 "phase": {"type": "string",
-                          "enum": ["done", "running", "pending"]},
+                          "enum": ["done", "running", "pending",
+                                   "disabled", "unreachable"],
+                          "description": "disabled: tasks.<name>.run is"
+                                         " false, so the run stops"
+                                         " here; unreachable: it is"
+                                         " behind a disabled task"},
+                "run": {"type": "boolean",
+                        "description": "Whether tasks.<name>.run left"
+                                       " this task enabled"},
                 "achievement": {"type": "number",
                                 "description": "Fraction in [0,1], as"
                                                " the task itself"
@@ -447,23 +457,53 @@ class AdminEndpoints(object):
                                           " be charged to the wrong task"
                                           % (row["task"], current)})
                 continue
-            wuaccess.set_status(WuStatus.NEED_RESUBMIT,
-                                eq={"wuid": wuid,
-                                    "status": WuStatus.ASSIGNED})
             marked.append(wuid)
+
         if marked:
+            self._flip_to_resubmit(wuaccess, marked)
             self.views.invalidate()
             logger.info("api: marked %d workunit(s) for resubmission: %s",
-                        len(marked), ", ".join(marked))
+                        len(marked), ", ".join(marked[:20])
+                        + (", ..." if len(marked) > 20 else ""))
         return marked, skipped
 
-    def _action_result(self, marked, skipped):
+    @staticmethod
+    def _flip_to_resubmit(wuaccess, wuids):
+        """
+        Set NEED_RESUBMIT on a batch of workunits, in as few
+        transactions as possible.
+
+        One UPDATE per chunk rather than one per workunit: every
+        set_status takes an EXCLUSIVE lock, and a mass action taking a
+        thousand of them in a row would stall the very thing it is
+        meant to help -- the server handing out work. The status is
+        still part of the WHERE, so a workunit that came back between
+        the read and the write is left alone, exactly as the per-row
+        form did.
+        """
+        def update(cursor, chunk):
+            qm = cursor.parameter_auto_increment
+            holes = ", ".join([qm] * len(chunk))
+            cursor.execute(
+                "UPDATE workunits SET status = " + qm
+                + " WHERE status = " + qm
+                + " AND wuid IN (" + holes + ");",
+                [int(WuStatus.NEED_RESUBMIT),
+                 int(WuStatus.ASSIGNED)] + list(chunk))
+
+        for start in range(0, len(wuids), IN_CLAUSE_CHUNK):
+            wuaccess.conn.harness_transaction(
+                EXCLUSIVE, update, wuids[start:start + IN_CLAUSE_CHUNK])
+
+    def _action_result(self, marked, skipped, note=None):
         if marked:
             message = ("%d workunit(s) marked for resubmission; the"
                        " running task picks them up on its next timeout"
                        " check." % len(marked))
         else:
             message = "Nothing was marked for resubmission."
+        if note:
+            message += " " + note
         return json_response({"marked": marked,
                               "skipped": skipped,
                               "message": message})
@@ -679,6 +719,11 @@ class AdminEndpoints(object):
                                     "enum": list(GROUPABLE)},
                                    "What 'group' refers to"
                                    " (default: cluster)"),
+                   query_parameter("state", {"type": "string"},
+                                   "Comma-separated liveness states to"
+                                   " keep, e.g. stale,gone. counts and"
+                                   " pool_total still describe the"
+                                   " whole pool."),
                    query_parameter("limit", {"type": "integer"},
                                    "Page size, at most %d"
                                    % MAX_CLIENT_PAGE),
@@ -703,7 +748,16 @@ class AdminEndpoints(object):
         payload = {
             "counts": by_state,
             "total": len(clients),
+            "pool_total": len(clients),
             "wutimeout": self.views.wutimeout(),
+            # How many distinct machines, clusters and domains the pool
+            # covers. Three integers, so they cost nothing to send, and
+            # they let a caller pick a sensible grouping before asking
+            # for one -- which otherwise takes a request to find out
+            # and a second request to act on.
+            "groupings": {key: len({(c.get(key) or "unknown")
+                                    for c in clients})
+                          for key in GROUPABLE},
         }
 
         # A real pool is large: a c180 polyselect run with 1400 clients
@@ -729,6 +783,19 @@ class AdminEndpoints(object):
                 flask.abort(400, "cannot group by %r" % key)
             clients = [c for c in clients
                        if (c.get(key) or "unknown") == member_of]
+            payload["group"] = member_of
+            payload["group_by_key"] = key
+            payload["total"] = len(clients)
+
+        # "816 clients have gone quiet" is only useful if one can then
+        # see which 816. counts and pool_total above still describe the
+        # whole pool, so the caller can say "42 of 1400" without a
+        # second request.
+        states = flask.request.args.get("state")
+        if states:
+            wanted = {s for s in states.split(",") if s}
+            clients = [c for c in clients if c["state"] in wanted]
+            payload["state"] = sorted(wanted)
             payload["total"] = len(clients)
 
         if flask.request.args.get("summary") in ("1", "true", "yes"):
@@ -880,11 +947,95 @@ class AdminEndpoints(object):
     @require_token
     def api_client_reclaim(self, clientid):
         self._refuse_if_read_only()
-        rows = self.views.list_workunits(status=WuStatus.ASSIGNED,
-                                         assigned_to=clientid,
-                                         limit=MAX_PAGE)
+        # By name, exactly: the client filter on /workunits matches on
+        # substring, which is right for a search box and quite wrong
+        # for deciding whose work to take away.
+        rows = self.views.assigned_workunits([clientid])
         marked, skipped = self._mark_for_resubmit(rows)
         return self._action_result(marked, skipped)
+
+    @api_route(API + "/clients/reclaim", methods=["POST"],
+               tags=["actions"], auth=True,
+               summary="Reclaim the workunits held by a set of clients",
+               description="The group form of the per-client reclaim,"
+                           " for when a whole machine or a whole"
+                           " cluster went away -- which is how they"
+                           " usually go away. Name the clients"
+                           " outright, or name a group the way"
+                           " /api/v1/clients groups them, or name the"
+                           " liveness states to sweep up; whatever is"
+                           " given is combined. At most %d workunits"
+                           " are marked in one call."
+                           % MAX_RECLAIM,
+               request_body=json_body(
+                   {"type": "object",
+                    "properties": {
+                        "clients": {"type": "array",
+                                    "items": {"type": "string"},
+                                    "description": "Client ids, exactly"},
+                        "group_by": {"type": "string",
+                                     "enum": list(GROUPABLE)},
+                        "group": {"type": "string",
+                                  "description": "Which host, cluster"
+                                                 " or domain"},
+                        "states": {"type": "array",
+                                   "items": {"type": "string"},
+                                   "description": "Liveness states to"
+                                                  " restrict to, e.g."
+                                                  " stale and gone"}}}),
+               responses={200: ("What was marked",
+                                {"$ref": "#/components/schemas"
+                                         "/ActionResult"}),
+                          400: "No selector, or an unknown one"})
+    @require_token
+    def api_clients_reclaim(self):
+        self._refuse_if_read_only()
+        body = flask.request.get_json(silent=True) or {}
+        names = self._select_clients(body)
+        rows = self.views.assigned_workunits(names)
+        marked, skipped = self._mark_for_resubmit(rows)
+        # Saying nothing about the cap would let a caller believe a
+        # group had been emptied when it had only been trimmed.
+        note = ("This call stopped at %d workunits; ask again for the"
+                " rest." % MAX_RECLAIM) if len(rows) >= MAX_RECLAIM else None
+        return self._action_result(marked, skipped, note)
+
+    def _select_clients(self, body):
+        """
+        Work out which clients a mass action is about.
+
+        Refuses an empty selection rather than treating it as "all of
+        them": an action that reassigns everything in flight should be
+        asked for in so many words.
+        """
+        explicit = body.get("clients")
+        group_by = body.get("group_by")
+        group = body.get("group")
+        states = body.get("states") or (
+            [body["state"]] if body.get("state") else None)
+
+        if not explicit and group is None and not states:
+            flask.abort(400, "say which clients: clients, group with"
+                             " group_by, or states")
+        if group is not None and group_by not in GROUPABLE:
+            flask.abort(400, "group needs a group_by among %s"
+                        % ", ".join(sorted(GROUPABLE)))
+
+        clients = self.views.clients()
+        wanted = None
+        if explicit:
+            if not isinstance(explicit, list):
+                flask.abort(400, "clients must be a list of client ids")
+            wanted = set(explicit)
+            clients = [c for c in clients if c["clientid"] in wanted]
+        if group is not None:
+            clients = [c for c in clients
+                       if (c.get(group_by) or "unknown") == group]
+        if states:
+            if not isinstance(states, list):
+                flask.abort(400, "states must be a list")
+            clients = [c for c in clients if c["state"] in set(states)]
+        return [c["clientid"] for c in clients]
 
     @api_route("/clientinfo", methods=["POST"], tags=["client"],
                summary="A client says what and where it is",
@@ -959,7 +1110,13 @@ class AdminEndpoints(object):
                            " file, so that a run remains reproducible"
                            " from its snapshot.",
                responses={200: ("Current value, default, and how close"
-                                " the running task is to it",
+                                " the counter is to it."
+                                " The counters belong to"
+                                " client-server tasks, so when the"
+                                " running task is not one,"
+                                " counter_value comes from the last"
+                                " task that kept it and counter_from"
+                                " names that task.",
                                 {"type": "object"})})
     @require_token
     def api_parameters(self):

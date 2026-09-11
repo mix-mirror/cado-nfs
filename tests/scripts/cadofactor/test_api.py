@@ -29,9 +29,11 @@ from api_fixture import (EXPECT, NAME, WUTIMEOUT,          # noqa: E402
                          WUTIMEOUTCHECK, FAST, GONE,       # noqa: E402
                          FAST_TURNAROUND, FAST_SILENT_FOR,  # noqa: E402
                          BRISK, BRISK_TURNAROUND,          # noqa: E402
+                         FAST_WORKUNIT,                    # noqa: E402
                          RETRY_BASE, RETRY_SECOND,         # noqa: E402
                          RETRY_DECOY)                      # noqa: E402
 from cadofactor.api import admin as api_admin              # noqa: E402
+from cadofactor.database import DictDbDirectAccess         # noqa: E402
 
 
 class Failures(object):
@@ -144,6 +146,16 @@ def section_views(app, f):
     f.equal(phases.get("sieving"), "running", "sieving is running")
     f.equal(phases.get("polyselect"), "done", "polyselect is done")
     f.equal(phases.get("merge"), "pending", "merge is pending")
+    # tasks.linalg.run=false in the fixture. A task turned off that way
+    # is not stepped over -- the run stops at it -- so sqrt is not
+    # merely pending, it will never be reached.
+    f.equal(phases.get("linalg"), "disabled",
+            "a task with run=false is reported disabled")
+    f.equal(phases.get("sqrt"), "unreachable",
+            "and what follows it is reported unreachable")
+    f.check(not [t for t in progress["tasks"]
+                 if t["name"] == "linalg"][0]["run"],
+            "the run flag itself is passed through")
     f.equal(len(progress["tasks"]), len(api_fixture.PIPELINE),
             "the whole pipeline is reported")
 
@@ -349,6 +361,14 @@ def section_views(app, f):
     f.equal(len(by_client["workunits"]), 4,
             "filtering by client returns the right count")
 
+    # The client box is a search box: it matches on substring, since a
+    # client id carries a port or an --override suffix that one should
+    # not have to know in order to ask about a machine.
+    by_prefix = get("/api/v1/workunits?assigned_to=alpha-0"
+                    "&status=ASSIGNED").get_json()
+    f.equal(len(by_prefix["workunits"]), len(listing["workunits"]),
+            "the client filter matches on substring")
+
     by_task = get("/api/v1/workunits?task=polyselect"
                   "&status=ASSIGNED").get_json()
     f.equal([w["wuid"] for w in by_task["workunits"]],
@@ -416,6 +436,35 @@ def section_views(app, f):
     f.check(named["polyselect"].get("stats"),
             "the statistics a finished task reported are kept")
 
+    # "816 clients have gone quiet" is only actionable if one can get
+    # at those 816, so the list can be narrowed to them -- while the
+    # tallies still describe the whole pool.
+    quiet = get("/api/v1/clients?state=stale,gone").get_json()
+    f.equal(sorted(c["clientid"] for c in quiet["clients"]),
+            sorted([GONE, FAST]),
+            "the client list can be narrowed to the quiet ones")
+    f.equal(quiet["pool_total"], len(EXPECT["clients"]),
+            "and still says how big the pool is")
+
+    # The ceilings watch counters that only client-server tasks keep.
+    # When the running task is not one -- filtering, say -- the answer
+    # must still be a number, and must say where it came from.
+    tunables = get("/api/v1/parameters").get_json()["parameters"]
+    f.check(tunables["maxfailed"]["counter_is_current"],
+            "while sieving runs, its own counter is the one reported")
+    progress_table = DictDbDirectAccess(app.database_uri.connect(),
+                                        "api_progress")
+    progress_table["current"] = "purge"
+    moved = get("/api/v1/parameters").get_json()["parameters"]
+    f.equal(moved["maxfailed"]["counter_from"], "sieving",
+            "during a task that keeps no counter, the last one that did"
+            " is reported")
+    f.equal(moved["maxfailed"]["counter_value"], 2,
+            "with the value that task finished on")
+    f.check(not moved["maxfailed"]["counter_is_current"],
+            "and it is flagged as not being the running task's")
+    progress_table["current"] = EXPECT["current_task"]
+
     # Polling must be cheap.
     for path in ("/api/v1/progress", "/api/v1/clients",
                  "/api/v1/workunits/summary"):
@@ -466,6 +515,36 @@ def section_actions(app, f):
             "and no longer assigned")
     f.equal(after["CANCELLED"], before["CANCELLED"],
             "nothing was cancelled behind the running task's back")
+
+    # A client id is matched exactly here, whatever the search box on
+    # the workunits page does: reclaiming is not a search.
+    f.equal(client.post("/api/v1/clients/alpha-0/reclaim",
+                        headers=headers).get_json()["marked"], [],
+            "a partial client name reclaims nothing")
+
+    # Machines leave in groups -- a rack, a reservation, a cluster --
+    # so the group forms exist too.
+    mid = counts()
+    response = client.post("/api/v1/clients/reclaim", headers=headers,
+                           json={"group_by": "cluster", "group": "alpha",
+                                 "states": ["stale"]})
+    f.equal(response.status_code, 200, "a group reclaim answers 200")
+    group = response.get_json()
+    f.equal(group["marked"], [FAST_WORKUNIT],
+            "it takes back what the stale member of the cluster held")
+    f.equal(counts()["ASSIGNED"], mid["ASSIGNED"] - 1,
+            "and that workunit is no longer assigned")
+
+    f.equal(client.post("/api/v1/clients/reclaim", headers=headers,
+                        json={}).status_code, 400,
+            "a group reclaim with no selector is refused")
+    f.equal(client.post("/api/v1/clients/reclaim", headers=headers,
+                        json={"group": "alpha"}).status_code, 400,
+            "naming a group without saying what kind is refused")
+    f.equal(client.post("/api/v1/clients/reclaim", headers=headers,
+                        json={"clients": [BRISK]}).get_json()["marked"],
+            [],
+            "a client that holds nothing yields nothing")
 
     # Marking a workunit that belongs to a task which is not running
     # would make ClientServerTask.resubmit_timed_out_wus() charge it to

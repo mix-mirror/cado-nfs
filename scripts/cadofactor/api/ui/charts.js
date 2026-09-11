@@ -25,6 +25,16 @@ function svgel(tag, attrs = {}, ...children) {
     return el;
 }
 
+/* Wrap a shape in a link when the caller gave one. SVG has had <a>
+ * since forever; this keeps the charts clickable without any of them
+ * having to know what a route is. */
+function linked(href, el, title) {
+    if (!href) return el;
+    const a = svgel('a', {href, style: 'cursor:pointer'}, el);
+    if (title) a.appendChild(svgel('title', {}, title));
+    return a;
+}
+
 function css(name) {
     return getComputedStyle(document.documentElement)
         .getPropertyValue(name).trim() || '#888';
@@ -106,11 +116,11 @@ export function stackedBar(segments, width = 520, height = 26) {
     for (const segment of segments) {
         if (!segment.value) continue;
         const w = (segment.value / total) * width;
-        svg.appendChild(svgel('rect', {
+        svg.appendChild(linked(segment.href, svgel('rect', {
             x, y: 0, width: Math.max(w, 1.5), height,
             fill: css(segment.colour),
         }, svgel('title', {},
-                 `${segment.label}: ${segment.value}`)));
+                 `${segment.label}: ${segment.value}`))));
         x += w;
     }
     /* Rounded ends without clipping the segment colours. */
@@ -123,7 +133,8 @@ export function legend(segments) {
     wrap.className = 'legend';
     for (const segment of segments) {
         if (segment.value === 0 && segment.hideEmpty) continue;
-        const item = document.createElement('span');
+        const item = document.createElement(segment.href ? 'a' : 'span');
+        if (segment.href) item.setAttribute('href', segment.href);
         const swatch = document.createElement('span');
         swatch.className = 'swatch';
         swatch.style.background = css(segment.colour);
@@ -153,18 +164,18 @@ export function barRows(rows, {width = 520, rowHeight = 22,
     rows.forEach((row, i) => {
         const y = i * rowHeight;
         const w = Math.max((row.value / max) * barWidth, row.value ? 2 : 0);
-        svg.appendChild(svgel('text', {
+        svg.appendChild(linked(row.href, svgel('text', {
             x: 0, y: y + rowHeight / 2,
             'dominant-baseline': 'middle',
             fill: css('--text'),
             'font-size': 12,
-        }, clip(row.label, 18)));
-        svg.appendChild(svgel('rect', {
+        }, clip(row.label, 18)), row.label));
+        svg.appendChild(linked(row.href, svgel('rect', {
             x: labelWidth, y: y + 4,
             width: w, height: rowHeight - 9,
             rx: 3,
             fill: css(row.colour || '--accent'),
-        }, svgel('title', {}, `${row.label}: ${format(row.value)}`)));
+        }, svgel('title', {}, `${row.label}: ${format(row.value)}`))));
         svg.appendChild(svgel('text', {
             x: labelWidth + w + 7, y: y + rowHeight / 2,
             'dominant-baseline': 'middle',

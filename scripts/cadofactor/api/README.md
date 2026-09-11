@@ -78,6 +78,25 @@ If you would rather expose it directly, widen it explicitly:
 
     cado-nfs.py ... server.ui_whitelist=127.0.0.1/32,192.168.0.0/24
 
+### The dashboard's urls
+
+Everything the dashboard is showing is in the fragment, so every view
+and every filter is a link that can be bookmarked or sent to somebody:
+
+    #overview
+    #stage/sieving                       one phase of the pipeline
+    #clients?group_by=cluster            the roll-up
+    #group/alpha?group_by=cluster        one cluster, and its mass action
+    #clients?state=stale,gone            only the quiet ones
+    #clients/alpha-15+101                one client
+    #workunits?task=sieving&status=ASSIGNED&client=alpha-15
+    #workunits/c60_sieving_100-200       one workunit
+    #log?tail=500
+
+The fragment is also where the token arrives (`/ui/#token=...`), which
+`app.js` moves into session storage and wipes from the address bar
+before any of the above is parsed.
+
 ## Deciding that a client has gone away
 
 `tasks.wutimeout` is one number for the whole computation, chosen so
@@ -151,6 +170,25 @@ This is not new: the same thing happens whenever
 resubmit_timed_out_wus() reassigns the workunit of a client that is
 merely slow. Reclaiming simply makes it reachable on demand.
 
+Machines leave in groups -- a rack, a reservation, a whole cluster --
+so there is a group form of the same action:
+
+    POST /api/v1/clients/reclaim
+    {"group_by": "cluster", "group": "alpha", "states": ["stale", "gone"]}
+
+`clients` (a list of ids, matched exactly), `group` with `group_by`,
+and `states` may be combined; whatever is given is intersected. A body
+that names nothing in particular is refused with 400 rather than taken
+to mean every client there is. At most 2000 workunits are marked per
+call, and the answer says so when it stopped there.
+
+The marking is done with one `UPDATE ... WHERE status = ASSIGNED AND
+wuid IN (...)` per chunk rather than one statement per workunit. Every
+`WuAccess.set_status()` takes an EXCLUSIVE lock, and a mass action
+taking a thousand of those in a row would stall the thing it is meant
+to help. The status is still part of the WHERE, so a workunit that
+came back in the meantime is left alone.
+
 Two things are missing on purpose:
 
 * **There is no raw cancel.** Setting `CANCELLED` from outside would
@@ -187,9 +225,23 @@ share a machine, and many machines share a cluster.
 
     GET /api/v1/clients?group_by=host|cluster|domain
     GET /api/v1/clients?group=<key>&group_by_key=cluster
+    GET /api/v1/clients?state=stale,gone
 
 The roll-up is bounded by the number of groups rather than of clients,
-which is what makes it usable when the flat list is not.
+which is what makes it usable when the flat list is not. `state`
+narrows the list to the clients in the given liveness states; `counts`
+and `pool_total` keep describing the whole pool, so "42 of 1400" needs
+one request rather than two.
+
+Every answer also carries a `groupings` census:
+
+    "groupings": {"host": 40, "cluster": 3, "domain": 1}
+
+three integers saying how many distinct machines, clusters and domains
+the pool covers. The dashboard uses it to pick a roll-up before asking
+for one -- the outermost kind that both discriminates and compresses,
+since grouping by domain says nothing when there is one domain, and
+grouping by machine says nothing when each machine runs one client.
 
 Grouping works with no client cooperation at all, because cado-nfs
 names clients predictably: several on one host get `+1`, `+2`
@@ -252,6 +304,17 @@ a prefix of `c60_sieving_100-2000`, so the prefix only narrows the
 query and the remainder is then checked properly. The captured output
 is read off disk, so the path from the database is checked to be
 inside the working directory before anything is opened.
+
+`/api/v1/workunits` takes `assigned_to` and `result_from`, and both
+match on **substring**. A client id carries a port or an `--override`
+suffix, so exact matching would mean knowing the id before being able
+to ask about the machine. `assignedclient` is cleared only when a
+workunit returns to AVAILABLE, so `assigned_to` also answers "what has
+this machine touched". The wildcards `%` and `_` are not escaped:
+there is no portable way to say ESCAPE through this database layer,
+and a search box where they work is a search box that behaves as one
+expects. Reclaiming, by contrast, matches a client id exactly --
+reclaiming is not searching.
 
 ## Changing a parameter while the computation runs
 

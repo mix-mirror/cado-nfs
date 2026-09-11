@@ -72,9 +72,25 @@ for subcommand in status clients ; do
     "${monitor[@]}" --json "$subcommand" | python3 -m json.tool > /dev/null
 done
 
+# Narrowing the pool, which is also how a mass action is aimed.
+"${monitor[@]}" clients --group-by=cluster | grep -q alpha
+"${monitor[@]}" clients --group=alpha --group-by=cluster | grep -q alpha-01
+"${monitor[@]}" clients --state=gone | grep -q alpha-03
+
+# A mass action that names nothing in particular must be refused
+# rather than taken to mean everything.
+if "${monitor[@]}" clients --reclaim-all ; then
+    echo "an unaimed mass reclaim should have failed" >&2
+    exit 1
+fi
+
 # An action, and its effect.
 "${monitor[@]}" clients --reclaim alpha-03 | grep -q "marked for resubmission"
 "${monitor[@]}" wu list --status=NEED_RESUBMIT | grep -q NEED_RESUBMIT
+
+# And the group form of it, aimed at the one stale client.
+"${monitor[@]}" clients --group=alpha --group-by=cluster --state=stale \
+    --reclaim-all | grep -q "marked for resubmission"
 
 # A workunit from a task that is not running must be refused.
 if "${monitor[@]}" wu resubmit c60_polyselect_5000-5100 ; then

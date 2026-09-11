@@ -52,7 +52,10 @@ PIPELINE = [
     {"name": "duplicates1", "title": "Filtering - Duplicate Removal"},
     {"name": "purge", "title": "Filtering - Singleton removal"},
     {"name": "merge", "title": "Filtering - Merging"},
-    {"name": "linalg", "title": "Linear Algebra"},
+    # tasks.linalg.run=false. A disabled task does not get stepped
+    # over: Task.run() raises, so the run stops there and sqrt never
+    # happens either. The api is expected to say both things.
+    {"name": "linalg", "title": "Linear Algebra", "run": False},
     {"name": "sqrt", "title": "Square Root"},
 ]
 
@@ -73,6 +76,9 @@ FAST_SILENT_FOR = 1200
 # floor. With enough samples agreeing, the floor is dropped and the
 # threshold is purely what this client has shown us -- which is the
 # case that tells us the sample count is really reaching stale_after.
+# The one workunit FAST is holding, which is what a reclaim of the
+# stale members of its cluster has to take back.
+FAST_WORKUNIT = NAME + "_sieving_650000-651000"
 BRISK = "alpha-05"
 BRISK_TURNAROUND = 150
 BRISK_SAMPLES = 12
@@ -243,7 +249,7 @@ def populate(db, workdir):
             assigned=FAST_SILENT_FOR + FAST_TURNAROUND + i * 300,
             client=FAST,
             result_age=FAST_SILENT_FOR + i * 300, resultclient=FAST)
-    add("%s_sieving_650000-651000" % NAME, WuStatus.ASSIGNED,
+    add(FAST_WORKUNIT, WuStatus.ASSIGNED,
         assigned=FAST_SILENT_FOR, client=FAST)
 
     for i in range(BRISK_SAMPLES):

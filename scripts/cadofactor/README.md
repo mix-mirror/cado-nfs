@@ -80,12 +80,25 @@ Web UI: https://server.example.org:8001/ui/#token=b7f3...c19a
 which shows where the computation stands — the current phase with its
 progress and ETA, the pipeline, how many workunits are in each state,
 which clients are connected, how much each has contributed, and whether
-any of them have gone quiet while still holding work. Client names and
-workunit ids are links: following one gives that machine's history and
-how its pace has been drifting, or that workunit's every attempt and
-the tail of what it printed when it failed. That last case
+any of them have gone quiet while still holding work. That last case
 comes with a button that hands their workunits back to the pool, which
-saves waiting out `tasks.wutimeout`.
+saves waiting out `tasks.wutimeout`; for a machine or a whole cluster
+that went away at once, the same button exists on the page for that
+group.
+
+Every tally is a link to the rows behind it. Following a phase in the
+pipeline gives its own page, its workunits and its statistics;
+following a client name gives that machine's history and how its pace
+has been drifting; following a workunit id gives its every attempt and
+the tail of what it printed when it failed. A large pool is rolled up
+by machine, cluster or domain rather than listed, and drilling into
+one of those groups lists its members. What is on screen is in the
+address bar, so a filtered view can be bookmarked or sent to somebody.
+
+A task turned off with `tasks.<name>.run=false` is shown as such
+rather than as merely pending, together with the tasks behind it that
+will therefore not be reached — `run=false` stops the run there, it
+does not skip a step.
 
 The dashboard answers `127.0.0.1` and `::1` only, so from another
 machine the way in is a tunnel:
@@ -116,7 +129,11 @@ are one-shot subcommands:
 ./cado-nfs-monitor.py ... status
 ./cado-nfs-monitor.py ... clients
 ./cado-nfs-monitor.py ... clients --group-by cluster
+./cado-nfs-monitor.py ... clients --state=stale,gone
+./cado-nfs-monitor.py ... clients --group=alpha --group-by cluster
 ./cado-nfs-monitor.py ... clients --reclaim alpha-42
+./cado-nfs-monitor.py ... clients --group=alpha --group-by cluster \
+                                  --state=gone --reclaim-all
 ./cado-nfs-monitor.py ... client alpha-42
 ./cado-nfs-monitor.py ... wu show c180_sieving_990000-991000
 ./cado-nfs-monitor.py ... wu list --status=ASSIGNED --older-than=2h

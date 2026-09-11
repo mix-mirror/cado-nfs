@@ -112,6 +112,12 @@ CLIENT_INFO_TTL = 30.0
 # How cadotask.Task.make_wuname separates a retry number from the rest.
 ATTEMPT_MARKER = "__R"
 
+# Ceilings for the mass actions. A cluster can be holding thousands of
+# workunits; marking them is one UPDATE per chunk, but the answer still
+# has to fit in a response and in a reader's head.
+MAX_RECLAIM = 2000
+IN_CLAUSE_CHUNK = 200
+
 # Fallback when the computation has not told us its tasks.wutimeout.
 DEFAULT_WUTIMEOUT = 10800.0
 
@@ -572,17 +578,46 @@ class DbViews(object):
             defaults = {}
         overrides = self.overrides()
         current = published.get("current") or None
-        state = self.read_state_table(current) if current else {}
+
+        # The counters these ceilings watch belong to ClientServerTasks,
+        # and the task running right now need not be one -- during
+        # filtering, say. Rather than answer "-" for the whole of a
+        # phase that can last hours, fall back to the most recent task
+        # that did keep the counter, and say which one that was so the
+        # number is not mistaken for a live one. "Most recent" is read
+        # off the pipeline rather than off the done list, since the
+        # pipeline is ordered and is what says which tasks are behind
+        # us.
+        names = self.task_names()
+        if current in names:
+            names = names[:names.index(current) + 1]
+        candidates = list(reversed(names))
+
+        states = {}
+
+        def counter(key):
+            for task in candidates:
+                if not task:
+                    continue
+                if task not in states:
+                    states[task] = self.read_state_table(task)
+                if key in states[task]:
+                    return states[task][key], task
+            return None, None
 
         out = {}
         for name, spec in TUNABLE_PARAMETERS.items():
             default = defaults.get(name, spec["default"])
+            value, from_task = counter(spec["counter"])
             out[name] = {
                 "value": overrides.get(name, default),
                 "default": default,
                 "overridden": name in overrides,
                 "counter": spec["counter"],
-                "counter_value": state.get(spec["counter"]),
+                "counter_value": value,
+                "counter_from": from_task,
+                "counter_is_current": (from_task is not None
+                                       and from_task == current),
                 "description": spec["description"],
             }
         return out
@@ -897,24 +932,40 @@ class DbViews(object):
         "client" filter: a workunit has both an assignedclient and a
         resultclient, and which one you mean is the difference between
         "what is this machine chewing on" and "what did it hand back".
+        Note that assignedclient is cleared only when a workunit goes
+        back to AVAILABLE, so assigned_to also answers "everything this
+        machine has touched".
+
+        Both match on substring, not on equality: client ids carry a
+        port or an --override suffix, so exact matching would mean
+        knowing the id before being able to ask about the machine. The
+        pattern goes in the value and never in the SQL text, since a
+        literal % in a command upsets the TRANSACTION-level logging in
+        DbCursor._exec. The wildcards are not
+        escaped: there is no portable way to say ESCAPE through this
+        layer, and a search box where _ matches any character and % any
+        run of them is a search box that behaves the way one expects.
 
         Filtering by task uses a LIKE on the wuid prefix, since the task
         name is encoded there and there is no column for it.
         """
         conditions = {}
         equalities = {}
+        likes = {}
         if status is not None:
             equalities["status"] = int(status)
         if assigned_to is not None:
-            equalities["assignedclient"] = assigned_to
+            likes["assignedclient"] = "%" + assigned_to + "%"
         if result_from is not None:
-            equalities["resultclient"] = result_from
+            likes["resultclient"] = "%" + result_from + "%"
         if equalities:
             conditions["eq"] = equalities
         if task is not None:
             name = self.progress_state().get("name", "")
             prefix = ("%s_%s_" % (name, task)) if name else ("%s_" % task)
-            conditions["like"] = {"wuid": prefix + "%"}
+            likes["wuid"] = prefix + "%"
+        if likes:
+            conditions["like"] = likes
         if assigned_older_than is not None:
             stamp = datetime.fromtimestamp(
                 time.time() - float(assigned_older_than),
@@ -930,6 +981,38 @@ class DbViews(object):
 
         rows = self._read(query)
         return [self.describe_workunit(row) for row in rows]
+
+    def assigned_workunits(self, clientids, limit=MAX_RECLAIM):
+        """
+        The ASSIGNED workunits held by any of these clients.
+
+        One query for the whole set rather than one per client: a
+        cluster can hold a few thousand of them, and the point of a
+        mass action is to cost less than doing it by hand, not more.
+        """
+        names = [c for c in clientids if c]
+        if not names:
+            return []
+        rows = []
+
+        def query(cursor, chunk, room):
+            qm = cursor.parameter_auto_increment
+            holes = ", ".join([qm] * len(chunk))
+            cursor.execute(
+                "SELECT * FROM workunits WHERE status = " + qm
+                + " AND assignedclient IN (" + holes + ")"
+                + " ORDER BY timeassigned DESC LIMIT %d;" % int(room),
+                [int(WuStatus.ASSIGNED)] + list(chunk))
+            desc = [k[0] for k in cursor.cursor.description]
+            return [dict(zip(desc, r)) for r in cursor.cursor.fetchall()]
+
+        for start in range(0, len(names), IN_CLAUSE_CHUNK):
+            room = limit - len(rows)
+            if room <= 0:
+                break
+            chunk = names[start:start + IN_CLAUSE_CHUNK]
+            rows.extend(self._read(query, chunk, room))
+        return [self.describe_workunit(row) for row in rows[:limit]]
 
     def describe_workunit(self, row, with_body=False):
         """
@@ -1048,15 +1131,19 @@ class DbViews(object):
         """
         name = entry.get("name")
         state = self.read_state_table(name) if name else {}
+        enabled = entry.get("run", True) is not False
         if name == current:
             phase = "running"
         elif name in done_names:
             phase = "done"
+        elif not enabled:
+            phase = "disabled"
         else:
             phase = "pending"
 
         view = {"name": name,
                 "title": entry.get("title"),
+                "run": enabled,
                 "phase": phase}
 
         for key in ("achievement", "eta", "progress_time",
@@ -1097,6 +1184,17 @@ class DbViews(object):
             if view["name"] in stats:
                 view["stats"] = stats[view["name"]]
             tasks.append(view)
+
+        # A disabled task stops the chain rather than being stepped
+        # over, so nothing after the first of them will run either.
+        # Saying "pending" about those would be a promise the run has
+        # no intention of keeping.
+        stopped = False
+        for view in tasks:
+            if stopped and view["phase"] == "pending":
+                view["phase"] = "unreachable"
+            if view["phase"] == "disabled":
+                stopped = True
 
         started = published.get("current_started") or None
         return {
