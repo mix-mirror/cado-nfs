@@ -196,7 +196,7 @@ names clients predictably: several on one host get `+1`, `+2`
 suffixes, and one given no `--clientid` takes `<hostname>.<random>`.
 The cluster is then the first dotted component with a trailing
 `-<digits>` removed — the same rule `local.sh` uses to name build
-trees. `grdix-15+101` is thus machine `grdix-15` in cluster `grdix`.
+trees. `alpha-15+101` is thus machine `alpha-15` in cluster `alpha`.
 
 That is only a guess, though, and it cannot see a domain at all. So a
 client introduces itself when it starts:
@@ -221,7 +221,7 @@ and whitelisted on the way in, and unrecognised ones are dropped.
 
 If a client reports a hostname, the cluster is derived from *that*
 rather than from its client id — saying a machine is `compute-7` but
-in cluster `grvingt`, because its name happened to start that way,
+in cluster `alpha`, because its name happened to start that way,
 would be incoherent.
 
 ## Drilling into one client or one workunit

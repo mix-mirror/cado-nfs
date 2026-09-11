@@ -29,14 +29,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in $(seq 40) ; do
+# A busy runner is much slower than a developer's machine: allow well
+# over the nominal startup, but in whole seconds, since not every sh
+# has a sleep that takes fractions.
+for _ in $(seq 30) ; do
     [ -s "$server_wdir/URL" ] && break
-    sleep 0.25
+    sleep 1
 done
 
 if ! [ -s "$server_wdir/URL" ] ; then
     echo "the test server never came up" >&2
-    cat "$wdir/server.err" >&2
+    echo "--- its stdout ---" >&2
+    cat "$wdir/server.out" >&2 || :
+    echo "--- its stderr ---" >&2
+    cat "$wdir/server.err" >&2 || :
     exit 1
 fi
 
@@ -53,11 +59,11 @@ python3 "${CADO_NFS_SOURCE_DIR}/cado-nfs-monitor.py" --doctest
 # subcommand answers.
 "${monitor[@]}" status > "$wdir/status.txt"
 grep -q "Lattice Sieving" "$wdir/status.txt"
-grep -q "grvingt-03" "$wdir/status.txt"
+grep -q "alpha-03" "$wdir/status.txt"
 
-"${monitor[@]}" clients | grep -q "grvingt-01"
+"${monitor[@]}" clients | grep -q "alpha-01"
 "${monitor[@]}" wu list --status=ASSIGNED --limit=5 | grep -q ASSIGNED
-"${monitor[@]}" wu show c60_sieving_970000-971000 | grep -q grvingt-02
+"${monitor[@]}" wu show c60_sieving_970000-971000 | grep -q alpha-02
 "${monitor[@]}" log --tail=5 | grep -q "Lattice Sieving"
 "${monitor[@]}" serving | grep -q "serving workunits: yes"
 
@@ -67,7 +73,7 @@ for subcommand in status clients ; do
 done
 
 # An action, and its effect.
-"${monitor[@]}" clients --reclaim grvingt-03 | grep -q "marked for resubmission"
+"${monitor[@]}" clients --reclaim alpha-03 | grep -q "marked for resubmission"
 "${monitor[@]}" wu list --status=NEED_RESUBMIT | grep -q NEED_RESUBMIT
 
 # A workunit from a task that is not running must be refused.

@@ -22,6 +22,7 @@ dir="$(dirname "$me")"
 "$dir/check_python_pathdetection_stub.sh"
 "$dir/check_main_constness.sh"
 "$dir/check_python_lint.sh"
+"$dir/check_openapi_coverage.sh"
 
 # use the following section in .git/config in order to tweak the
 # behaviour of this check:

@@ -74,7 +74,7 @@ The server exposes a small api, and two things are built on it.
 **In a browser.** When it starts, `cado-nfs.py` logs a link:
 
 ```
-Web UI: https://quiche.loria.fr:8001/ui/#token=b7f3...c19a
+Web UI: https://server.example.org:8001/ui/#token=b7f3...c19a
 ```
 
 which shows where the computation stands — the current phase with its
@@ -91,7 +91,7 @@ The dashboard answers `127.0.0.1` and `::1` only, so from another
 machine the way in is a tunnel:
 
 ```
-ssh -L 8001:localhost:8001 quiche.loria.fr
+ssh -L 8001:localhost:8001 server.example.org
 ```
 
 and then <http://localhost:8001/ui/>. Widen `server.ui_whitelist` if you
@@ -104,7 +104,7 @@ same api:
 
 ```
 ./cado-nfs-monitor.py --workdir=/tmp/c120 \
-    --server=https://quiche.loria.fr:8001 --certsha1=[SHA1] watch
+    --server=https://server.example.org:8001 --certsha1=[SHA1] watch
 ```
 
 `--workdir` is a convenience: it is where the server put both the api
@@ -116,8 +116,8 @@ are one-shot subcommands:
 ./cado-nfs-monitor.py ... status
 ./cado-nfs-monitor.py ... clients
 ./cado-nfs-monitor.py ... clients --group-by cluster
-./cado-nfs-monitor.py ... clients --reclaim grvingt-42
-./cado-nfs-monitor.py ... client grvingt-42
+./cado-nfs-monitor.py ... clients --reclaim alpha-42
+./cado-nfs-monitor.py ... client alpha-42
 ./cado-nfs-monitor.py ... wu show c180_sieving_990000-991000
 ./cado-nfs-monitor.py ... wu list --status=ASSIGNED --older-than=2h
 ./cado-nfs-monitor.py ... wu reclaim --older-than=2h

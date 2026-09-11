@@ -42,14 +42,19 @@ cado_define_test(test_python_wudb_cmdline
 # skip themselves when it is absent.
 #
 # Each section is a separate test so that a failure says what broke.
+# The OpenAPI coverage check is deliberately not among them: it
+# compares the source against itself, so it answers the same on every
+# platform and runs once, from scripts/check_repo_policies.sh.
 cado_define_test(test_python_api
     PROVIDE_TEMPORARY_WDIR
     SCRIPT
     "${CMAKE_CURRENT_SOURCE_DIR}/test_api.sh"
+    # Nominally well under a second each; this is headroom for a busy
+    # or slow runner, not an expectation.
     TIMEOUT 60
     NO_DEFAULT_RUN
 )
-foreach(section openapi auth views actions doctests threading)
+foreach(section auth views actions doctests threading)
     cado_divert_test(test_python_api ${section}
         APPEND_ARGUMENTS ${section})
 endforeach()
@@ -58,7 +63,9 @@ cado_define_test(test_python_api_monitor
     PROVIDE_TEMPORARY_WDIR
     SCRIPT
     "${CMAKE_CURRENT_SOURCE_DIR}/test_monitor_cli.sh"
-    TIMEOUT 120
+    # Nominally about three seconds; most of it is interpreter starts,
+    # one per subcommand exercised.
+    TIMEOUT 60
 )
 
 if(DEFINED ENV{CHECKS_EXPENSIVE})

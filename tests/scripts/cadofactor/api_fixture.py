@@ -35,7 +35,11 @@ NAME = "c60"
 # tasks.wutimeout as the fixture publishes it. Client liveness is
 # expressed in multiples of this.
 WUTIMEOUT = 3600
-WUTIMEOUTCHECK = 60
+# Deliberately large. This sets the small-sample staleness floor, and
+# therefore how big BRISK's threshold may be while still being *below*
+# it -- which is what keeps every client's state far away from a
+# boundary. See MIN_STATE_MARGIN.
+WUTIMEOUTCHECK = 600
 
 PIPELINE = [
     {"name": "polyselect",
@@ -54,23 +58,23 @@ PIPELINE = [
 
 # How the workunits table is filled. Ages are in seconds before now.
 #   (wuid suffix, status, assigned_age, client, result_age, resultclient)
-BUSY = "grvingt-01"
-SLOW = "grvingt-02"
-GONE = "grvingt-03"
+BUSY = "alpha-01"
+SLOW = "alpha-02"
+GONE = "alpha-03"
 # A brisk client that has just gone quiet. It is the case that
 # distinguishes the per-client staleness threshold from the global one:
 # 20 minutes of silence is nothing next to a one-hour wutimeout, but it
 # is a long time for a machine that returns a workunit every two
 # minutes.
-FAST = "grvingt-04"
+FAST = "alpha-04"
 FAST_TURNAROUND = 120
 FAST_SILENT_FOR = 1200
 # A client so brisk that six times its pace is below the small-sample
 # floor. With enough samples agreeing, the floor is dropped and the
 # threshold is purely what this client has shown us -- which is the
 # case that tells us the sample count is really reaching stale_after.
-BRISK = "grvingt-05"
-BRISK_TURNAROUND = 2
+BRISK = "alpha-05"
+BRISK_TURNAROUND = 150
 BRISK_SAMPLES = 12
 
 # A piece of work that failed once and was retried. RETRY_DECOY exists
@@ -82,6 +86,14 @@ RETRY_DECOY = NAME + "_sieving_990000-9910000"
 
 # What the tests expect to find, so that a change to the population
 # above shows up as a failure here rather than as a silent drift.
+# No client's state may be closer than this to flipping. The fixture
+# describes ages relative to "now", so a slow or loaded machine will
+# read it later than it was written; a test that only holds for a few
+# seconds is a test that passes on the author's laptop and fails on
+# somebody else's runner. This must comfortably exceed the ctest
+# timeout, since a run that takes longer than that is killed anyway.
+MIN_STATE_MARGIN = 300
+
 EXPECT = {
     "current_task": "sieving",
     "clients": {
@@ -105,6 +117,27 @@ EXPECT = {
     "reclaimable_from_gone": 3,
     "stale_from_gone": NAME + "_polyselect_5000-5100",
 }
+
+
+def state_margin(client, now):
+    """
+    How long a client may go unread before its reported state changes.
+
+    liveness() switches at `stale_after` and at three times it, so the
+    margin is the distance from the client's current age to whichever
+    of those boundaries is next -- or, for a client already past the
+    last one, infinity. Ages are not in the api's answers by design, so
+    they are recomputed here from last_seen.
+    """
+    import math
+    if client.get("last_seen") is None:
+        return math.inf
+    age = now - client["last_seen"]
+    threshold = client["stale_after"]
+    for boundary in (threshold, 3 * threshold):
+        if age < boundary:
+            return boundary - age
+    return math.inf
 
 
 def utc(age):

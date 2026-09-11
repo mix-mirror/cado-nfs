@@ -323,14 +323,14 @@ def split_clientid(clientid):
 
         hostname | cut -d. -f1 | sed -e 's/-[0-9]*$//'
 
-    >>> split_clientid('grdix-15+101')
-    ('grdix-15', 'grdix')
-    >>> split_clientid('grvingt-9')
-    ('grvingt-9', 'grvingt')
-    >>> split_clientid('quiche.loria.fr+3')
-    ('quiche.loria.fr', 'quiche')
-    >>> split_clientid('coffee.1a2b3c')
-    ('coffee.1a2b3c', 'coffee')
+    >>> split_clientid('alpha-15+101')
+    ('alpha-15', 'alpha')
+    >>> split_clientid('beta-9')
+    ('beta-9', 'beta')
+    >>> split_clientid('server.example.org+3')
+    ('server.example.org', 'server')
+    >>> split_clientid('gamma.1a2b3c')
+    ('gamma.1a2b3c', 'gamma')
     >>> split_clientid('localhost')
     ('localhost', 'localhost')
     >>> split_clientid('')
@@ -349,8 +349,8 @@ def domain_of(fqdn):
     """
     The domain part of a fully qualified name, or None.
 
-    >>> domain_of('grvingt-9.nancy.grid5000.fr')
-    'nancy.grid5000.fr'
+    >>> domain_of('beta-9.site.example.org')
+    'site.example.org'
     >>> domain_of('localhost') is None
     True
     >>> domain_of(None) is None
