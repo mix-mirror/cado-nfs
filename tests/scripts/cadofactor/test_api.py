@@ -465,6 +465,25 @@ def section_views(app, f):
             "and it is flagged as not being the running task's")
     progress_table["current"] = EXPECT["current_task"]
 
+    # A chain that ended is not the same as a chain that succeeded.
+    # Stopping at a disabled task used to be published as "finished",
+    # which had the dashboard congratulating the operator on a run that
+    # had halted several phases short of an answer.
+    f.equal(get("/api/v1/progress").get_json()["outcome"], "running",
+            "a running computation reports outcome=running")
+    progress_table.update({"current": "", "finished": False,
+                           "outcome": "stopped",
+                           "outcome_detail": "stopped at factorbase"})
+    halted = get("/api/v1/progress").get_json()
+    f.equal(halted["outcome"], "stopped",
+            "a run halted by a disabled task says so")
+    f.check(not halted["finished"],
+            "and is not reported as finished")
+    f.equal(halted["outcome_detail"], "stopped at factorbase",
+            "with the reason it stopped")
+    progress_table.update({"current": EXPECT["current_task"],
+                           "outcome": "", "outcome_detail": ""})
+
     # Polling must be cheap.
     for path in ("/api/v1/progress", "/api/v1/clients",
                  "/api/v1/workunits/summary"):

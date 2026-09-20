@@ -7788,6 +7788,8 @@ class CompleteFactorization(HasState,
             current="",
             current_started=0,
             done=json.dumps([]),
+            outcome="",
+            outcome_detail="",
             finished=False)
 
         reverse_lookup = defaultdict(list)
@@ -7939,8 +7941,21 @@ class CompleteFactorization(HasState,
         self.stop_all_clients()
         self.elapsed = self.end_elapsed_time()
         self.cputotal = self.get_sum_of_cpu_or_real_time(True)
+        # How the chain ended, and not merely that it ended. A run
+        # halted by a disabled task, or by a crash, used to be
+        # published as "finished", which told the dashboard to
+        # congratulate the operator on a computation that had in fact
+        # stopped several phases short of an answer.
+        if exc is None:
+            outcome, why = "finished", ""
+        elif isinstance(exc, EarlyStopException):
+            outcome, why = "stopped", str(exc)
+        else:
+            outcome, why = "failed", "%s: %s" % (type(exc).__name__, exc)
         self.publish_progress(current="",
-                              finished=True,
+                              finished=(outcome == "finished"),
+                              outcome=outcome,
+                              outcome_detail=why,
                               elapsed=self.elapsed or 0,
                               cputotal=self.cputotal)
         self.servertask.shutdown(exc)

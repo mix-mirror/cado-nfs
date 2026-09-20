@@ -1204,6 +1204,12 @@ class DbViews(object):
             "current": current,
             "current_started": started,
             "finished": bool(published.get("finished", False)),
+            # finished says the chain ended; outcome says how. A run
+            # that stopped at a disabled task, or crashed, is not a
+            # computation that succeeded.
+            "outcome": published.get("outcome") or (
+                "finished" if published.get("finished") else "running"),
+            "outcome_detail": published.get("outcome_detail") or None,
             "elapsed": published.get("elapsed"),
             "cputotal": published.get("cputotal"),
             "tasks": tasks,

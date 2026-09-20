@@ -547,6 +547,16 @@ class AdminEndpoints(object):
                                      "current": {"type": ["string",
                                                           "null"]},
                                      "finished": {"type": "boolean"},
+                                     "outcome": {
+                                         "type": "string",
+                                         "enum": ["running", "finished",
+                                                  "stopped", "failed"],
+                                         "description": "How the chain"
+                                                        " ended, not"
+                                                        " merely that"
+                                                        " it did"},
+                                     "outcome_detail": {
+                                         "type": ["string", "null"]},
                                      "tasks": {
                                          "type": "array",
                                          "items": {"$ref": "#/components"

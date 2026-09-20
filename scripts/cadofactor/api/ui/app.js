@@ -49,6 +49,13 @@ const WU_SEGMENTS = [
 /* How the pool can be rolled up, outermost first. */
 const GROUPINGS = ['domain', 'cluster', 'host'];
 
+/* How a finished chain is labelled in the top bar, and why. */
+const OUTCOME = {
+    finished: ['finished', 'working'],
+    stopped: ['stopped early', 'stale'],
+    failed: ['failed', 'gone'],
+};
+
 const VIEWS = [
     {id: 'overview', label: 'Overview'},
     {id: 'clients', label: 'Clients'},
@@ -202,8 +209,11 @@ function renderTopbar() {
     }
     const kind = info.computation_desc || info.computation;
     if (kind) meta.push(h('span', {}, kind));
-    if (progress.finished) {
-        meta.push(pill('finished', 'working'));
+    if (OUTCOME[progress.outcome]) {
+        const [label, kind] = OUTCOME[progress.outcome];
+        const chip = pill(label, kind);
+        if (progress.outcome_detail) chip.title = progress.outcome_detail;
+        meta.push(chip);
     } else if (info.serving_workunits === false) {
         meta.push(pill('not serving workunits', 'stale'));
     }
@@ -280,11 +290,26 @@ function highlights(task) {
 function currentCard() {
     const task = currentTask();
     if (!task) {
-        const finished = state.progress && state.progress.finished;
-        return card('Current phase',
-                    empty(finished
-                          ? 'The computation has finished.'
-                          : 'No task is running yet.'));
+        const progress = state.progress || {};
+        if (progress.outcome === 'finished') {
+            return card('Current phase',
+                        empty('The computation has finished.'));
+        }
+        /* Stopping at a disabled task, or crashing, is not finishing.
+         * Saying so is the difference between "your answer is ready"
+         * and "come and look at the log". */
+        if (progress.outcome === 'stopped'
+            || progress.outcome === 'failed') {
+            const [label] = OUTCOME[progress.outcome];
+            return card('Current phase',
+                banner(progress.outcome === 'failed' ? 'error' : 'warn',
+                       h('strong', {}, 'The run ' + label + '.'), ' ',
+                       progress.outcome_detail || '',
+                       ' ',
+                       h('a', {href: link('log')}, 'Read the log')),
+                pipelineHint());
+        }
+        return card('Current phase', empty('No task is running yet.'));
     }
     const achievement = task.achievement;
     return card('Current phase',
@@ -318,6 +343,22 @@ const PHASE_NOTE = {
                   + ' before this one'],
     pending: ['', 'not started yet'],
 };
+
+/* Which task the run stopped at, when it stopped at one. */
+function pipelineHint() {
+    const tasks = (state.progress && state.progress.tasks) || [];
+    const blocked = tasks.find((t) => t.phase === 'disabled');
+    if (!blocked) return null;
+    return h('p', {class: 'muted', style: 'margin-bottom:0'},
+             'The first task not enabled for this run is ',
+             h('a', {href: link('stage', blocked.name)},
+               task_title(blocked)),
+             '. Everything behind it was not reached.');
+}
+
+function task_title(task) {
+    return task.title || task.name;
+}
 
 function pipelineCard() {
     const tasks = (state.progress && state.progress.tasks) || [];
