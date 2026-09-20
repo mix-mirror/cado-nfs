@@ -2176,9 +2176,73 @@ class ClientServerTask(Task, wudb.UsesWorkunitDb, patterns.Observer):
                              wuid, attempt - 1)
             return
         new_wuid = self.make_wuname(identifier, attempt)
-        wu.set_id(new_wuid)
+        # A workunit's command line is frozen when it is created, so a
+        # parameter that was wrong the first time is wrong on every
+        # retry as well -- which is how one bad -bkmult turns into
+        # thousands of failures that keep coming back. Give the task a
+        # chance to say what this piece of work looks like *now*.
+        fresh = self.regenerate_wu(new_wuid, identifier)
+        if fresh is None:
+            wu.set_id(new_wuid)
+        else:
+            wu = fresh
+            self.logger.info("Rebuilding the command line of %s"
+                             " from the current parameters", new_wuid)
         self.logger.info("Resubmitting workunit %s as %s", wuid, new_wuid)
         self.submit_wu(wu, commit=commit)
+
+    def regenerate_wu(self, wuid, identifier):
+        """
+        The Workunit this piece of work would get if it were created
+        now, or None to reuse the one it already has.
+
+        Only tasks whose workunits can be rebuilt from their
+        identifier override this; for the others the old body is the
+        only one there is.
+        """
+        return None
+
+    def restamp_pending_wus(self):
+        """
+        Bring the workunits nobody is working on into line with the
+        parameters in force.
+
+        Changing a parameter that ends up on a client's command line
+        means restarting the server, and until now that left the
+        workunits already in the queue carrying the old one. On a run
+        that has just been restarted precisely because that parameter
+        was wrong, that is the whole backlog.
+
+        Only AVAILABLE and NEED_RESUBMIT rows are touched -- nobody
+        holds those -- and each write is conditioned on the status
+        still being the one we read.
+        """
+        prefix = self.make_wuname("")
+        changed = 0
+        for status in (wudb.WuStatus.AVAILABLE,
+                       wudb.WuStatus.NEED_RESUBMIT):
+            for row in self.wuar.query(eq={"status": status}):
+                wuid = row["wuid"]
+                if not wuid.startswith(prefix):
+                    continue
+                identifier = self.split_wuname(wuid)[2]
+                try:
+                    fresh = self.regenerate_wu(wuid, identifier)
+                except Exception as e:
+                    self.logger.warning("Could not rebuild %s (%s)",
+                                        wuid, e)
+                    continue
+                # regenerate_wu() hands back a Workunit; what is
+                # stored, and what we compare against, is its text.
+                if fresh is None or str(fresh) == row["wu"]:
+                    continue
+                self.wuar.set_wu_text(wuid, str(fresh), status)
+                changed += 1
+        if changed:
+            self.logger.info("Rebuilt the command line of %d queued"
+                             " workunit(s) from the current parameters",
+                             changed)
+        return changed
 
     def resubmit_timed_out_wus(self):
         """
@@ -4115,6 +4179,15 @@ class SievingTask(ClientServerTask, DoesImport, FilesCreator, HasStatistics):
                                             Request.GET_FACTORBASE_FILENAME,
                                             side)
 
+        # Kept so that a workunit can be rebuilt later, when the only
+        # thing to hand is its identifier -- see regenerate_wu().
+        self._factorbase_args = fb
+
+        # Anything still queued was built with the parameters of the
+        # run that queued it. If this run was started to change one of
+        # them, that backlog is exactly what needs correcting.
+        self.restamp_pending_wus()
+
         self.logger.info("We want %d relation(s)", self.state["rels_wanted"])
         qrange = self.params["qrange"]
         while self.should_schedule_more_work():
@@ -4122,18 +4195,9 @@ class SievingTask(ClientServerTask, DoesImport, FilesCreator, HasStatistics):
             q1 = q0 + qrange
             q1 = q1 - (q1 % qrange)
             assert q1 > q0
-            # We use .gzip by default, unless set to no in parameters
-            use_gz = ".gz" if self.params["gzip"] else ""
-            outputfilename = \
-                self.workdir.make_filename("%d-%d%s" % (q0, q1, use_gz))
+            outputfilename, p = self.make_las_command(q0, q1)
             self.check_files_exist([outputfilename], "output",
                                    shouldexist=False)
-            p = self.programs[0][0](q0=q0, q1=q1,
-                                    out=outputfilename,
-                                    stats_stderr=True,
-                                    skip_check_binary_exists=True,
-                                    **fb,
-                                    **self.merged_args[0])
             # Note that submit_command may call wait() !
             self.submit_command(p, "%d-%d" % (q0, q1), commit=False)
             self.state.update({"qnext": q1}, commit=True)
@@ -4308,6 +4372,46 @@ class SievingTask(ClientServerTask, DoesImport, FilesCreator, HasStatistics):
             self.add_file(filename, filename_with_stats_extension)
         else:
             self.add_file(filename)
+
+    def make_las_command(self, q0, q1):
+        """
+        The las invocation for one special-q range, as the parameters
+        in force describe it.
+
+        Split out of run() so that the same range can be rebuilt later
+        with different parameters; nothing here depends on when it is
+        called.
+        """
+        # We use .gzip by default, unless set to no in parameters
+        use_gz = ".gz" if self.params["gzip"] else ""
+        outputfilename = \
+            self.workdir.make_filename("%d-%d%s" % (q0, q1, use_gz))
+        p = self.programs[0][0](q0=q0, q1=q1,
+                                out=outputfilename,
+                                stats_stderr=True,
+                                skip_check_binary_exists=True,
+                                **self._factorbase_args,
+                                **self.merged_args[0])
+        return outputfilename, p
+
+    def regenerate_wu(self, wuid, identifier):
+        """
+        Rebuild a sieving workunit from its special-q range.
+
+        The range is all the state a sieving workunit has, and it is
+        in the identifier, so the command line can be produced afresh
+        whenever the parameters have moved on -- a corrected -bkmult,
+        most usefully.
+        """
+        if getattr(self, "_factorbase_args", None) is None:
+            # Called before run() got as far as asking for them; the
+            # old body is the only one we can offer.
+            return None
+        m = re.match(r"^(\d+)-(\d+)$", identifier or "")
+        if m is None:
+            return None
+        return self.make_las_command(int(m.group(1)),
+                                     int(m.group(2)))[1].make_wu(wuid)
 
     def get_statistics_as_strings(self):
         strings = ["Total number of relations: %d" % self.get_nrels()]

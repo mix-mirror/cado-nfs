@@ -531,6 +531,22 @@ class WuAccess(object):
                                       {"status": status},
                                       **conditions)
 
+    def set_wu_text(self, wuid, text, status):
+        """
+        Replace the body of a workunit that nobody is working on.
+
+        The status the caller saw is part of the condition, so a
+        workunit handed out between that read and this write keeps the
+        text its client was given: rewriting under a running client
+        would make the result impossible to interpret.
+        """
+        assert status in (WuStatus.AVAILABLE, WuStatus.NEED_RESUBMIT)
+        self.conn.harness_transaction(
+            EXCLUSIVE,
+            self.mapper.table.update,
+            {"wu": text},
+            eq={"wuid": wuid, "status": status})
+
     def query(self, limit=None, **conditions):
         return self.conn.harness_transaction(READONLY,
                                              self.mapper.where,
