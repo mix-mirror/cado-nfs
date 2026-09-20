@@ -4917,6 +4917,7 @@ class PurgeTask(Task):
             if self.params["computation"] == Computation.DLP:
                 update["relsdelfile"] = relsdelfile.get_wdir_relative()
             self.state.update(update)
+            self.record_attempt(stats, enough=True)
             self.logger.info("Have enough relations")
             self.send_notification(Notification.HAVE_ENOUGH_RELATIONS, None)
         else:
@@ -4924,6 +4925,7 @@ class PurgeTask(Task):
             self.logger.info("After purge, %d relations with %d primes remain "
                              "with excess %d", stats[0], stats[1], stats[3])
             excess = stats[3]
+            self.record_attempt(stats, enough=False)
             self.logger.info("Not enough relations")
             if not after_filter_galois:
                 self.request_more_relations(nunique, excess)
@@ -4931,6 +4933,24 @@ class PurgeTask(Task):
                 self.request_more_relations(input_nrels, excess)
         self.logger.debug("Exit PurgeTask.run(" + self.name + ")")
         return True
+
+    def record_attempt(self, stats, enough):
+        """
+        Keep what purge just said, where the api can read it.
+
+        These numbers are logged and then forgotten, so "how far short
+        are we, and how many times have we been round this loop"
+        could only be answered by reading the log. They are purge's
+        own figures; nothing is recomputed here.
+        """
+        self.state.update({
+            "purge_runs": self.state.get("purge_runs", 0) + 1,
+            "purge_time": time.time(),
+            "nrels_after_purge": stats[0],
+            "nprimes_after_purge": stats[1],
+            "excess": stats[3],
+            "enough_relations": enough,
+        }, commit=True)
 
     def request_more_relations(self, nunique, excess):
         r"""
@@ -4953,6 +4973,8 @@ class PurgeTask(Task):
         # Always request at least 10k more
         additional = max(additional, 10000)
 
+        self.state.update({"additional_requested": additional},
+                          commit=True)
         self.logger.info("Requesting %d additional relations", additional)
         self.send_notification(Notification.WANT_MORE_RELATIONS,
                                nunique + additional)
@@ -5463,10 +5485,77 @@ class NumberTheoryTask(Task):
 
 
 class bwc_output_filter(RealTimeOutputFilter):
+    """
+    Watch bwc go by, and keep a note of where it has got to.
+
+    Block Wiedemann is several programs in a row -- prep, krylov,
+    lingen, mksol, gather -- and each announces itself as it goes:
+
+        krylov: N=64 ; ETA (N=256): Tue ... [0.31 s/iter]
+        lingen ETA: Tue ...
+        mksol: N=89 ; ETA (N=128): Tue ...
+
+    which is enough to say which step is running and how far into it
+    we are. That was going to the log and nowhere else, so "linear
+    algebra" was a single opaque phase that could last days. What is
+    parsed here is what was already being logged.
+    """
+
+    # "krylov: N=64 ; ETA (N=256): ..." and "lingen ETA: ..."
+    STEP_ITER = re.compile(r"^(\w+): N=(\d+) ; ETA \(N=(\d+)\): (.*?)"
+                           r"(?: \[|$)")
+    STEP_ETA = re.compile(r"^(\w+) ETA: (.*)$")
+
+    # Writing to the database on every line would be silly: krylov can
+    # print one a second. A step change is always recorded; progress
+    # within a step waits its turn.
+    THROTTLE = 10.0
+
+    def __init__(self, logger, filename, task=None):
+        super().__init__(logger, filename)
+        self.task = task
+        self.last_write = 0.0
+
     def filter(self, data):
         super().filter(data)
-        if ("ETA" or "Timings") in data:
+        if "ETA" in data or "Timings" in data:
             self.logger.info(data.rstrip())
+        if self.task is not None:
+            for line in data.splitlines():
+                self.note(line.strip())
+
+    def note(self, line):
+        m = self.STEP_ITER.match(line)
+        if m:
+            self.record(m.group(1), iteration=int(m.group(2)),
+                        total=int(m.group(3)), eta=m.group(4).strip())
+            return
+        m = self.STEP_ETA.match(line)
+        if m and "not available" not in m.group(2):
+            self.record(m.group(1), eta=m.group(2).strip())
+        elif m:
+            self.record(m.group(1))
+
+    def record(self, step, iteration=None, total=None, eta=None):
+        changed = step != self.task.state.get("bwc_step")
+        now = time.time()
+        if not changed and now - self.last_write < self.THROTTLE:
+            return
+        self.last_write = now
+        update = {"bwc_step": step, "bwc_step_time": now}
+        # A new step starts over; leaving the previous one's counters
+        # in place would have lingen inheriting krylov's iteration.
+        update["bwc_iteration"] = iteration if iteration is not None \
+            else (0 if changed else self.task.state.get("bwc_iteration", 0))
+        update["bwc_total"] = total if total is not None \
+            else (0 if changed else self.task.state.get("bwc_total", 0))
+        update["bwc_eta"] = eta or ("" if changed
+                                    else self.task.state.get("bwc_eta", ""))
+        try:
+            self.task.state.update(update, commit=True)
+        except Exception as e:
+            # Losing a progress note must never take the run down.
+            self.logger.debug("could not record bwc progress (%s)", e)
 
 
 # I've just ditched the statistics bit, cause I don't know to make its
@@ -6086,7 +6175,8 @@ class LinAlgTask(Task, HasStatistics):
             wdir = workdir.realpath()
             self.state["ran_already"] = True
             self.remember_input_versions(commit=True)
-            with bwc_output_filter(self.logger, str(stdoutpath)) as outfilter:
+            with bwc_output_filter(self.logger, str(stdoutpath),
+                                   task=self) as outfilter:
                 p = cadoprograms.BWC(complete=True,
                                      matrix=matrix,
                                      wdir=wdir,

@@ -168,6 +168,20 @@ def section_views(app, f):
             "sieving reports the relations it wants")
     f.check("eta" in sieving, "sieving reports an ETA")
 
+    # Filtering and linear algebra used to be opaque: the numbers that
+    # say whether a run is in trouble went to the log and nowhere else.
+    hl = {t["name"]: t.get("highlights", {}) for t in progress["tasks"]}
+    f.equal(hl["purge"]["excess"], -4821,
+            "purge reports the excess it came up with")
+    f.equal(hl["purge"]["purge_runs"], 2,
+            "and how many times it has run")
+    f.check(hl["purge"]["enough_relations"] is False,
+            "and whether that was enough")
+    f.equal(hl["linalg"]["bwc_step"], "krylov",
+            "linear algebra reports which of its steps is running")
+    f.equal(hl["linalg"]["bwc_total"], 65536,
+            "with how far into that step it is")
+
     summary = get("/api/v1/workunits/summary").get_json()
     counts = summary["counts"]
     f.equal(counts["AVAILABLE"], 12, "available workunits are counted")

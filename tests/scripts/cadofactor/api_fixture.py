@@ -187,6 +187,22 @@ def populate(db, workdir):
         "wu_failed": 0, "wu_range_received": 4000,
         "achievement": 1.0, "cputime_polyselect": 812.3})
 
+    # Filtering came up short once and went back for more relations.
+    # The excess is the number one wants from across the room, and it
+    # was only ever in the log.
+    DictDbDirectAccess(conn, "purge").update({
+        "purge_runs": 2, "excess": -4821,
+        "nrels_after_purge": 2010333, "nprimes_after_purge": 2015154,
+        "enough_relations": False, "additional_requested": 120000,
+        "purge_time": time.time() - 900})
+
+    # Block Wiedemann is several programs in a row; which one is
+    # running is most of what one wants to know while it runs.
+    DictDbDirectAccess(conn, "linalg").update({
+        "bwc_step": "krylov", "bwc_iteration": 12800,
+        "bwc_total": 65536, "bwc_eta": "Thu Sep 10 04:11:02 2026",
+        "bwc_step_time": time.time() - 30})
+
     DictDbDirectAccess(conn, "sieving").update({
         "wu_submitted": 220, "wu_received": 181, "wu_timedout": 3,
         "wu_failed": 2, "wu_range_received": 18100,

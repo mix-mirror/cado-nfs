@@ -267,6 +267,36 @@ function highlights(task) {
         bits.push(figure(count(hl.rels_found) + ' / ' + count(hl.rels_wanted),
                          'relations'));
     }
+    /* Filtering. A negative excess is the thing one wants to see from
+     * across the room: it means the run is going back for more
+     * relations rather than moving on. */
+    if (hl.excess !== undefined) {
+        bits.push(figure(
+            h('span', {style: hl.excess < 0
+                       ? 'color:var(--bad);font-weight:600' : ''},
+              count(hl.excess)), 'excess'));
+    }
+    if (hl.nrels_after_purge !== undefined) {
+        bits.push(figure(count(hl.nrels_after_purge) + ' / '
+                         + count(hl.nprimes_after_purge),
+                         'relations / primes'));
+    }
+    if (hl.purge_runs) {
+        bits.push(figure(count(hl.purge_runs),
+                         'purge run' + (hl.purge_runs === 1 ? '' : 's')));
+    }
+    if (hl.additional_requested && hl.enough_relations === false) {
+        bits.push(figure(count(hl.additional_requested),
+                         'more relations asked for'));
+    }
+    /* Linear algebra: which of the several programs is running. */
+    if (hl.bwc_step) {
+        bits.push(figure(h('span', {class: 'mono'}, hl.bwc_step), 'step'));
+        if (hl.bwc_total) {
+            bits.push(figure(count(hl.bwc_iteration) + ' / '
+                             + count(hl.bwc_total), 'iterations'));
+        }
+    }
     if (hl.qnext !== undefined) {
         bits.push(figure(count(hl.qnext), 'special-q reached'));
     }
@@ -605,12 +635,41 @@ function raiseCeiling(button, name, value) {
     });
 }
 
+/* Filtering that came up short. The run goes quietly back to sieving,
+ * so unless this is said out loud the overview looks exactly like a
+ * healthy one -- while the matrix is the thing that is missing. */
+function shortfallBanner() {
+    const tasks = (state.progress && state.progress.tasks) || [];
+    const purge = tasks.find(
+        (t) => (t.highlights || {}).enough_relations === false);
+    if (!purge) return null;
+    const hl = purge.highlights;
+    return h('section', {class: 'card span2'},
+        banner('warn',
+            h('strong', {}, task_title(purge)),
+            ' came up short: excess ',
+            h('strong', {style: 'color:var(--bad)'}, count(hl.excess)),
+            ' after ' + count(hl.nrels_after_purge) + ' relations for '
+            + count(hl.nprimes_after_purge) + ' primes',
+            hl.additional_requested
+                ? ', so ' + count(hl.additional_requested)
+                  + ' more relations were asked for'
+                : '',
+            '. ',
+            hl.purge_runs > 1
+                ? 'It has run ' + hl.purge_runs + ' times. ' : '',
+            h('a', {href: link('stage', purge.name)}, 'Look at it')));
+}
+
 function overview() {
     const main = document.getElementById('main');
     clear(main);
     if (state.notice) main.appendChild(state.notice);
+    const shortfall = shortfallBanner();
     const stranded = strandedCard();
     append(main, [
+        shortfall ? h('div', {class: 'grid'}, shortfall) : null,
+        shortfall ? h('div', {style: 'height:16px'}) : null,
         h('div', {class: 'grid wide'}, currentCard(), workunitsCard()),
         h('div', {style: 'height:16px'}),
         h('div', {class: 'grid wide'}, pipelineCard(), clientsSummaryCard()),
@@ -1254,7 +1313,9 @@ function stageView() {
                    : task.phase === 'disabled' ? 'gone' : 'unknown')),
             h('div', {class: 'sub'},
               task.phase === 'running'
-                  ? (task.eta ? 'estimated finish ' + task.eta
+                  ? (task.eta || (task.highlights || {}).bwc_eta
+                      ? 'estimated finish '
+                        + (task.eta || task.highlights.bwc_eta)
                       : 'no estimate yet')
                   : (note ? note[1] : '')),
             h('div', {class: 'figures'}, highlights(task))))));

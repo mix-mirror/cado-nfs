@@ -1176,7 +1176,19 @@ class DbViews(object):
         # matter. Absent keys simply mean "not this kind of task".
         highlights = {}
         for key in ("rels_found", "rels_wanted", "qnext", "adnext",
-                    "noutrels", "nr_poly_submitted"):
+                    "noutrels", "nr_poly_submitted",
+                    # Filtering: how short of a matrix we are, and how
+                    # many times we have been round the loop. A run
+                    # that keeps going back for more relations looks
+                    # identical to a healthy one without these.
+                    "purge_runs", "excess", "enough_relations",
+                    "nrels_after_purge", "nprimes_after_purge",
+                    "additional_requested", "purge_time",
+                    # Linear algebra is several programs in a row, and
+                    # which one is running is most of what one wants
+                    # to know during the days it takes.
+                    "bwc_step", "bwc_iteration", "bwc_total",
+                    "bwc_eta", "bwc_step_time"):
             if key in state:
                 highlights[key] = state[key]
         if highlights:
