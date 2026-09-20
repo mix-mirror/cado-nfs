@@ -6958,11 +6958,20 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
         # If we should auto-assign an available port, try to use the same one
         # as last time, if we had run before. This can be overridden with
         # server.forgetport=yes
-        if self.params["forgetport"] and "port" in self.state:
-            del self.state["port"]
+        #
+        # Not in read-only mode, though. --ui-only is a second server on
+        # a working directory that belongs to somebody else: taking the
+        # remembered port means refusing to start whenever the
+        # computation is up, and recording a new one means the next
+        # resume comes back on an address no client was told about. So
+        # it neither reads that state nor writes it, and an unset
+        # server.port simply gets a free port.
+        if not read_only:
+            if self.params["forgetport"] and "port" in self.state:
+                del self.state["port"]
 
-        if serverport == 0 and "port" in self.state:
-            serverport = self.state["port"]
+            if serverport == 0 and "port" in self.state:
+                serverport = self.state["port"]
 
         # If (1) any clients are to be started on localhost, but (2) the
         # server is listening on a network-visible address, then we need
@@ -7021,7 +7030,8 @@ class StartServerTask(DoesLogging, cadoparams.UseParameters, HasState):
             read_only=read_only,
             # linger_before_quit=lbq
             )
-        self.state["port"] = self.server.get_port()
+        if not read_only:
+            self.state["port"] = self.server.get_port()
 
     def run(self):
         self.server.serve()

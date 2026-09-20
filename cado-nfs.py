@@ -186,20 +186,27 @@ if __name__ == '__main__':
 
     logger.debug("Root parameter dictionary:\n%s", parameters)
 
-    # Write a snapshot of the parameters to a file
-    for counter in itertools.count():
-        snapshot_basename = name + ".parameters_snapshot.%d" % counter
-        snapshot_filename = os.path.join(wdir, snapshot_basename)
-        if not os.path.isfile(snapshot_filename):
-            break
-    with open(snapshot_filename, "w") as snapshot_file:
-        logger.debug("Writing parameter snapshot to %s", snapshot_filename)
-        snapshot_file.write(str(parameters))
-        snapshot_file.write("\n")
+    # Write a snapshot of the parameters to a file. Not in --ui-only,
+    # which runs nothing and must leave the directory as it found it:
+    # the snapshots are numbered, the api writes the next one in the
+    # sequence whenever a ceiling is raised, and the highest-numbered
+    # one is what a resume is expected to be given. Looking at a
+    # computation has no business bumping that counter.
+    if not toplevel_params.args.ui_only:
+        for counter in itertools.count():
+            snapshot_basename = name + ".parameters_snapshot.%d" % counter
+            snapshot_filename = os.path.join(wdir, snapshot_basename)
+            if not os.path.isfile(snapshot_filename):
+                break
+        with open(snapshot_filename, "w") as snapshot_file:
+            logger.debug("Writing parameter snapshot to %s",
+                         snapshot_filename)
+            snapshot_file.write(str(parameters))
+            snapshot_file.write("\n")
 
-    logger.info("If this computation gets interrupted,"
-                " it can be resumed with %s %s",
-                sys.argv[0], snapshot_filename)
+        logger.info("If this computation gets interrupted,"
+                    " it can be resumed with %s %s",
+                    sys.argv[0], snapshot_filename)
 
     if toplevel_params.args.ui_only:
         # Serve the monitoring api and the web ui for this working
