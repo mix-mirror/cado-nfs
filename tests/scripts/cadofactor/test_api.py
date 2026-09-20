@@ -361,13 +361,35 @@ def section_views(app, f):
     f.equal(len(by_client["workunits"]), 4,
             "filtering by client returns the right count")
 
-    # The client box is a search box: it matches on substring, since a
-    # client id carries a port or an --override suffix that one should
-    # not have to know in order to ask about a machine.
-    by_prefix = get("/api/v1/workunits?assigned_to=alpha-0"
+    # Naming a client and searching for one are different requests.
+    # "client" is the search box: any part of the name, either column.
+    by_prefix = get("/api/v1/workunits?client=alpha-0"
                     "&status=ASSIGNED").get_json()
     f.equal(len(by_prefix["workunits"]), len(listing["workunits"]),
-            "the client filter matches on substring")
+            "the client search matches on substring")
+    f.equal(get("/api/v1/workunits?assigned_to=alpha-0"
+                "&status=ASSIGNED").get_json()["workunits"], [],
+            "naming a client, by contrast, is exact")
+
+    # Several statuses are OR-ed, which is what "still outstanding"
+    # actually asks for.
+    both = get("/api/v1/workunits?status=ASSIGNED,AVAILABLE"
+               "&limit=200").get_json()["workunits"]
+    f.equal(len(both), counts["ASSIGNED"] + counts["AVAILABLE"],
+            "several statuses are OR-ed together")
+    f.check(all(w["status_name"] in ("ASSIGNED", "AVAILABLE")
+                for w in both),
+            "and nothing else comes back")
+    f.equal(len(get("/api/v1/workunits?status=1,ASSIGNED"
+                    "&limit=200").get_json()["workunits"]),
+            counts["ASSIGNED"],
+            "names and numbers may be mixed, and repeats are harmless")
+    f.equal(client.get("/api/v1/workunits?status=ASSIGNED,NOSUCH",
+                       headers=headers).status_code, 400,
+            "an unknown status in the list is refused")
+    f.equal(summary["outstanding_statuses"],
+            ["AVAILABLE", "ASSIGNED", "NEED_RESUBMIT"],
+            "the summary says what it counts as outstanding")
 
     by_task = get("/api/v1/workunits?task=polyselect"
                   "&status=ASSIGNED").get_json()

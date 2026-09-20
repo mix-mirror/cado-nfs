@@ -872,6 +872,8 @@ def cmd_wu_list(server, args):
         query["assigned_to"] = args.assigned_to
     if args.result_from:
         query["result_from"] = args.result_from
+    if args.client:
+        query["client"] = args.client
     if args.task:
         query["task"] = args.task
     if args.older_than:
@@ -1125,9 +1127,17 @@ def build_parser():
     wusub = p.add_subparsers(dest="wucommand", required=True)
 
     q = wusub.add_parser("list", help="browse the workunits table")
-    q.add_argument("--status", help="status name or number")
-    q.add_argument("--assigned-to", metavar="CLIENTID")
-    q.add_argument("--result-from", metavar="CLIENTID")
+    q.add_argument("--status",
+                   help="status name or number; several may be given,"
+                        " comma separated, and are OR-ed, as in"
+                        " --status=AVAILABLE,ASSIGNED,NEED_RESUBMIT")
+    q.add_argument("--assigned-to", metavar="CLIENTID",
+                   help="exactly this client, as it holds them now")
+    q.add_argument("--result-from", metavar="CLIENTID",
+                   help="exactly this client, as it returned them")
+    q.add_argument("--client", metavar="TEXT",
+                   help="search: any part of the name of the client"
+                        " that holds a workunit or returned it")
     q.add_argument("--task")
     q.add_argument("--older-than", metavar="DURATION",
                    help="only workunits assigned longer ago than this,"

@@ -399,17 +399,42 @@ function workunitSegments() {
     }));
 }
 
+/* "outstanding" is three statuses added up, and a reader who clicks it
+ * wants the rows, not a number that turns out to mean something
+ * narrower. Both the total and each part are links to exactly what
+ * they count. */
+function outstandingBreakdown() {
+    const summary = state.summary || {};
+    const counts = summary.counts || {};
+    const parts = (summary.outstanding_statuses || [])
+        .filter((key) => counts[key]);
+    if (parts.length < 2) return null;
+    const bits = [];
+    for (const key of parts) {
+        if (bits.length) bits.push(' + ');
+        const segment = WU_SEGMENTS.find((s) => s.key === key);
+        bits.push(h('a', {href: link('workunits', null, {status: key})},
+                    count(counts[key]) + ' '
+                    + ((segment && segment.label) || key.toLowerCase())));
+    }
+    return h('div', {class: 'faint',
+                     style: 'margin-top:-6px;font-size:12.5px'}, bits);
+}
+
 function workunitsCard() {
     const segments = workunitSegments();
     const total = (state.summary && state.summary.total) || 0;
+    const summary = state.summary || {};
+    const outstanding = summary.outstanding_statuses || [];
     return card('Workunits',
                 h('div', {class: 'figures'},
                   figure(h('a', {href: link('workunits')}, count(total)),
                          'total'),
                   figure(h('a', {href: link('workunits', null,
-                                            {status: 'ASSIGNED'})},
-                           count((state.summary || {}).outstanding || 0)),
+                                            {status: outstanding.join(',')})},
+                           count(summary.outstanding || 0)),
                          'outstanding')),
+                outstandingBreakdown(),
                 h('div', {style: 'margin-top:14px'},
                   stackedBar(segments)),
                 legend(segments));
@@ -629,6 +654,18 @@ function stateControl() {
         }, label))));
 }
 
+/* Typing part of a name. Matched against the id and against what the
+ * client said about itself, so a rack, a cluster or a domain all work.
+ * On a pool of any size this is how one finds a machine at all. */
+function searchControl() {
+    return h('label', {}, 'search',
+        h('input', {
+            type: 'search', value: param('q'),
+            placeholder: 'name, machine, cluster\u2026',
+            onchange: (e) => go(here({q: e.target.value.trim()})),
+        }));
+}
+
 /* Every pill in a roll-up is a way in: the point of a tally is the
  * rows behind it. */
 function groupStatePills(kind, group) {
@@ -657,6 +694,7 @@ function clientGroupsView() {
     const kind = payload.group_by || defaultGrouping();
     main.appendChild(card('Clients by ' + kind,
         h('div', {class: 'controls'}, groupControl(), stateControl(),
+          searchControl(),
           h('span', {class: 'muted'},
             (payload.total || 0) + ' clients in '
             + (payload.groups_total || 0) + ' ' + kind + 's')),
@@ -738,7 +776,13 @@ function groupView() {
 
     main.appendChild(h('div', {style: 'height:16px'}));
     main.appendChild(card('Clients',
-        rows.length ? clientTable(rows) : empty('Nothing here.')));
+        h('div', {class: 'controls'}, stateControl(), searchControl()),
+        rows.length
+            ? clientTable(rows)
+            : empty(param('q')
+                    ? 'No client here matches \u201c' + param('q')
+                      + '\u201d.'
+                    : 'Nothing here.')));
 }
 
 /* The list of clients, used both by the flat view and by a group's
@@ -827,10 +871,13 @@ function clientsView() {
     const filtered = param('state');
     if (!rows.length) {
         main.appendChild(card('Clients',
-            h('div', {class: 'controls'}, groupControl(), stateControl()),
-            empty(filtered
-                  ? 'No client is ' + filtered + '.'
-                  : 'No client has asked for work yet.')));
+            h('div', {class: 'controls'}, groupControl(), stateControl(),
+              searchControl()),
+            empty(param('q')
+                  ? 'No client matches \u201c' + param('q') + '\u201d.'
+                  : filtered
+                      ? 'No client is ' + filtered + '.'
+                      : 'No client has asked for work yet.')));
         return;
     }
     const total = payload.total || rows.length;
@@ -838,7 +885,8 @@ function clientsView() {
     main.appendChild(card(
         'Clients',
         h('div', {class: 'controls'}, groupControl(), stateControl(),
-          filtered
+          searchControl(),
+          filtered || param('q')
               ? h('span', {class: 'muted'},
                   total + ' of ' + (payload.pool_total || total)
                   + ' clients')
@@ -886,6 +934,25 @@ function timeline(entries) {
              h('table', {}, h('tbody', {}, rows)));
 }
 
+/* Where this client sits, as links. Several clients share a machine
+ * and many machines share a cluster, so going up is as much a part of
+ * looking at one client as going down was. */
+function whereItLives(c) {
+    const out = [];
+    for (const [kind, value, label] of [
+        ['host', c.host, 'machine'],
+        ['cluster', c.cluster, 'cluster'],
+        ['domain', c.domain, 'domain'],
+    ]) {
+        if (!value) continue;
+        out.push(h('span', {style: 'font-size:13px'},
+                   ' \u00b7 ' + label + ' ',
+                   h('a', {href: link('group', value, {group_by: kind})},
+                     value)));
+    }
+    return out;
+}
+
 function clientDetailView() {
     const main = document.getElementById('main');
     clear(main);
@@ -903,7 +970,8 @@ function clientDetailView() {
               ' (median of ' + c.turnaround_samples + ')'));
 
     main.appendChild(card(null,
-        h('div', {}, backLink(link('clients'), 'all clients')),
+        h('div', {}, backLink(link('clients'), 'all clients'),
+          whereItLives(c)),
         h('div', {class: 'current', style: 'margin-top:10px'},
           h('div', {class: 'detail'},
             h('div', {class: 'title mono'}, c.clientid, ' ', statePill(c)),
@@ -1162,6 +1230,23 @@ const STATUSES = ['', 'AVAILABLE', 'ASSIGNED', 'NEED_RESUBMIT',
                   'RECEIVED_OK', 'RECEIVED_ERROR', 'VERIFIED_OK',
                   'VERIFIED_ERROR', 'CANCELLED'];
 
+/* The filter takes several statuses at once, so the box has to be able
+ * to show a combination it did not offer -- one arrived at by
+ * following "outstanding", say. */
+function statusChoices() {
+    const choices = STATUSES.map((s) => [s, s || 'any']);
+    const current = param('status');
+    const outstanding = ((state.summary || {}).outstanding_statuses
+                         || []).join(',');
+    if (outstanding && !choices.some(([v]) => v === outstanding)) {
+        choices.splice(1, 0, [outstanding, 'outstanding (any of three)']);
+    }
+    if (current && !choices.some(([v]) => v === current)) {
+        choices.push([current, current]);
+    }
+    return choices;
+}
+
 function workunitsView() {
     const main = document.getElementById('main');
     clear(main);
@@ -1176,9 +1261,9 @@ function workunitsView() {
         h('label', {}, 'status',
           h('select', {
               onchange: (e) => go(here({status: e.target.value})),
-          }, STATUSES.map((s) => h('option', {
-              value: s, selected: s === param('status'),
-          }, s || 'any')))),
+          }, statusChoices().map(([v, label]) => h('option', {
+              value: v, selected: v === param('status'),
+          }, label)))),
         h('label', {}, 'task',
           h('select', {
               onchange: (e) => go(here({task: e.target.value})),
@@ -1496,21 +1581,25 @@ function groupBy() {
 
 function clientQuery() {
     const grouping = groupBy() === null ? defaultGrouping() : groupBy();
-    if (grouping) return {group_by: grouping, state: param('state')};
+    if (grouping) {
+        return {group_by: grouping, state: param('state'), q: param('q')};
+    }
     return {limit: CLIENT_PAGE, offset: intParam('offset', 0),
-            state: param('state')};
+            state: param('state'), q: param('q')};
 }
 
 function groupQuery() {
     return {group: state.id,
             group_by_key: param('group_by', 'cluster'),
-            state: param('state'),
+            state: param('state'), q: param('q'),
             limit: CLIENT_PAGE, offset: intParam('offset', 0)};
 }
 
 function workunitQuery() {
     return {status: param('status'), task: param('task'),
-            assigned_to: param('client'),
+            /* The box is a search: any part of the name, whether the
+             * client is holding the workunit or handed it back. */
+            client: param('client'),
             limit: intParam('limit', 50),
             offset: intParam('offset', 0)};
 }

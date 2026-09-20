@@ -46,6 +46,33 @@ from cadofactor.workunit import STATUS_NAMES, WuStatus
 
 logger = logging.getLogger("API server")
 
+
+def client_matches(client, needle):
+    """
+    Does this client answer to `needle`?
+
+    >>> c = {"clientid": "beta-04+2", "host": "beta-04",
+    ...      "cluster": "beta", "domain": "nancy.example",
+    ...      "fqdn": "beta-04.nancy.example"}
+    >>> client_matches(c, "beta-04")
+    True
+    >>> client_matches(c, "nancy")
+    True
+    >>> client_matches(c, "gamma")
+    False
+    """
+    for key in ("clientid", "fqdn", "host", "cluster", "domain"):
+        value = client.get(key)
+        if value and needle in str(value).lower():
+            return True
+    return False
+
+
+# What "outstanding" means: work that still has to happen. Kept here
+# rather than spelled out at each use, since the dashboard links the
+# figure to exactly these rows.
+OUTSTANDING_STATUSES = ("AVAILABLE", "ASSIGNED", "NEED_RESUBMIT")
+
 API = "/api/v1"
 
 # Bound on how much of the log file one request may pull.
@@ -344,21 +371,43 @@ def _int_arg(name, default, minimum=None, maximum=None):
 
 def _status_arg():
     """
-    Read a status filter given either by name or by number.
+    Read a status filter: one status, or several separated by commas.
+
+    Names or numbers, and the two may be mixed. Several are OR-ed, so
+    that a question about everything still outstanding is one request
+    rather than three and a sum.
+
+    >>> _one_status("ASSIGNED", ["AVAILABLE", "ASSIGNED"])
+    1
+    >>> _one_status("0", ["AVAILABLE", "ASSIGNED"])
+    0
     """
     raw = flask.request.args.get("status")
     if raw is None or raw == "":
         return None
+    wanted = [part.strip() for part in raw.split(",") if part.strip()]
+    if not wanted:
+        return None
+    try:
+        return [_one_status(part, STATUS_NAMES) for part in wanted]
+    except ValueError as e:
+        flask.abort(400, str(e))
+
+
+def _one_status(raw, names):
+    """
+    One status, by name or by number, as its number.
+    """
     if raw.isdigit():
         value = int(raw)
     else:
         try:
-            value = STATUS_NAMES.index(raw.upper())
+            value = list(names).index(raw.upper())
         except ValueError:
-            flask.abort(400, "unknown status %r; expected one of %s"
-                        % (raw, ", ".join(STATUS_NAMES)))
-    if not 0 <= value < len(STATUS_NAMES):
-        flask.abort(400, "status out of range")
+            raise ValueError("unknown status %r; expected one of %s"
+                             % (raw, ", ".join(names)))
+    if not 0 <= value < len(names):
+        raise ValueError("status %r is out of range" % raw)
     return value
 
 
@@ -579,22 +628,34 @@ class AdminEndpoints(object):
         return json_response({
             "counts": counts,
             "total": sum(counts.values()),
-            "outstanding": (counts.get("AVAILABLE", 0)
-                            + counts.get("ASSIGNED", 0)
-                            + counts.get("NEED_RESUBMIT", 0)),
+            "outstanding": sum(counts.get(k, 0)
+                               for k in OUTSTANDING_STATUSES),
+            # Which statuses that figure is made of, so that a caller
+            # can link it to the rows behind it rather than guessing.
+            "outstanding_statuses": list(OUTSTANDING_STATUSES),
         })
 
     @api_route(API + "/workunits", tags=["monitoring"], auth=True,
                summary="Browse the workunits table",
                parameters=[
                    query_parameter("status", {"type": "string"},
-                                   "Status name or number to filter on"),
+                                   "Status names or numbers, comma"
+                                   " separated. Several are OR-ed, so"
+                                   " status=AVAILABLE,ASSIGNED,"
+                                   "NEED_RESUBMIT is everything still"
+                                   " outstanding in one request."),
                    query_parameter("assigned_to", {"type": "string"},
-                                   "Only workunits handed to this"
-                                   " client and not yet returned"),
+                                   "Only workunits assigned to exactly"
+                                   " this client"),
                    query_parameter("result_from", {"type": "string"},
-                                   "Only workunits returned by this"
-                                   " client"),
+                                   "Only workunits returned by exactly"
+                                   " this client"),
+                   query_parameter("client", {"type": "string"},
+                                   "Search: any part of the name of"
+                                   " the client that holds a workunit"
+                                   " or returned it. Unlike"
+                                   " assigned_to this is a substring"
+                                   " match, for a search box."),
                    query_parameter("task", {"type": "string"},
                                    "Only workunits of this task"),
                    query_parameter("assigned_older_than",
@@ -625,6 +686,7 @@ class AdminEndpoints(object):
             status=_status_arg(),
             assigned_to=flask.request.args.get("assigned_to") or None,
             result_from=flask.request.args.get("result_from") or None,
+            client=flask.request.args.get("client") or None,
             task=flask.request.args.get("task") or None,
             assigned_older_than=older,
             limit=limit,
@@ -729,6 +791,10 @@ class AdminEndpoints(object):
                                     "enum": list(GROUPABLE)},
                                    "What 'group' refers to"
                                    " (default: cluster)"),
+                   query_parameter("q", {"type": "string"},
+                                   "Search: keep the clients whose id,"
+                                   " fqdn, machine, cluster or domain"
+                                   " contains this text"),
                    query_parameter("state", {"type": "string"},
                                    "Comma-separated liveness states to"
                                    " keep, e.g. stale,gone. counts and"
@@ -806,6 +872,16 @@ class AdminEndpoints(object):
             wanted = {s for s in states.split(",") if s}
             clients = [c for c in clients if c["state"] in wanted]
             payload["state"] = sorted(wanted)
+            payload["total"] = len(clients)
+
+        # A search box. Matched against the id and against whatever the
+        # client said about itself, so that typing a rack name, a
+        # cluster or a domain finds the machines in it -- which is what
+        # somebody staring at four thousand rows is trying to do.
+        needle = (flask.request.args.get("q") or "").strip().lower()
+        if needle:
+            clients = [c for c in clients if client_matches(c, needle)]
+            payload["q"] = needle
             payload["total"] = len(clients)
 
         if flask.request.args.get("summary") in ("1", "true", "yes"):

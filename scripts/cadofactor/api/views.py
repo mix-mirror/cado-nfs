@@ -923,64 +923,84 @@ class DbViews(object):
         return out
 
     def list_workunits(self, status=None, assigned_to=None,
-                       result_from=None, task=None,
+                       result_from=None, client=None, task=None,
                        assigned_older_than=None, limit=50, offset=0):
         """
         A page of the workunits table, most recent first.
 
-        The two client filters are deliberately separate rather than one
-        "client" filter: a workunit has both an assignedclient and a
-        resultclient, and which one you mean is the difference between
-        "what is this machine chewing on" and "what did it hand back".
-        Note that assignedclient is cleared only when a workunit goes
-        back to AVAILABLE, so assigned_to also answers "everything this
-        machine has touched".
+        `status` is one status or several: a question like "what is
+        still outstanding" is about AVAILABLE, ASSIGNED and
+        NEED_RESUBMIT together, and answering it one status at a time
+        is three round trips and a sum done in the wrong place.
+        Several statuses are OR-ed, everything else is AND-ed.
 
-        Both match on substring, not on equality: client ids carry a
-        port or an --override suffix, so exact matching would mean
-        knowing the id before being able to ask about the machine. The
-        pattern goes in the value and never in the SQL text, since a
-        literal % in a command upsets the TRANSACTION-level logging in
-        DbCursor._exec. The wildcards are not
-        escaped: there is no portable way to say ESCAPE through this
-        layer, and a search box where _ matches any character and % any
-        run of them is a search box that behaves the way one expects.
+        Naming a client and searching for one are different things,
+        and mixing them is a way to act on the wrong machine.
+        `assigned_to` and `result_from` name one client exactly; they
+        are separate because a workunit has both an assignedclient and
+        a resultclient, and which one is meant is the difference
+        between "what is this machine chewing on" and "what did it hand
+        back". `client` is the search: a substring of either column,
+        for a box in which one types part of a machine's name.
+
+        The search wildcards are not escaped: there is no portable way
+        to say ESCAPE through this layer, and a box where _ matches any
+        character and % any run of them behaves the way one expects.
 
         Filtering by task uses a LIKE on the wuid prefix, since the task
         name is encoded there and there is no column for it.
+
+        The SQL is built here rather than through where_as_dict()
+        because that helper AND-es everything it is given and has no
+        way to say IN. Every value travels as a bound parameter; the
+        command text carries no literal %, which would upset the
+        TRANSACTION-level logging in DbCursor._exec.
         """
-        conditions = {}
-        equalities = {}
-        likes = {}
-        if status is not None:
-            equalities["status"] = int(status)
-        if assigned_to is not None:
-            likes["assignedclient"] = "%" + assigned_to + "%"
-        if result_from is not None:
-            likes["resultclient"] = "%" + result_from + "%"
-        if equalities:
-            conditions["eq"] = equalities
-        if task is not None:
-            name = self.progress_state().get("name", "")
-            prefix = ("%s_%s_" % (name, task)) if name else ("%s_" % task)
-            likes["wuid"] = prefix + "%"
-        if likes:
-            conditions["like"] = likes
-        if assigned_older_than is not None:
-            stamp = datetime.fromtimestamp(
-                time.time() - float(assigned_older_than),
-                timezone.utc).replace(tzinfo=None)
-            conditions["lt"] = {"timeassigned": str(stamp)}
+        statuses = ([] if status is None
+                    else [int(status)] if isinstance(status, int)
+                    else [int(s) for s in status])
 
         def query(cursor):
-            return cursor.where_as_dict("workunits",
-                                        limit=int(limit),
-                                        offset=int(offset),
-                                        order=("wurowid", "DESC"),
-                                        **conditions)
+            qm = cursor.parameter_auto_increment
+            where, values = [], []
+            if statuses:
+                where.append("status IN (%s)"
+                             % ", ".join([qm] * len(statuses)))
+                values.extend(statuses)
+            if assigned_to is not None:
+                where.append("assignedclient = " + qm)
+                values.append(assigned_to)
+            if result_from is not None:
+                where.append("resultclient = " + qm)
+                values.append(result_from)
+            if client is not None:
+                where.append("(assignedclient LIKE %s"
+                             " OR resultclient LIKE %s)" % (qm, qm))
+                values.extend(["%" + client + "%"] * 2)
+            if task is not None:
+                name = self.progress_state().get("name", "")
+                prefix = ("%s_%s_" % (name, task)) if name \
+                    else ("%s_" % task)
+                where.append("wuid LIKE " + qm)
+                values.append(prefix + "%")
+            if assigned_older_than is not None:
+                stamp = datetime.fromtimestamp(
+                    time.time() - float(assigned_older_than),
+                    timezone.utc).replace(tzinfo=None)
+                where.append("timeassigned < " + qm)
+                values.append(str(stamp))
 
-        rows = self._read(query)
-        return [self.describe_workunit(row) for row in rows]
+            cursor.execute(
+                "SELECT * FROM workunits"
+                + (" WHERE " + " AND ".join(where) if where else "")
+                + " ORDER BY wurowid DESC LIMIT %d OFFSET %d;"
+                % (int(limit), int(offset)),
+                values)
+            desc = [k[0] for k in cursor.cursor.description]
+            return [dict(zip(desc, row))
+                    for row in cursor.cursor.fetchall()]
+
+        return [self.describe_workunit(row) for row in self._read(query)]
 
     def assigned_workunits(self, clientids, limit=MAX_RECLAIM):
         """

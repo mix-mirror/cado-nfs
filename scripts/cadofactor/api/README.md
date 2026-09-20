@@ -305,16 +305,29 @@ query and the remainder is then checked properly. The captured output
 is read off disk, so the path from the database is checked to be
 inside the working directory before anything is opened.
 
-`/api/v1/workunits` takes `assigned_to` and `result_from`, and both
-match on **substring**. A client id carries a port or an `--override`
-suffix, so exact matching would mean knowing the id before being able
-to ask about the machine. `assignedclient` is cleared only when a
-workunit returns to AVAILABLE, so `assigned_to` also answers "what has
-this machine touched". The wildcards `%` and `_` are not escaped:
-there is no portable way to say ESCAPE through this database layer,
-and a search box where they work is a search box that behaves as one
-expects. Reclaiming, by contrast, matches a client id exactly --
-reclaiming is not searching.
+`/api/v1/workunits` distinguishes naming a client from searching for
+one. `assigned_to` and `result_from` name one client **exactly**;
+`client` is the search box, a substring of either column. Conflating
+the two is how one ends up looking at `beta-04` and seeing
+`beta-04+2`'s workunits. The search wildcards `%` and `_` are not
+escaped: there is no portable way to say ESCAPE through this database
+layer, and a search box where they work behaves as one expects.
+Reclaiming always matches exactly -- reclaiming is not searching.
+
+`status` takes several statuses, comma separated, by name or by
+number, and ORs them:
+
+    GET /api/v1/workunits?status=AVAILABLE,ASSIGNED,NEED_RESUBMIT
+
+which is what "everything still outstanding" actually asks for.
+`/api/v1/workunits/summary` reports that figure as `outstanding` and
+names its parts in `outstanding_statuses`, so a caller can link the
+number to exactly the rows it counts instead of guessing at one of
+them.
+
+`/api/v1/clients` takes `q`, matched against the client id, fqdn,
+machine, cluster and domain, so that typing a rack name finds the
+machines in it.
 
 ## Changing a parameter while the computation runs
 
