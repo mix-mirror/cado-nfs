@@ -901,6 +901,7 @@ class DbViews(object):
                     "share": 0.0,
                     "states": {},
                     "cores": 0,
+                    "_cores_by_host": {},
                     "last_seen": None,
                 }
             group["clients"] += 1
@@ -909,18 +910,25 @@ class DbViews(object):
             group["share"] += client["share"]
             state = client["state"]
             group["states"][state] = group["states"].get(state, 0) + 1
+            # Cores belong to the machine, not to the client. Eight
+            # clients on one 64-core node are 64 cores, not 512, so
+            # count each machine once -- which is also why this is
+            # keyed by the host and not simply added up.
             if client.get("cores"):
                 try:
-                    group["cores"] += int(client["cores"])
+                    group["_cores_by_host"][client.get("host") or
+                                            client["clientid"]] = \
+                        int(client["cores"])
                 except (TypeError, ValueError):
                     pass
             seen = client.get("last_seen")
             if seen is not None and (group["last_seen"] is None
                                      or seen > group["last_seen"]):
                 group["last_seen"] = seen
-        out = sorted(groups.values(),
-                     key=lambda g: (-g["completed"], g["key"]))
-        return out
+        for group in groups.values():
+            group["cores"] = sum(group.pop("_cores_by_host").values())
+        return sorted(groups.values(),
+                      key=lambda g: (-g["completed"], g["key"]))
 
     def list_workunits(self, status=None, assigned_to=None,
                        result_from=None, client=None, task=None,

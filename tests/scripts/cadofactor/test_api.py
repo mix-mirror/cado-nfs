@@ -182,6 +182,24 @@ def section_views(app, f):
     f.equal(hl["linalg"]["bwc_total"], 65536,
             "with how far into that step it is")
 
+    # Cores belong to the machine. Eight clients on one 64-core node
+    # are 64 cores, not 512 -- which is what a live pool showed.
+    from cadofactor.api import views as api_views
+    rolled = api_views.DbViews.group_clients(
+        None, "cluster",
+        [{"clientid": "alpha-01", "host": "alpha-01", "cluster": "alpha",
+          "cores": 64, "in_flight": 0, "completed": 1, "failed": 0,
+          "share": 0.5, "state": "working", "last_seen": None},
+         {"clientid": "alpha-01+2", "host": "alpha-01", "cluster": "alpha",
+          "cores": 64, "in_flight": 0, "completed": 1, "failed": 0,
+          "share": 0.5, "state": "working", "last_seen": None},
+         {"clientid": "alpha-02", "host": "alpha-02", "cluster": "alpha",
+          "cores": 32, "in_flight": 0, "completed": 0, "failed": 0,
+          "share": 0.0, "state": "idle", "last_seen": None}])
+    f.equal(rolled[0]["cores"], 96,
+            "a machine's cores are counted once, not once per client")
+    f.equal(rolled[0]["clients"], 3, "while the clients are all counted")
+
     summary = get("/api/v1/workunits/summary").get_json()
     counts = summary["counts"]
     f.equal(counts["AVAILABLE"], 12, "available workunits are counted")
