@@ -103,6 +103,12 @@ downloading"), so between that check and this rename every client that
 started at the same time decides to download, and each one in turn
 replaces the file the others may be running.
 
+## Fixed
+
+Option 1 below, in this branch. A c100 on the same eight nodes, same
+shared working directory, 64 clients, 293 workunits: no failures at
+all, where the c130 above had five in polyselect alone.
+
 ## Suggested fixes
 
 1. `os.link(dlpath_tmp, dlpath)` instead of the rename, then unlink the

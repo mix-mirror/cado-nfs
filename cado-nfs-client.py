@@ -1383,8 +1383,39 @@ class InputDownloader(object):
                 os.chmod(m, mode | stat.S_IXUSR)
 
         if dlpath_tmp is not None:
-            # We can't atomically rename-unless-dst-does-not-exist-yet.
-            os.rename(dlpath_tmp, dlpath)
+            # Put it in place only if nothing is there yet. Several
+            # clients sharing a working directory all find the file
+            # missing at the same moment and all download it; renaming
+            # would then replace the copy the others may already be
+            # executing, and on a network filesystem that kills them
+            # with SIGBUS -- which is what the -7 failures at the start
+            # of every phase on a large pool were.
+            # link() refuses with EEXIST, which is the
+            # rename-unless-the-destination-exists that rename itself
+            # cannot express. Whoever loses the race keeps the copy
+            # that is there; it is the same file, and the caller
+            # checksums it anyway.
+            # See dev_docs/bugs/client-download-race-sigbus.md
+            linked = True
+            try:
+                os.link(dlpath_tmp, dlpath)
+            except FileExistsError:
+                logging.info("%s appeared while we were downloading it,"
+                             " keeping the copy that is already there",
+                             dlpath)
+            except OSError as e:
+                # A filesystem with no hard links. Do what we did
+                # before, and accept the race there.
+                logging.debug("Cannot link %s (%s), renaming instead",
+                              dlpath, e)
+                os.rename(dlpath_tmp, dlpath)
+                linked = False
+            if linked:
+                try:
+                    os.unlink(dlpath_tmp)
+                except OSError as e:
+                    logging.debug("Could not remove %s (%s)",
+                                  dlpath_tmp, e)
 
         return current_server
 
