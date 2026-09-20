@@ -547,3 +547,21 @@ svg.chart { display: block; max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
 }
+
+/* The toolbar for a selection of clients. It appears only when
+ * something is ticked, so it has to read as a change of mode rather
+ * than as part of the furniture. */
+.controls.selection {
+    background: var(--accent-soft);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 13px;
+    margin-bottom: 12px;
+}
+
+td input[type=checkbox], th input[type=checkbox] {
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+    vertical-align: middle;
+}

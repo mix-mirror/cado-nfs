@@ -81,6 +81,10 @@ const state = {
     lastOk: null,
     busy: 0,
     clientSort: {sort: 'completed', desc: true},
+    /* Clients ticked for a mass action. Whole-group actions are the
+     * common case, but "all of them except that one" is common enough
+     * that all-or-nothing is not good enough. */
+    selected: new Set(),
     parameters: null,
     detail: null,          /* the drill-down currently on screen */
 };
@@ -770,15 +774,16 @@ function groupView() {
                         + ' is alive has its upload refused as a'
                         + ' duplicate and moves on; nothing is lost.',
                     onclick: (e) => groupReclaim(e.target, kind),
-                }, 'Reclaim the ' + held + ' workunit'
+                }, 'Reclaim all ' + held + ' workunit'
                    + (held === 1 ? '' : 's') + ' held here'))
             : null));
 
     main.appendChild(h('div', {style: 'height:16px'}));
     main.appendChild(card('Clients',
         h('div', {class: 'controls'}, stateControl(), searchControl()),
+        selectionSlot(rows),
         rows.length
-            ? clientTable(rows)
+            ? clientTable(rows, () => groupView())
             : empty(param('q')
                     ? 'No client here matches \u201c' + param('q')
                       + '\u201d.'
@@ -789,7 +794,41 @@ function groupView() {
  * own page. */
 function clientTable(rows, redraw) {
     const totalDone = rows.reduce((s, c) => s + c.completed, 0) || 1;
+    const draw = redraw || (() => render());
+    const pickable = rows.filter((r) => r.in_flight);
+    const allPicked = pickable.length > 0
+        && pickable.every((r) => state.selected.has(r.clientid));
+
+    /* Ticking a box must not redraw the table: the next poll would be
+     * bad enough, and redrawing under the pointer loses the tick the
+     * reader is in the middle of making. Only the toolbar changes. */
+    const pick = (id, on) => {
+        if (on) state.selected.add(id); else state.selected.delete(id);
+        refreshSelection(rows);
+    };
+
     return table([
+        {key: 'sel', sort: false,
+         label: h('input', {
+             type: 'checkbox', checked: allPicked,
+             title: 'select every client here that is holding work',
+             onchange: (e) => {
+                 for (const r of pickable) {
+                     if (e.target.checked) state.selected.add(r.clientid);
+                     else state.selected.delete(r.clientid);
+                 }
+                 draw();
+             },
+         }),
+         /* Only a client that holds something can be acted on, so
+          * only those get a box: an inert tick is a false promise. */
+         render: (r) => r.in_flight
+             ? h('input', {
+                 type: 'checkbox',
+                 checked: state.selected.has(r.clientid),
+                 onchange: (e) => pick(r.clientid, e.target.checked),
+             })
+             : null},
         {key: 'clientid', label: 'client', mono: true,
          render: (r) => h('a', {href: link('clients', r.clientid)},
                           r.clientid)},
@@ -837,7 +876,52 @@ function clientTable(rows, redraw) {
                  onclick: (e) => reclaim(e.target, r.clientid),
              }, 'Reclaim')
              : null},
-    ], rows, {state: state.clientSort, onsort: redraw || (() => render())});
+    ], rows, {state: state.clientSort, onsort: draw});
+}
+
+/* The toolbar lives in a box of its own so that ticking a client can
+ * replace it without touching the table. */
+function selectionSlot(rows) {
+    return h('div', {id: 'selbar'}, selectionBar(rows));
+}
+
+function refreshSelection(rows) {
+    const slot = document.getElementById('selbar');
+    if (!slot) return render();
+    clear(slot);
+    const bar = selectionBar(rows);
+    if (bar) slot.appendChild(bar);
+}
+
+/* What to do with the ticked ones. Shown only when there are any, so
+ * the page is not carrying a dead toolbar the rest of the time. */
+function selectionBar(rows) {
+    const picked = rows.filter((r) => state.selected.has(r.clientid));
+    if (!picked.length) return null;
+    const held = picked.reduce((s, c) => s + c.in_flight, 0);
+    return h('div', {class: 'controls selection'},
+        h('strong', {}, picked.length + ' client'
+          + (picked.length === 1 ? '' : 's') + ' selected'),
+        h('span', {class: 'muted'},
+          'holding ' + held + ' workunit' + (held === 1 ? '' : 's')),
+        h('button', {
+            class: 'primary',
+            title: 'Put back in the pool everything the selected'
+                + ' clients are holding. Any of them that is alive has'
+                + ' its upload refused as a duplicate and moves on;'
+                + ' nothing is lost.',
+            onclick: (e) => guard(e.target, async () => {
+                const r = await api.reclaimClients({
+                    clients: picked.map((c) => c.clientid)});
+                state.selected.clear();
+                return r;
+            }),
+        }, 'Reclaim their ' + held + ' workunit'
+           + (held === 1 ? '' : 's')),
+        h('button', {
+            class: 'small',
+            onclick: () => { state.selected.clear(); render(); },
+        }, 'Clear selection'));
 }
 
 function pager(total, shown) {
@@ -907,6 +991,7 @@ function clientsView() {
           'estimate it is held down to a couple of ',
           'tasks.wutimeoutcheck intervals.'),
         page,
+        selectionSlot(rows),
         clientTable(rows, () => clientsView()),
         page ? h('div', {class: 'faint',
                          style: 'margin-top:10px;font-size:12px'},
@@ -1640,6 +1725,8 @@ function route() {
     /* Showing the previous page's detail while the new one loads would
      * be worse than showing nothing. */
     if (previous !== state.view + '/' + state.id) state.detail = null;
+    /* A selection belongs to the list it was made in. */
+    state.selected.clear();
     render();
     refresh(true);
 }
