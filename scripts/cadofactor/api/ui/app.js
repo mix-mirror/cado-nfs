@@ -321,6 +321,20 @@ function highlights(task) {
     return bits;
 }
 
+/* A task's own achievement can exceed 1 -- polyselect overshoots its
+ * ad range, for one. The ring cannot show 108%, so a ring that is
+ * visibly full must not be labelled 108% either; the real figure
+ * stays, in the tooltip. */
+function achievementLabel(a) {
+    if (a === null || a === undefined) return '–';
+    return percent(Math.min(1, a), 1);
+}
+
+function overshoot(a) {
+    return (a > 1) ? 'the task reports ' + percent(a, 1)
+        + ' of the range it planned for' : null;
+}
+
 function currentCard() {
     const task = currentTask();
     if (!task) {
@@ -348,10 +362,8 @@ function currentCard() {
     const achievement = task.achievement;
     return card('Current phase',
                 h('div', {class: 'current'},
-                  h('div', {class: 'dial'},
-                    dial(achievement,
-                         achievement === undefined ? '–'
-                             : percent(achievement, 1),
+                  h('div', {class: 'dial', title: overshoot(achievement)},
+                    dial(achievement, achievementLabel(achievement),
                          'complete')),
                   h('div', {class: 'detail'},
                     h('div', {class: 'title'},
@@ -1304,7 +1316,8 @@ function stageView() {
         h('div', {class: 'current', style: 'margin-top:10px'},
           task.achievement === undefined ? null
               : h('div', {class: 'dial'},
-                  dial(task.achievement, percent(task.achievement, 1),
+                  dial(task.achievement,
+                       achievementLabel(task.achievement),
                        'complete')),
           h('div', {class: 'detail'},
             h('div', {class: 'title'}, task.title || task.name, ' ',
