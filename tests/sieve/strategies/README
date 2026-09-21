@@ -1,0 +1,50 @@
+Pinned input files for the sieve/strategies tests
+=================================================
+
+Both files below are in the format that gfm and benchfm write and that
+gst reads: one line per factoring method,
+
+    m c B1 B2 | p proba_p proba_(p+1) ... | c1 c2 c3 c4 |
+
+(see sieve/strategies/README for the meaning of the columns). Note that
+the format has no comment syntax -- a '#' line makes the reader abort --
+which is why the provenance of each file is recorded here rather than in
+the file itself.
+
+They are pinned rather than produced on the fly because benchfm measures
+wall-clock time, so the gfm/benchfm chain does not give the same output
+twice even at a fixed -seed.
+
+sample_methods.txt
+------------------
+A small assortment covering the six families gst splits its input into.
+Used by test_gst_missing_family.sh, which amputates one family at a time
+and checks that gst diagnoses it.
+
+data_fm_25.txt
+--------------
+cado's own default cofactorization strategy, benched for fbb = 25.
+
+This is the file that test_strategy_cado used to read from a hardcoded
+/localdisk/trichard/cadoRSA155/data_fm_25, which no longer exists
+anywhere. The parameters are those of the RSA-155 example in
+sieve/strategies/README: lim = 16777216, so fbb = ceil(log2(lim+1)) = 25,
+and lpb = 29, so nb_curves(29, 90) = 13 and the file has 3 + 13 = 16
+methods -- the count that test_strategy_cado prints and expects.
+
+The method list is the one generate_methods_cado() builds in
+test_strategy_cado.cpp: PM1 315/2205, PP1-27 525/3255, ECM-M12 105/3255,
+ECM-B12 315/5355, then twelve ECM-M12 curves with B1 += sqrt(B1) and B2
+rounded to (2k+1)*105. It was then benched with
+
+    benchfm -in <that list> -p -t -lb 25 -N 10000 -seed 1
+
+Regenerating it takes about 100 seconds. The timings in the last four
+columns were measured on one machine and are not reproducible elsewhere;
+that is what makes this a pinned file rather than a generated one.
+
+Beware that generate_methods_cado() is a fork of
+facul_strategy_oneside::default_strategy() that has drifted: it uses
+B2 = 17*B1 where the live code uses 50*B1, and it names MONTY12/BRENT12
+where the live default is MONTYTWED12. This file therefore describes the
+strategy cado used to have, not the one it has now.

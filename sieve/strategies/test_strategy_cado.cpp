@@ -1115,6 +1115,12 @@ static void declare_usage(cxx_param_list & pl)
         "\t\t given by the option 'dist'.");
     pl.declare_usage("out",
                           "the output file which contain our strategies\n");
+    pl.declare_usage("fm",
+        "the file of benched factoring methods that describes cado's\n"
+        "\t\t own cofactorization strategy (see benchfm).");
+    pl.declare_usage("in",
+        "the directory of one-sided strategies precomputed by\n"
+        "\t\t gst -gst_r.");
 }
 
 /************************************************************************/
@@ -1232,11 +1238,11 @@ static int main_(int argc, char const * argv[])
     // FILE* filee = fopen ("bench_data_cado","w");
     // tabular_fm_fprint (filee, methods);
     // fclose (filee);
-    FILE * file_in = fopen("/localdisk/trichard/cadoRSA155/data_fm_25", "r");
-    if (file_in == nullptr) {
-        throw cado::error("impossible to read:"
-                " /localdisk/trichard/cadoRSA155/data_fm_25");
-    }
+    char const * name_file_fm = pl.lookup_old("fm");
+    if (name_file_fm == nullptr)
+        pl.fail("Error: parameter -fm is mandatory\n");
+    FILE * file_in = fopen(name_file_fm, "r");
+    DIE_ERRNO_DIAG(!file_in, "fopen(%s)", name_file_fm);
     tabular_fm_t * methods = tabular_fm_fscan(file_in);
     /* we set mfb = 3*lpb0 to avoid the special-case of 2 large primes */
     printf("len  = %u, (%d)\n", methods->size, 3 + nb_curves(lpb0, 3 * lpb0));
@@ -1353,7 +1359,9 @@ static int main_(int argc, char const * argv[])
         matrix_strat = extract_matrix_strat(pathname_st, mfb0 + 1, mfb1 + 1);
     } else // compute interleaving strategies!
     {
-        char const name_directory_str[100] = "/tmp/res_precompt_st";
+        char const * name_directory_str = pl.lookup_old("in");
+        if (name_directory_str == nullptr)
+            pl.fail("Error: parameter -in is mandatory\n");
         matrix_strat =
             generate_matrix_ileav(name_directory_decomp, name_directory_str,
                                   lim0, lpb0, mfb0, lim1, lpb1, mfb1);

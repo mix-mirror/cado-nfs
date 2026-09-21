@@ -1479,6 +1479,8 @@ tests/sieve/reduce-plattice/simd-base.hpp
 tests/sieve/rsa220.poly
 tests/sieve/sievetest.sh
 tests/sieve/strategies/CMakeLists.txt
+tests/sieve/strategies/README
+tests/sieve/strategies/data_fm_25.txt
 tests/sieve/strategies/sample_methods.txt
 tests/sieve/strategies/test_benchfm.cpp
 tests/sieve/strategies/test_filtering.cpp
