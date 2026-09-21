@@ -1,7 +1,8 @@
 #include "cado.h" // IWYU pragma: keep
 
 #include <cstdlib>
-#include <cstdio>
+
+#include <fstream>
 #include <gmp.h>
 
 #include "tab_fm.hpp"
@@ -74,12 +75,12 @@ static int main_(int argc, char const * argv[])
     if (pl.parse("seed", seed))
         gmp_randseed_ui(state, seed);
 
-    FILE *file_in = fopen(pathname_in, "r");
-    tabular_fm_t *c = tabular_fm_fscan(file_in);
-    if (c == NULL) {
-	throw cado::error("impossible to read {}", pathname_in);
+    tabular_fm c;
+    {
+        std::ifstream file_in(pathname_in);
+        if (!file_in || !(file_in >> c))
+            throw cado::error("impossible to read {}", pathname_in);
     }
-    fclose(file_in);
 
     if (opt_proba)
 	{
@@ -91,21 +92,11 @@ static int main_(int argc, char const * argv[])
 	bench_time(state, c, nb_test);
 
     if (final_nb_fm != -1)
-	{
-	    tabular_fm_t* res = filtering (c, final_nb_fm);
-	    tabular_fm_free (c);
-	    c = res;
-	}
-    
-    FILE *file_out = fopen(pathname_out, "w");
-    int const err = tabular_fm_fprint(file_out, c);
-    if (err < 0) {
-	throw cado::error("error:: try to write in the file {}.", pathname_out);
-    }
-    fclose(file_out);
+	c = filtering (c, final_nb_fm);
 
-    //free
-    tabular_fm_free(c);
+    std::ofstream file_out(pathname_out);
+    if (!file_out || !(file_out << c))
+	throw cado::error("error:: try to write in the file {}.", pathname_out);
 
     return EXIT_SUCCESS;
 }

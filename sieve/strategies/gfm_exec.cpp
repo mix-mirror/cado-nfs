@@ -1,8 +1,10 @@
 #include "cado.h" // IWYU pragma: keep
 
 #include <cstdlib>
-#include <cstdio>
 #include <cstring>
+
+#include <fstream>
+#include <iostream>
 
 #include <vector>
 
@@ -87,15 +89,15 @@ static int main_(int argc, char const * argv[])
 	    exit(EXIT_FAILURE);
 	}
 
-        auto file_in = fopen_helper(pathname_fch_in, "r");
-        auto file_out = fopen_helper(pathname_fch_out, "w");
+        std::ifstream file_in(pathname_fch_in);
+        if (!file_in)
+            throw cado::error("impossible to read {}", pathname_fch_in);
+        std::ofstream file_out(pathname_fch_out);
+        if (!file_out)
+            throw cado::error("impossible to write in the file {}",
+                    pathname_fch_out);
 
-	tabular_fm_t *res_ch = convex_hull_from_file(file_in.get(), file_out.get());
-	if (res_ch == nullptr) {
-	    throw cado::error("impossible to read {}\nimpossible to write in the file {}",
-	            pathname_fch_in, pathname_fch_out);
-	}
-	tabular_fm_free(res_ch);
+	convex_hull_from_file(file_in, file_out);
     } else {
 	//default values
 	int lb = -1, ub = -1, len_n = -1;
@@ -163,8 +165,6 @@ static int main_(int argc, char const * argv[])
 	   To generate our factoring methods!
 	 */
 
-	tabular_fm_t *res;
-
 	int *param_sieve = nullptr;
 	if (param[0] && param[1] && param[2] &&
 	    param[3] && param[4] && param[5])
@@ -178,13 +178,11 @@ static int main_(int argc, char const * argv[])
                    */
 	}
 
-	if (method == NO_METHOD)
-	    res = generate_factoring_methods
-		(state, lb, ub, len_n, opt_ch, param_sieve);
-	else {
-	    res = generate_factoring_methods_mc
+	tabular_fm const res = (method == NO_METHOD)
+	    ? generate_factoring_methods
+		(state, lb, ub, len_n, opt_ch, param_sieve)
+	    : generate_factoring_methods_mc
 		(state, lb, ub, len_n, method, curve, opt_ch, param_sieve);
-	}
 
 	//print the result in file!
 	//to do: change the file output!
@@ -192,15 +190,14 @@ static int main_(int argc, char const * argv[])
 
 
         /* if -out is not given, print to stdout */
-	FILE *file_out = (name_file_out == nullptr)
-          ? stdout : fopen(name_file_out, "w");
-        DIE_ERRNO_DIAG(file_out == nullptr, "fopen(%s)", name_file_out);
-	int const err = tabular_fm_fprint(file_out, res);
-	if (err < 0) {
-	    throw cado::error("error:: try to write in the file '{}'.", name_file_out);
-	}
-	fclose(file_out);
-	tabular_fm_free(res);
+        if (name_file_out == nullptr) {
+            std::cout << res;
+        } else {
+            std::ofstream file_out(name_file_out);
+            if (!file_out || !(file_out << res))
+                throw cado::error("error:: try to write in the file '{}'.",
+                        name_file_out);
+        }
     }
 
     return EXIT_SUCCESS;

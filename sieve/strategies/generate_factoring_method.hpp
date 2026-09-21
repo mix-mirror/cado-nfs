@@ -1,8 +1,8 @@
 #ifndef GENERATE_FACTORING_METHOD_HPP
 #define GENERATE_FACTORING_METHOD_HPP
 
-#include <cstdio>
-
+#include <istream>
+#include <ostream>
 #include <vector>
 
 #include <gmp.h>
@@ -53,16 +53,16 @@ facul_strategy_oneside generate_fm (facul_method_code method,
 
 int *choice_parameters(facul_method_code method, int len_p_min);
 
-tabular_fm_t *bench_proba_time_pset(facul_method_code method, ec_parameterization_t curve,
+tabular_fm bench_proba_time_pset(facul_method_code method, ec_parameterization_t curve,
 				    gmp_randstate_t state,
 				    int len_p_min, int len_p_max,
 				    int len_n, const int *param_region);
 
-tabular_fm_t *generate_factoring_methods(gmp_randstate_t state, int len_p_min,
+tabular_fm generate_factoring_methods(gmp_randstate_t state, int len_p_min,
 					 int len_p_max, int len_n, int opt_ch,
 					 const int *param_sieve);
 
-tabular_fm_t *generate_factoring_methods_mc(gmp_randstate_t state,
+tabular_fm generate_factoring_methods_mc(gmp_randstate_t state,
 					    int len_p_min, int len_p_max,
 					    int len_n, facul_method_code method, ec_parameterization_t curve,
 					    int opt_ch,
@@ -78,7 +78,7 @@ double bench_proba_fm(facul_strategy_oneside const & strategy,
                       std::vector<cxx_mpz> & N,
 		      size_t nb_test_max);
 
-void bench_proba(gmp_randstate_t state, tabular_fm_t * fm, int len_p_min,
+void bench_proba(gmp_randstate_t state, tabular_fm & fm, int len_p_min,
         int p_max, size_t nb_test_max);
 
 
@@ -86,27 +86,27 @@ double bench_time_fm_onelength(facul_strategy_oneside const & method,
                                std::vector<cxx_mpz> & N,
 			       size_t nb_test);
 
-void bench_time(gmp_randstate_t state, tabular_fm_t * fm, size_t nb_test);
+void bench_time(gmp_randstate_t state, tabular_fm & fm, size_t nb_test);
 
 
-tabular_fm_t *filtering(tabular_fm_t * fm, int final_nb_methods);
+tabular_fm filtering(tabular_fm const & fm, int final_nb_methods);
 
 /************************************************************************/
 /*                      CONVEX_HULL_FM                                  */
 /************************************************************************/
 
-tabular_point convert_tab_point_to_tab_fm(tabular_fm_t * t);
+tabular_point convert_tab_point_to_tab_fm(tabular_fm const & t);
 
-tabular_fm_t *convert_tab_fm_to_tab_point(tabular_point const & t,
-					  tabular_fm_t * init);
+tabular_fm convert_tab_fm_to_tab_point(tabular_point const & t,
+				       tabular_fm const & init);
 
-tabular_fm_t *convex_hull_fm(tabular_fm_t * t);
+tabular_fm convex_hull_fm(tabular_fm const & t);
 
 /************************************************************************/
 /*               COMPUTE THE CONVEX_HULL FROM A FILE OF FM              */
 /************************************************************************/
 
-tabular_fm_t *convex_hull_from_file(FILE * file_in, FILE * file_out);
+tabular_fm convex_hull_from_file(std::istream & in, std::ostream & out);
 
 struct weighted_success {
     double prob = 0;

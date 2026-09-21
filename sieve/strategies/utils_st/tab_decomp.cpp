@@ -24,8 +24,14 @@ std::istream & operator>>(std::istream & is, tabular_decomp & t)
         is >> std::ws;
         if (is.eof())
             break;
+        if (!is.good())
+            return is;
         decomp D;
-        is >> D;
+        /* Without this check a malformed record loops here forever:
+         * the failed stream never reaches eof, and every turn appends
+         * another empty decomp. */
+        if (!(is >> D))
+            return is;
         t.push_back(std::move(D));
     }
     return is;

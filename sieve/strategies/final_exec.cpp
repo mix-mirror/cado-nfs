@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <fstream>
+
 #include "finding_good_strategy.hpp"
 #include "params.hpp"
 #include "strategy.hpp"
@@ -87,48 +89,24 @@ static int main_(int argc, char const * argv[])
 	      " to specify where the result will be stored!\n");
 
     printf("EXTRACT DATA STRAT\n");
-    tabular_strategy_t ***matrix_strat =
+    auto const matrix_strat =
 	extract_matrix_strat(pathname_st, mfb0 + 1, mfb1 + 1);
-    if (matrix_strat == NULL) {
-	exit(EXIT_FAILURE);
-    }
 
     printf("EXTRACT DATA C\n");
-    FILE *file_C = fopen(pathname_C, "r");
-    DIE_ERRNO_DIAG(!file_C, "fopen(%s)", pathname_C);
-    unsigned long **matrix_C = extract_matrix_C(file_C, mfb0 + 1, mfb1 + 1);
-    if (matrix_C == NULL) {
+    std::ifstream file_C(pathname_C);
+    if (!file_C)
 	throw cado::error("Error while reading file {}", pathname_C);
-    }
-    fclose(file_C);
+    auto const matrix_C = extract_matrix_C(file_C, mfb0 + 1, mfb1 + 1);
 
     printf("GENERATE FINAL STRATEGIES\n");
-    strategy_t ***matrix_strat_res =
+    auto const matrix_strat_res =
 	compute_best_strategy(matrix_strat, matrix_C, mfb0 + 1, mfb1 + 1,
 			      time_C);
 
-    FILE *file_output = fopen(pathname_output, "w");
-    DIE_ERRNO_DIAG(!file_output, "fopen(%s)", pathname_output);
-    int err = fprint_final_strategy(file_output, matrix_strat_res,
-				    mfb0 + 1, mfb1 + 1);
-    if (err == -1) {
+    std::ofstream file_output(pathname_output);
+    if (!file_output)
 	throw cado::error("Error when i want to write in '{}'", pathname_output);
-    }
-    fclose(file_output);
-
-    //free
-    for (int r0 = 0; r0 <= mfb0; r0++) {
-	for (int r1 = 0; r1 <= mfb1; r1++) {
-	    tabular_strategy_free(matrix_strat[r0][r1]);
-	    strategy_free(matrix_strat_res[r0][r1]);
-	}
-	free(matrix_strat[r0]);
-	free(matrix_strat_res[r0]);
-	free(matrix_C[r0]);
-    }
-    free(matrix_strat);
-    free(matrix_strat_res);
-    free(matrix_C);
+    fprint_final_strategy(file_output, matrix_strat_res, mfb0 + 1, mfb1 + 1);
 
     return EXIT_SUCCESS;
 }

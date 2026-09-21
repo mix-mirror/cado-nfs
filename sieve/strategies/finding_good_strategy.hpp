@@ -1,26 +1,39 @@
 #ifndef FINDING_GOOD_STRATEGY_HPP
 #define FINDING_GOOD_STRATEGY_HPP
 
-#include <cstdio>
+#include <istream>
+#include <optional>
+#include <ostream>
+#include <string>
+#include <vector>
+
+#include "generate_strategies.hpp" // strategy_matrix
 #include "strategy.hpp"
 #include "tab_strategy.hpp"
 
-tabular_strategy_t ***extract_matrix_strat(const char *pathname_st,
-					   unsigned int len_abs,
-					   unsigned int len_ord);
+/* How many times each pair of cofactor sizes was seen, as las reports it
+ * with -stats-cofact. */
+using cofactor_distribution = std::vector<std::vector<unsigned long>>;
 
-unsigned long **extract_matrix_C(FILE * file, unsigned int len_abs, unsigned int len_ord);
+/* One chosen strategy per pair of sizes, empty where the distribution
+ * never saw that pair. */
+using best_strategies = std::vector<std::vector<std::optional<strategy_t>>>;
 
-strategy_t ***compute_best_strategy(tabular_strategy_t *** matrix_strat,
-				    unsigned long **distrib_C,
-				    unsigned int len_abs, unsigned int len_ord, double C0);
+strategy_matrix extract_matrix_strat(std::string const & pathname_st,
+                                     unsigned int len_abs, unsigned int len_ord);
 
+cofactor_distribution extract_matrix_C(std::istream & is, unsigned int len_abs,
+                                       unsigned int len_ord);
 
-//to print our final strategies!
-void strategy_fprint_design(FILE * output_file, const strategy_t * t);
+best_strategies compute_best_strategy(strategy_matrix const & matrix_strat,
+                                      cofactor_distribution const & distrib_C,
+                                      unsigned int len_abs,
+                                      unsigned int len_ord, double C0);
 
-int
-fprint_final_strategy(FILE * file, strategy_t *** matrix_strat_res,
-		      unsigned int len_abs, unsigned int len_ord);
+// to print our final strategies
+void strategy_fprint_design(std::ostream & os, strategy_t const & t);
 
-#endif				/* FINDING_GOOD_STRATEGY_HPP */
+void fprint_final_strategy(std::ostream & os, best_strategies const & res,
+                           unsigned int len_abs, unsigned int len_ord);
+
+#endif /* FINDING_GOOD_STRATEGY_HPP */

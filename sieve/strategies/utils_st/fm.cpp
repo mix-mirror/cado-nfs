@@ -1,173 +1,128 @@
 #include "cado.h" // IWYU pragma: keep
 
-#include <cstdio>
-#include <cstdlib>
+#include <cmath>
+
+#include <istream>
+#include <ostream>
+#include <utility>
+
+#include "arith/modredc_ul.h" // MODREDCUL_MAXBITS
 
 #include "fm.hpp"
-#include "macros.h"
 #include "utils_cxx.hpp"
 
-fm_t * fm_create()
+facul_method::parameters
+factoring_method::make_parameters(facul_method_code method,
+                                  ec_parameterization_t curve,
+                                  unsigned long B1, unsigned long B2)
 {
-    fm_t * t = (fm_t *)malloc(sizeof(*t));
-    ASSERT_ALWAYS(t != NULL);
-    t->len_method = 4;
-    t->len_proba = 1;
-    t->len_time = 1;
-    t->method = (unsigned long *)calloc(t->len_method, sizeof(unsigned long));
-    ASSERT_ALWAYS(t->method != NULL);
-    t->proba = (double *)calloc(t->len_proba, sizeof(double));
-    ASSERT_ALWAYS(t->proba != NULL);
-    t->time = (double *)calloc(t->len_time, sizeof(double));
-    ASSERT_ALWAYS(t->time != NULL);
-    t->len_p_min = 0;
-    return t;
-}
-
-void fm_free(fm_t * t)
-{
-    if (t != NULL) {
-        free(t->time);
-        free(t->proba);
-        free(t->method);
-        free(t);
+    /* The file format has a slot for the curve next to every method,
+     * even those that have no curve. gfm fills it with whichever
+     * parameterization its sweep was on, so it is meaningless for PM1
+     * and PP1 -- but it is carried through verbatim, because that is
+     * what the format stores and what the readers of these files have
+     * always seen. */
+    if (method == EC_METHOD) {
+        return {method, B1, B2, curve, 0, 1};
     }
+    facul_method::parameters p {method, B1, B2};
+    p.parameterization = curve;
+    return p;
 }
 
-unsigned long const * fm_get_method(fm_t const * t)
+void factoring_method::put_zero()
 {
-    return t->method;
+    params.B1 = 0;
+    params.B2 = 0;
+    for (auto & x: proba)
+        x = 0;
+    for (auto & x: time)
+        x = 0;
 }
 
-double const * fm_get_proba(fm_t const * t)
+bool factoring_method::same_method_as(factoring_method const & o) const
 {
-    return t->proba;
+    return params.method == o.params.method &&
+           params.parameterization == o.params.parameterization &&
+           params.B1 == o.params.B1 && params.B2 == o.params.B2;
 }
 
-double const * fm_get_time(fm_t const * t)
+unsigned int factoring_method::time_index(unsigned int r)
 {
-    return t->time;
+    /* We add 0.5 to the length of one word, because our times are
+     * measured for an inclusive length: with MODREDCUL_MAXBITS = 64, a
+     * cofactor fits in one word when its length is less than *or equal
+     * to* 64 bits. Without the 0.5 the equality case would land in the
+     * next bucket. */
+    double const half_word = (MODREDCUL_MAXBITS + 0.5) / 2.0;
+    unsigned int const number_half_wd = (unsigned int) floor(r / half_word);
+    return number_half_wd < 2 ? 0 : number_half_wd - 1;
 }
 
-unsigned int fm_get_len_method(fm_t const * t)
+double factoring_method::time_for(unsigned int r) const
 {
-    return t->len_method;
+    unsigned int const i = time_index(r);
+    return i >= time.size() ? time.back() : time[i];
 }
 
-unsigned int fm_get_len_proba(fm_t const * t)
+std::ostream & operator<<(std::ostream & os, factoring_method const & fm)
 {
-    return t->len_proba;
+    /* This has to stay byte-compatible with what gst and benchfm read:
+     * four numbers, then the probabilities behind the bit size they
+     * start at, then the timings, each field closed by a '|'. */
+    os << fm.params.method << ' ' << fm.params.parameterization << ' '
+       << fm.params.B1 << ' ' << fm.params.B2 << " | ";
+    os << fm.len_p_min << ' ';
+    for (double const p: fm.proba)
+        os << fmt::format("{:f} ", p);
+    os << "| ";
+    for (double const t: fm.time)
+        os << fmt::format("{:f} ", t);
+    os << "|\n";
+    return os;
 }
 
-unsigned int fm_get_len_time(fm_t const * t)
+/* read doubles until the next '|' */
+static bool read_doubles(std::istream & is, std::vector<double> & v)
 {
-    return t->len_time;
-}
-
-unsigned int fm_get_len_p_min(fm_t const * t)
-{
-    return t->len_p_min;
-}
-
-void fm_set_method(fm_t * t, unsigned long const * value, unsigned int len)
-{
-    if (len != t->len_method) { // realloc
-        checked_realloc(t->method, len);
-        t->len_method = len;
-    }
-
-    for (unsigned int i = 0; i < t->len_method; i++)
-        t->method[i] = value[i];
-}
-
-void fm_set_proba(fm_t * t, double const * value, unsigned int len,
-                  unsigned int len_p_min)
-{
-    t->len_p_min = len_p_min;
-    if (len != t->len_proba) { // realloc
-        checked_realloc(t->proba, len);
-        t->len_proba = len;
-    }
-
-    for (unsigned int i = 0; i < t->len_proba; i++)
-        t->proba[i] = value[i];
-}
-
-void fm_set_time(fm_t * t, double const * value, unsigned int len)
-{
-    if (len == 0)
-        return;
-
-    if (len != t->len_time) { // realloc
-        checked_realloc(t->time, len);
-        t->len_time = len;
-    }
-
-    for (unsigned int i = 0; i < t->len_time; i++)
-        t->time[i] = value[i];
-}
-
-fm_t * fm_copy(fm_t const * t)
-{
-    fm_t * cop = fm_create();
-    fm_set_method(cop, t->method, t->len_method);
-    fm_set_proba(cop, t->proba, t->len_proba, t->len_p_min);
-    fm_set_time(cop, t->time, t->len_time);
-    return cop;
-}
-
-void fm_put_zero(fm_t * t)
-{
-    t->method[2] = 0; // B1
-    t->method[3] = 0; // B2
-    for (unsigned int i = 0; i < t->len_proba; i++)
-        t->proba[i] = 0;
-    for (unsigned int i = 0; i < t->len_time; i++)
-        t->time[i] = 0;
-}
-
-bool fm_is_zero(fm_t const * t)
-{
-    return (t->method[2] == 0 && t->method[3] == 0);
-}
-
-int fm_is_equal(fm_t const * c1, fm_t const * c2)
-{
-    const unsigned int len = c1->len_method;
-    for (unsigned int i = 0; i < len; i++)
-        if (c1->method[i] != c2->method[i])
+    for (;;) {
+        is >> std::ws;
+        if (!is.good() || is.peek() == '|')
+            break;
+        double x;
+        if (!(is >> x))
             return false;
+        v.push_back(x);
+    }
     return true;
 }
 
-int fm_print(fm_t const * t)
+std::istream & operator>>(std::istream & is, factoring_method & fm)
 {
-    return fm_fprint(stdout, t);
-}
+    unsigned long m[4];
+    for (auto & x: m)
+        if (!(is >> x))
+            return is;
 
-int fm_fprint(FILE * file, fm_t const * elem)
-{
-    if (file == nullptr)
-        return -1;
+    if (!(is >> std::ws >> expect("|")))
+        return is;
 
-    unsigned long const * method = fm_get_method(elem);
-    const unsigned int len_method = fm_get_len_method(elem);
-    for (unsigned int i = 0; i < len_method; i++)
-        fprintf(file, "%lu ", method[i]);
-    fputs("| ", file);
+    unsigned int len_p_min;
+    if (!(is >> len_p_min))
+        return is;
 
-    fprintf(file, "%d ", elem->len_p_min);
-    double const * proba = fm_get_proba(elem);
-    const unsigned int len_proba = fm_get_len_proba(elem);
-    for (unsigned int i = 0; i < len_proba; i++)
-        fprintf(file, "%lf ", proba[i]);
-    fputs("| ", file);
+    std::vector<double> proba;
+    std::vector<double> time;
 
-    double const * time = fm_get_time(elem);
-    const unsigned int len_time = fm_get_len_time(elem);
-    for (unsigned int i = 0; i < len_time; i++)
-        fprintf(file, "%lf ", time[i]);
+    if (!read_doubles(is, proba) || !(is >> std::ws >> expect("|")))
+        return is;
+    if (!read_doubles(is, time) || !(is >> std::ws >> expect("|")))
+        return is;
 
-    fputs("|\n", file);
-    return 0;
+    fm.params = factoring_method::make_parameters(
+        facul_method_code(m[0]), ec_parameterization_t(m[1]), m[2], m[3]);
+    fm.len_p_min = len_p_min;
+    fm.proba = std::move(proba);
+    fm.time = std::move(time);
+    return is;
 }

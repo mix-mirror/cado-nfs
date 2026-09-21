@@ -1,43 +1,33 @@
 #include "cado.h" // IWYU pragma: keep
 
 #include <cstdlib>
-#include <cstdio>
 
-#include <gmp.h>
+#include "fmt/base.h"
 
-#include "generate_factoring_method.hpp"
 #include "fm.hpp"
+#include "generate_factoring_method.hpp"
+#include "gmp_aux.h"
 #include "tab_fm.hpp"
 
 // coverity[root_function]
-int main ()
+int main()
 {
-    gmp_randstate_t state;
-    gmp_randinit_default(state);
-    mpz_t seed;
-    mpz_init_set_ui(seed, 42);
-    gmp_randseed(state, seed);
-    mpz_clear(seed);
-
-    tabular_fm_t* tab = tabular_fm_create ();
+    cxx_gmp_randstate state;
+    gmp_randseed_ui(state, 42);
 
     // We exercise the code, without really checking that it works
-    fm_t* fm = fm_create();
-    unsigned long elem[4] = {1, 0, 20, 100};
-    fm_set_method (fm, elem, 4);
-    tabular_fm_add_fm (tab, fm);
+    tabular_fm tab;
+    tab.push_back(factoring_method::from_fields(PM1_METHOD, 0, 20, 100));
+
     bench_proba(state, tab, 20, 20, 5);
     bench_time(state, tab, 100);
-    for(unsigned int i = 0 ; i < tab->size ; i++) {
-        printf("method %u:", i);
-        for(unsigned int j = 0 ; j < tab->tab[i]->len_time ; j++) {
-            printf(" %3.2f", tab->tab[i]->time[j]);
-        }
-        printf("\n");
+
+    for (size_t i = 0; i < tab.size(); i++) {
+        fmt::print("method {}:", i);
+        for (double const t: tab[i].time)
+            fmt::print(" {:3.2f}", t);
+        fmt::print("\n");
     }
 
-    fm_free (fm);
-    tabular_fm_free (tab);
-    gmp_randclear(state);
     return EXIT_SUCCESS;
 }

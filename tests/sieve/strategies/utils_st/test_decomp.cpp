@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include <sstream>
+
 #include "fmt/base.h"
 
 #include "decomp.hpp"
@@ -14,7 +16,7 @@ int main()
     decomp el1 {1000, { 1U, 2U, 3U} };
     tabular_decomp t {el1};
     if (!(el1 == t[0])) {
-        fprintf(stderr, "error with the test(1)!!!\n");
+        fmt::print(stderr, "error with the test(1)!!!\n");
         return EXIT_FAILURE;
     }
     t.push_back(el1);
@@ -22,51 +24,57 @@ int main()
     const decomp el2 { 10000, { 11U, 10U, 9U, 8U, 7U }};
     t.push_back(el2);
     if (t[2] != el2) {
-        fprintf(stderr, "error with the test(2)!!!\n");
+        fmt::print(stderr, "error with the test(2)!!!\n");
         return EXIT_FAILURE;
     }
     if (t[2] == el1) {
-        fprintf(stderr, "error with the test(3)!!!\n");
+        fmt::print(stderr, "error with the test(3)!!!\n");
         return EXIT_FAILURE;
     }
     // set and get
     el1 = el2;
     if (el1 != el2) {
-        fprintf(stderr, "error with the test(4)!!!\n");
+        fmt::print(stderr, "error with the test(4)!!!\n");
         return EXIT_FAILURE;
     }
-    // fprint fscan
+    // round trip through the stream operators
+    {
+        std::ostringstream os;
+        os << t;
 
-    // coverity complains about insecure temp files. For tests, I don't
-    // think it's a problem, really.
-    // coverity[secure_temp]
-    FILE * file = tmpfile();
-    DIE_ERRNO_DIAG(file == nullptr, "tmpfile(%s)", "");
-    fmt::print(file, "{}\n", t);
+        tabular_decomp t2;
+        std::istringstream is(os.str());
+        if (!(is >> t2)) {
+            fmt::print(stderr, "read error on what we just wrote\n");
+            return EXIT_FAILURE;
+        }
+        if (t2.size() != t.size()) {
+            fmt::print(stderr, "error with the test(5)!!!\n");
+            return EXIT_FAILURE;
+        }
+        for (size_t i = 0; i < t.size(); i++) {
+            if (t2[i] != t[i]) {
+                fmt::print(stderr, "error with the test(5)!!!\n");
+                return EXIT_FAILURE;
+            }
+        }
+        /* nb_elem is part of what a decomp compares as */
+        t2[1].nb_elem = 21;
+        if (t2[1] == t[1]) {
+            fmt::print(stderr, "error with the test(6)!!!\n");
+            return EXIT_FAILURE;
+        }
+    }
 
-    /* rewind, and read again. This depends on some parsing code that I
-     * haven't implemented yet. TODO
-     */
-#if 0
-    fseek(file, 0, SEEK_SET);
-    tabular_decomp_t * t2 = tabular_decomp_fscan(file);
-    if (t2 == NULL) {
-        fprintf(stderr, "read error on temp file\n");
-        exit(EXIT_FAILURE);
+    /* a malformed record must fail the stream, not abort */
+    {
+        std::istringstream is("[ 1 2 3 ; 1000\n");
+        tabular_decomp t3;
+        if (is >> t3) {
+            fmt::print(stderr, "error with the test(7)!!!\n");
+            return EXIT_FAILURE;
+        }
     }
-    fclose(file);
-
-    if (tabular_decomp_are_equal(t2, t) != 1) {
-        fprintf(stderr, "error with the test(5)!!!\n");
-        return EXIT_FAILURE;
-    }
-    decomp_set_nb_elem(t2->tab[1], 21);
-    if (tabular_decomp_are_equal(t2, t) != 0) {
-        fprintf(stderr, "error with the test(6)!!!\n");
-        return EXIT_FAILURE;
-    }
-    // free
-#endif
 
     return EXIT_SUCCESS;
 }

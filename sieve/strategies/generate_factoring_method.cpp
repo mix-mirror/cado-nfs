@@ -9,6 +9,9 @@
 
 #include <gmp.h>
 
+#include <algorithm>
+#include <utility>
+
 #include "convex_hull.hpp"
 #include "cxx_mpz.hpp"
 #include "facul.hpp"
@@ -238,47 +241,38 @@ double bench_time_fm_onelength(facul_strategy_oneside const & method,
   from 'len_p_min' until the probability become null.
 */
 
-void bench_proba(gmp_randstate_t state, tabular_fm_t * fm, int len_p_min,
+void bench_proba(gmp_randstate_t state, tabular_fm & fm, int len_p_min,
                  int p_max, size_t nb_test_max)
 {
-    int const len = fm->size; // number of methods!
     if (p_max == 0)
         p_max = 100;
     if (nb_test_max == 0)
         nb_test_max = 10000;
-    auto * proba = (double *)malloc(p_max * sizeof(double));
-    ASSERT(proba != nullptr);
 
-    // Will contain the our composite integers!
+    // Will contain our composite integers
     std::vector<std::vector<cxx_mpz>> N(p_max);
 
-    for (int i = 0; i < len; i++) {
-        fm_t * elem = tabular_fm_get_fm_rw(fm, i);
-        unsigned long const * param = fm_get_method(elem);
-        auto const method = facul_method_code(param[0]);
-        auto const curve = (ec_parameterization_t)param[1];
-        unsigned long const B1 = param[2];
-        unsigned long const B2 = param[3];
+    for (auto & elem: fm) {
+        auto const & params = elem.params;
+        facul_strategy_oneside const st = generate_fm(
+            params.method, params.B1, params.B2, params.parameterization, state);
 
-        facul_strategy_oneside const st = generate_fm(method, B1, B2, curve, state);
-
-        int ind_proba = 0;
+        std::vector<double> proba;
         do {
-            if (B1 == 0 && B2 == 0)
-                proba[ind_proba] = 0;
-            else {
-                int const len_p = len_p_min + ind_proba;
+            if (params.B1 == 0 && params.B2 == 0) {
+                proba.push_back(0);
+            } else {
+                int const len_p = len_p_min + int(proba.size());
                 int const len_n = 60 + len_p;
-                proba[ind_proba] = bench_proba_fm(st, state, len_p, len_n,
-                                                  N[ind_proba], nb_test_max);
+                proba.push_back(bench_proba_fm(st, state, len_p, len_n,
+                                               N[proba.size()], nb_test_max));
             }
-            ind_proba++;
-        } while ((proba[ind_proba - 1] - BENCH_MIN_PROBA) > EPSILON_DBL &&
-                 ind_proba < p_max);
+        } while ((proba.back() - BENCH_MIN_PROBA) > EPSILON_DBL &&
+                 int(proba.size()) < p_max);
 
-        fm_set_proba(elem, proba, ind_proba, len_p_min);
+        elem.len_p_min = len_p_min;
+        elem.proba = std::move(proba);
     }
-    free(proba);
 }
 
 /*
@@ -287,7 +281,7 @@ void bench_proba(gmp_randstate_t state, tabular_fm_t * fm, int len_p_min,
   bits size (MODREDCUL_MAXBITS, MODREDC15UL_MAXBITS,
   MODREDC2UL2_MAXBITS and MODREDC2UL2_MAXBITS+30).
 */
-void bench_time(gmp_randstate_t state, tabular_fm_t * fm, size_t nb_test)
+void bench_time(gmp_randstate_t state, tabular_fm & fm, size_t nb_test)
 {
     if (nb_test == 0)
         nb_test = 100000;
@@ -302,25 +296,18 @@ void bench_time(gmp_randstate_t state, tabular_fm_t * fm, size_t nb_test)
         N3.push_back(generate_prime_factor(state, MODREDC2UL2_MAXBITS));
         N4.push_back(generate_prime_factor(state, MODREDC2UL2_MAXBITS + 30));
     }
-    for (unsigned int i = 0; i < fm->size; i++) {
-        fm_t * elem = tabular_fm_get_fm_rw(fm, i);
-        unsigned long const * param = fm_get_method(elem);
-        auto const method = facul_method_code(param[0]);
-        auto const curve = ec_parameterization_t(param[1]);
-        unsigned long const B1 = param[2];
-        unsigned long const B2 = param[3];
-        if (B1 != 0 || B2 != 0) {
+    for (auto & elem: fm) {
+        auto const & params = elem.params;
+        if (params.B1 != 0 || params.B2 != 0) {
             facul_strategy_oneside const st =
-                generate_fm(method, B1, B2, curve, state);
-            double time[4];
-            time[0] = bench_time_fm_onelength(st, N1, nb_test);
-            time[1] = bench_time_fm_onelength(st, N2, nb_test);
-            time[2] = bench_time_fm_onelength(st, N3, nb_test);
-            time[3] = bench_time_fm_onelength(st, N4, nb_test);
-            fm_set_time(elem, time, 4);
+                generate_fm(params.method, params.B1, params.B2,
+                            params.parameterization, state);
+            elem.time = {bench_time_fm_onelength(st, N1, nb_test),
+                         bench_time_fm_onelength(st, N2, nb_test),
+                         bench_time_fm_onelength(st, N3, nb_test),
+                         bench_time_fm_onelength(st, N4, nb_test)};
         } else {
-            double time[4] = {0, 0, 0, 0};
-            fm_set_time(elem, time, 4);
+            elem.time = {0, 0, 0, 0};
         }
     }
 }
@@ -458,7 +445,7 @@ bench_proba_time_pset_onefm(facul_strategy_oneside const & strategy,
   given by 'param_region' or, if it's equal to nullptr, use the default sieve.
 */
 
-tabular_fm_t * bench_proba_time_pset(facul_method_code method,
+tabular_fm bench_proba_time_pset(facul_method_code method,
                                      ec_parameterization_t curve,
                                      gmp_randstate_t state, int len_p_min,
                                      int len_p_max, int len_n,
@@ -504,25 +491,22 @@ tabular_fm_t * bench_proba_time_pset(facul_method_code method,
     }
     //}}
 
-    tabular_fm_t * tab_fusion = tabular_fm_create();
+    tabular_fm tab_fusion;
 
     // add zero method
-    unsigned long tmp_method[4] = {(unsigned long)method, (unsigned long)curve,
-                                   0, 0};
-    double zero = 0;
-    tabular_fm_add(tab_fusion, tmp_method, 4, &zero, 1, &zero, 1, len_p_min);
+    {
+        factoring_method z = factoring_method::from_fields(method, curve, 0, 0);
+        z.len_p_min = len_p_min;
+        z.proba = {0};
+        z.time = {0};
+        tab_fusion.push_back(std::move(z));
+    }
 
     for (int c = c_min; c <= c_max; c += c_step) {
-        int B1;
-        int B2;
+        int B1 = b1_min;
+        int B2 = B1 * c;
 
-        B1 = b1_min;
-        B2 = B1 * c;
-
-        tabular_fm_t * tab = tabular_fm_create();
-        unsigned long elem[4];
         double proba = 0;
-        double tps = 0;
         double const max_proba = 0.9;
 
         while (B1 <= b1_max && proba < max_proba) {
@@ -531,21 +515,17 @@ tabular_fm_t * bench_proba_time_pset(facul_method_code method,
             weighted_success const res =
                 bench_proba_time_pset_onefm(fm, N, nb_test_max);
             proba = res.prob;
-            tps = res.time;
 
-            elem[0] = method;
-            elem[1] = curve;
-            elem[2] = B1;
-            elem[3] = B2;
-
-            tabular_fm_add(tab, elem, 4, &proba, 1, &tps, 1, len_p_min);
+            factoring_method elem =
+                factoring_method::from_fields(method, curve, B1, B2);
+            elem.len_p_min = len_p_min;
+            elem.proba = {proba};
+            elem.time = {res.time};
+            tab_fusion.push_back(std::move(elem));
 
             B1 = B1 + b1_step;
             B2 = B1 * c;
         }
-        // merge arrays
-        tabular_fm_concat(tab_fusion, tab);
-        tabular_fm_free(tab);
     }
     // free
     free(disp);
@@ -564,26 +544,19 @@ tabular_fm_t * bench_proba_time_pset(facul_method_code method,
   region of parameters for B1 and B2. Note that an option 'opt_ch'
   allows to apply the selection by convex hull.
 */
-tabular_fm_t * generate_factoring_methods_mc(
+tabular_fm generate_factoring_methods_mc(
     gmp_randstate_t state, int len_p_min, int len_p_max, int len_n,
     facul_method_code method, ec_parameterization_t curve, int opt_ch,
     int const * param_sieve)
 {
     ASSERT(len_p_min <= len_p_max);
 
-    tabular_fm_t * gfm;
-
-    tabular_fm_t * collect = bench_proba_time_pset(
+    tabular_fm collect = bench_proba_time_pset(
         method, curve, state, len_p_min, len_p_max, len_n, param_sieve);
 
-    if (opt_ch) {
-        // apply the convex hull
-        gfm = convex_hull_fm(collect);
-        tabular_fm_free(collect);
-    } else
-        gfm = collect;
-
-    return gfm;
+    if (opt_ch)
+        return convex_hull_fm(collect);
+    return collect;
 }
 
 /*
@@ -591,12 +564,12 @@ tabular_fm_t * generate_factoring_methods_mc(
   for each one of our functions.
 */
 
-tabular_fm_t * generate_factoring_methods(gmp_randstate_t state, int len_p_min,
-                                          int len_p_max, int len_n, int opt_ch,
-                                          int const * param_sieve)
+tabular_fm generate_factoring_methods(gmp_randstate_t state, int len_p_min,
+                                      int len_p_max, int len_n, int opt_ch,
+                                      int const * param_sieve)
 {
 
-    tabular_fm_t * gfm = tabular_fm_create();
+    tabular_fm gfm;
 
     // we begin by the first method:
     int ind_method = 0;
@@ -608,14 +581,11 @@ tabular_fm_t * generate_factoring_methods(gmp_randstate_t state, int len_p_min,
 
         printf("method = %d, curve = %d\n", method[ind_method],
                curve[ind_curve]);
-        tabular_fm_t * res = generate_factoring_methods_mc(
+        tabular_fm const res = generate_factoring_methods_mc(
             state, len_p_min, len_p_max, len_n, method[ind_method],
             curve[ind_curve], opt_ch, param_sieve);
 
-        tabular_fm_concat(gfm, res);
-
-        // free
-        tabular_fm_free(res);
+        gfm.insert(gfm.end(), res.begin(), res.end());
 
         // index
         if (method[ind_method] != EC_METHOD)
@@ -634,21 +604,16 @@ tabular_fm_t * generate_factoring_methods(gmp_randstate_t state, int len_p_min,
   This function collects factoring methods from the file 'file_in'
   and make a selection by convex hull and prints them in file_out.
  */
-tabular_fm_t * convex_hull_from_file(FILE * file_in, FILE * file_out)
+tabular_fm convex_hull_from_file(std::istream & in, std::ostream & out)
 {
-    tabular_fm_t * all_st = tabular_fm_fscan(file_in);
-    if (all_st == nullptr)
-        return nullptr;
+    tabular_fm all_st;
+    if (!(in >> all_st))
+        throw cado::error("Cannot read the factoring methods");
 
-    tabular_fm_t * res = convex_hull_fm(all_st);
+    tabular_fm res = convex_hull_fm(all_st);
 
-    tabular_fm_free(all_st);
-
-    int const err = tabular_fm_fprint(file_out, res);
-    if (err < 0) {
-        tabular_fm_free(res);
-        return nullptr;
-    }
+    if (!(out << res))
+        throw cado::error("Cannot write the factoring methods");
 
     return res;
 }
@@ -657,147 +622,116 @@ tabular_fm_t * convex_hull_from_file(FILE * file_in, FILE * file_out)
 /*                      FILTERING                                       */
 /************************************************************************/
 
-static int get_nb_word(int r)
-{
-    /*
-      We add 0.5 to the length of one word, because for our times the
-      lenght is inclusive. For example, if MODREDCUL_MAXBITS = 64
-      bits, a cofactor is in one word if is lenght is less OR equal to
-      64 bits. So, if you don't add 0.5 to MODREDCUL_MAXBITS, you
-      lost the equal and thus insert an error in your maths.
-    */
-    double const half_word = (MODREDCUL_MAXBITS + 0.5) / 2.0;
-    int const number_half_wd = floor(r / half_word);
-    int const ind = (number_half_wd < 2) ? 0 : number_half_wd - 1;
-    return ind;
-}
-
 /*
 filtering: most homegenous method that allows to keep
 methods of differents probabilities. With a classic version, the
 remaining methods tend to have very high probabilities, and it's not
 necessarily that we want!
 */
-tabular_fm_t * filtering(tabular_fm_t * tab, int final_nb_methods)
+tabular_fm filtering(tabular_fm const & tab, int final_nb_methods)
 {
-    // create the matrix with the average dist between a pair of methods!
-    int const nb_methods = tab->size;
-    double ** dist = (double **)malloc(nb_methods * sizeof(double *));
-    ASSERT(dist != nullptr);
-    for (int i = 0; i < nb_methods; i++) {
-        dist[i] = (double *)malloc((nb_methods) * sizeof(double));
-        ASSERT(dist[i] != nullptr);
-    }
-    for (int i = 0; i < nb_methods; i++) {
-        dist[i][i] = 0;
-        // trade off for i.
-        fm_t const * eli = tabular_fm_get_fm(tab, i);
-        double compromis_i[eli->len_proba];
-        for (unsigned int p = 0; p < eli->len_proba; p++) {
-            if (eli->proba[p] > EPSILON_DBL)
-                compromis_i[p] = eli->time[get_nb_word(p)] / eli->proba[p];
-            else // if (eli->time[p] < EPSILON_DBL): fm zero!
-                compromis_i[p] = 0;
-        }
-        for (int j = i + 1; j < nb_methods; j++) {
-            // trade off for j.
-            fm_t const * elj = tabular_fm_get_fm(tab, j);
-            double compromis_j[elj->len_proba];
-            for (unsigned int p = 0; p < elj->len_proba; p++) {
-                if (elj->proba[p] > EPSILON_DBL)
-                    compromis_j[p] = elj->time[get_nb_word(p)] / elj->proba[p];
-                else // if (elj->time[p] < EPSILON_DBL): fm zero!
-                    compromis_j[p] = 0;
-            }
+    size_t const nb_methods = tab.size();
 
-            // compute dist
-            double moy_dist = 0;
-            unsigned int const nb_elem = MIN(elj->len_proba, eli->len_proba);
-            for (unsigned int p = 0; p < nb_elem; p++) {
-                double tmp = compromis_i[p] - compromis_j[p];
-                tmp *= tmp;
-                moy_dist += tmp;
+    /* The trade-off of a method at each probability index.
+     *
+     * Note that the index into time[] is computed from the probability
+     * index, not from a bit size; with the usual ten-odd probabilities
+     * that always lands on time[0]. It is kept that way, clamped to what
+     * time[] actually holds. */
+    auto tradeoff = [](factoring_method const & el) {
+        std::vector<double> c(el.proba.size());
+        for (size_t p = 0; p < el.proba.size(); p++) {
+            if (el.proba[p] > EPSILON_DBL) {
+                size_t i = factoring_method::time_index((unsigned int) p);
+                if (i >= el.time.size())
+                    i = el.time.size() - 1;
+                c[p] = el.time[i] / el.proba[p];
+            } else { // the zero method
+                c[p] = 0;
             }
-            moy_dist = sqrt(moy_dist) / nb_elem;
+        }
+        return c;
+    };
+
+    // the average distance between each pair of methods
+    std::vector<std::vector<double>> dist(nb_methods,
+                                          std::vector<double>(nb_methods, 0));
+    for (size_t i = 0; i < nb_methods; i++) {
+        auto const compromis_i = tradeoff(tab[i]);
+        for (size_t j = i + 1; j < nb_methods; j++) {
+            auto const compromis_j = tradeoff(tab[j]);
+
+            double moy_dist = 0;
+            size_t const nb_elem =
+                std::min(compromis_i.size(), compromis_j.size());
+            for (size_t p = 0; p < nb_elem; p++) {
+                double const tmp = compromis_i[p] - compromis_j[p];
+                moy_dist += tmp * tmp;
+            }
+            moy_dist = sqrt(moy_dist) / double(nb_elem);
 
             dist[i][j] = moy_dist;
             dist[j][i] = moy_dist;
         }
     }
 
-    // sort the pairs of methods according to the dist!
-    int nb_pair = (nb_methods - 1) * (nb_methods) / 2;
-    int sort_dist[nb_pair][2];
+    // sort the pairs of methods by distance
     // todo: improve this method! For now, it's a naive method.
-    int k = 0;
-    while (k < nb_pair) {
-        int i_min = -1;
-        int j_min = -1;
+    std::vector<std::pair<size_t, size_t>> sort_dist;
+    sort_dist.reserve(nb_methods * (nb_methods - 1) / 2);
+    while (sort_dist.size() < nb_methods * (nb_methods - 1) / 2) {
+        size_t i_min = 0, j_min = 0;
+        bool found = false;
         double ratio = INFINITY;
-        for (int i = 0; i < nb_methods; i++) {
-            for (int j = i + 1; j < nb_methods; j++) {
+        for (size_t i = 0; i < nb_methods; i++) {
+            for (size_t j = i + 1; j < nb_methods; j++) {
                 if (dist[i][j] < ratio) {
                     i_min = i;
                     j_min = j;
                     ratio = dist[i][j];
+                    found = true;
                 }
             }
         }
-        if (i_min == -1 || j_min == -1)
+        if (!found)
             break;
-        sort_dist[k][0] = i_min;
-        sort_dist[k][1] = j_min;
+        sort_dist.emplace_back(i_min, j_min);
         dist[i_min][j_min] = INFINITY;
-        k++;
     }
-    nb_pair = k;
 
-    // clear method until you have the good numbers of methods.
-    int * tab_fm_is_removed = (int *)calloc(nb_methods, sizeof(int));
-    int nb_rem_methods = nb_methods;
+    // clear methods until the requested number is left
+    std::vector<int> is_removed(nb_methods, 0);
+    size_t nb_rem_methods = nb_methods;
 
-    while (nb_rem_methods > final_nb_methods) {
-        int ind = 0;
-        while (ind < nb_pair && nb_rem_methods > final_nb_methods) {
-            if (tab_fm_is_removed[sort_dist[ind][0]] == 0 &&
-                tab_fm_is_removed[sort_dist[ind][1]] == 0) {
-                fm_t const * el0 = tabular_fm_get_fm(tab, sort_dist[ind][0]);
-                fm_t const * el1 = tabular_fm_get_fm(tab, sort_dist[ind][1]);
-                double const ratio0 = (el0->proba[0] < EPSILON_DBL)
-                                          ? 0
-                                          : el0->time[0] / el0->proba[0];
-                double const ratio1 = (el1->proba[0] < EPSILON_DBL)
-                                          ? 0
-                                          : el1->time[0] / el1->proba[0];
-
-                if (ratio0 > ratio1) {
-                    tab_fm_is_removed[sort_dist[ind][0]] = -1;
-                    tab_fm_is_removed[sort_dist[ind][1]] = 1;
-                } else {
-                    tab_fm_is_removed[sort_dist[ind][1]] = -1;
-                    tab_fm_is_removed[sort_dist[ind][0]] = 1;
-                }
-                nb_rem_methods--;
+    while (nb_rem_methods > (size_t) final_nb_methods) {
+        for (auto const & [a, b]: sort_dist) {
+            if (nb_rem_methods <= (size_t) final_nb_methods)
+                break;
+            if (is_removed[a] != 0 || is_removed[b] != 0)
+                continue;
+            auto ratio_of = [](factoring_method const & el) {
+                return el.proba[0] < EPSILON_DBL ? 0 : el.time[0] / el.proba[0];
+            };
+            if (ratio_of(tab[a]) > ratio_of(tab[b])) {
+                is_removed[a] = -1;
+                is_removed[b] = 1;
+            } else {
+                is_removed[b] = -1;
+                is_removed[a] = 1;
             }
-            ind++;
+            nb_rem_methods--;
         }
-        for (int i = 0; i < nb_methods; i++)
-            if (tab_fm_is_removed[i] == 1)
-                tab_fm_is_removed[i] = 0;
+        for (auto & x: is_removed)
+            if (x == 1)
+                x = 0;
     }
-    // build the final tab_fm with the remaining factoring methods!
-    tabular_fm_t * res = tabular_fm_create();
-    for (int i = 0; i < nb_methods; i++) {
-        if (tab_fm_is_removed[i] != -1)
-            tabular_fm_add_fm(res, tabular_fm_get_fm(tab, i));
-    }
-    // free
-    free(tab_fm_is_removed);
-    for (int i = 0; i < nb_methods; i++)
-        free(dist[i]);
-    free(dist);
 
-    tabular_fm_sort(res);
+    tabular_fm res;
+    for (size_t i = 0; i < nb_methods; i++)
+        if (is_removed[i] != -1)
+            res.push_back(tab[i]);
+
+    sort_by_proba(res);
 
     return res;
 }
@@ -811,29 +745,25 @@ tabular_fm_t * filtering(tabular_fm_t * tab, int final_nb_methods)
   to compute the convex hull of a set of factoring methods.
  */
 
-tabular_point convert_tab_point_to_tab_fm(tabular_fm_t * t)
+tabular_point convert_tab_point_to_tab_fm(tabular_fm const & t)
 {
     tabular_point res;
-    unsigned int const len = tabular_fm_get_size(t);
-    for (unsigned int i = 0; i < len; i++) {
-        fm_t const * elem = tabular_fm_get_fm(t, i);
-        res.emplace_back(point {i, elem->proba[0], elem->time[0]});
-    }
+    for (unsigned int i = 0; i < t.size(); i++)
+        res.emplace_back(point {i, t[i].proba[0], t[i].time[0]});
     return res;
 }
 
-tabular_fm_t * convert_tab_fm_to_tab_point(tabular_point const & t,
-                                           tabular_fm_t * init)
+tabular_fm convert_tab_fm_to_tab_point(tabular_point const & t,
+                                       tabular_fm const & init)
 {
-    tabular_fm_t * res = tabular_fm_create();
+    tabular_fm res;
     for (auto const & p: t)
-        tabular_fm_add_fm(res, init->tab[p.number]);
+        res.push_back(init[p.number]);
     return res;
 }
 
-tabular_fm_t * convex_hull_fm(tabular_fm_t * t)
+tabular_fm convex_hull_fm(tabular_fm const & t)
 {
-    tabular_point res = convex_hull(convert_tab_point_to_tab_fm(t));
-    tabular_fm_t * res_fm = convert_tab_fm_to_tab_point(res, t);
-    return res_fm;
+    return convert_tab_fm_to_tab_point(
+        convex_hull(convert_tab_point_to_tab_fm(t)), t);
 }

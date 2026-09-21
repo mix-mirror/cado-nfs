@@ -10,7 +10,8 @@ cado_define_test(test_fm.cpp ${SUF_SRC}fm.cpp ${SUF_SRC}tab_fm.cpp
 
 cado_define_test(test_strategy.cpp
   ${SUF_SRC}tab_strategy.cpp ${SUF_SRC}strategy.cpp
-  ${SUF_SRC}fm.cpp ${SUF_SRC}tab_fm.cpp)
+  ${SUF_SRC}fm.cpp ${SUF_SRC}tab_fm.cpp
+  LIBRARIES utils)
 
 cado_define_test(test_decomp.cpp ${SUF_SRC}tab_decomp.cpp
     ${SUF_SRC}decomp.cpp LIBRARIES utils)

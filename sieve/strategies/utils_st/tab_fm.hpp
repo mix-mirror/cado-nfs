@@ -1,67 +1,42 @@
 #ifndef TAB_FM_HPP
 #define TAB_FM_HPP
 
-#include <cstdio>
+#include <istream>
+#include <ostream>
+#include <vector>
+
+#include "fmt/base.h"
+#include "fmt/ostream.h"
+
+#include "facul_ecm.h"
+#include "facul_method.hpp"
 
 #include "fm.hpp"
 
-typedef struct tabular_fm {
-    fm_t ** tab;
-    unsigned int size;
-    unsigned int alloc;
-} tabular_fm_t;
+using tabular_fm = std::vector<factoring_method>;
 
-tabular_fm_t * tabular_fm_create();
+/* The methods of one family. curve is ignored unless method is
+ * EC_METHOD. */
+tabular_fm extract_fm_method(tabular_fm const & t, facul_method_code method,
+                             ec_parameterization_t curve);
 
-void tabular_fm_free(tabular_fm_t * t);
+/* Positive if el1 sorts after el2. Beware: this is not a strict weak
+ * ordering -- it never reports two methods as equivalent, and it sums
+ * signed differences rather than comparing them. It is exposed only so
+ * that a test can pin the order that sort_by_proba produces. */
+int fm_compare_by_proba(factoring_method const & el1,
+                        factoring_method const & el2);
 
-void tabular_fm_realloc(tabular_fm_t * t);
+/* Sort by increasing probability, zero methods first. */
+void sort_by_proba(tabular_fm & t);
 
-unsigned int tabular_fm_get_size(tabular_fm_t const * t);
+std::istream & operator>>(std::istream & is, tabular_fm &);
+std::ostream & operator<<(std::ostream & os, tabular_fm const &);
 
-fm_t * tabular_fm_get_fm_rw(tabular_fm_t * t, unsigned int index);
-fm_t const * tabular_fm_get_fm(tabular_fm_t const * t, unsigned int index);
-
-void tabular_fm_add_fm(tabular_fm_t * t, fm_t const * fm);
-
-void tabular_fm_add(tabular_fm_t * t,
-        unsigned long const * method, unsigned int len_method,
-        double const * proba, unsigned int len_proba,
-        double const * time, unsigned int len_time,
-        unsigned int len_p_min);
-
-void tabular_fm_set_fm_index(tabular_fm_t * t, fm_t const * fm, unsigned int ind);
-
-void tabular_fm_set_index(tabular_fm_t * t,
-        unsigned long const * method, unsigned int len_method,
-        double const * proba, unsigned int len_proba,
-        double const * time, unsigned int len_time,
-        unsigned int len_p_min, unsigned int ind);
-
-/* concatenate t2 at the end of t1 */
-void tabular_fm_concat(tabular_fm_t * t1, tabular_fm_t * t2);
-
-void tabular_fm_put_zero(tabular_fm_t * t, unsigned int index);
-
-bool tabular_fm_is_zero(tabular_fm_t const * t, unsigned int index);
-
-tabular_fm_t * extract_fm_method(tabular_fm_t const * t, int method, int curve);
-
-int tabular_fm_fprint(FILE * output_file, tabular_fm_t const * t);
-
-int tabular_fm_print(tabular_fm_t const * t);
-
-tabular_fm_t * tabular_fm_fscan(FILE * file);
-
-/************************************************************************/
-/*                      SORT_TAB_FM                                     */
-/************************************************************************/
-/* the comparative is according to the probabilities! */
-int fm_cmp(fm_t * el1, fm_t * el2);
-
-void fm_swap(tabular_fm_t * t, unsigned int index1, unsigned int index2);
-
-// according to the probabilities!
-void tabular_fm_sort(tabular_fm_t * t);
+namespace fmt
+{
+template <> struct formatter<tabular_fm> : ostream_formatter {
+};
+} // namespace fmt
 
 #endif /* TAB_FM_HPP */

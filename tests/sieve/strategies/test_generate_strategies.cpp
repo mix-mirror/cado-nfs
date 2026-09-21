@@ -28,29 +28,26 @@
 #include "tab_decomp.hpp"
 #include "tab_fm.hpp"
 #include "tab_strategy.hpp"
+#include "fmt/base.h"
 #include "timing.h"
 
 static double EPSILON_DBL = LDBL_EPSILON;
 
 // convert type: from strategy_t to facul_strategy_oneside.
-facul_strategy_oneside convert_strategy_to_facul_strategy(strategy_t const * t,
+facul_strategy_oneside convert_strategy_to_facul_strategy(strategy_t const & t,
                                                           gmp_randstate_ptr state)
 {
-    tabular_fm_t * tab_fm = strategy_get_tab_fm(t);
-    unsigned int nb_methods = tab_fm->size;
-
     facul_strategy_oneside strategy;
 
     strategy.lpb = UINT_MAX;
     strategy.BB = 0;
     strategy.BBB = 0;
 
-    for (unsigned int i = 0; i < nb_methods; i++) {
-        fm_t const * fm = tab_fm->tab[i];
-        auto const method = facul_method_code(fm->method[0]);
-        auto const curve = ec_parameterization_t(fm->method[1]);
-        unsigned long const B1 = fm->method[2];
-        unsigned long const B2 = fm->method[3];
+    for (auto const & fm : t.tab_fm) {
+        auto const method = fm.params.method;
+        auto const curve = fm.params.parameterization;
+        unsigned long const B1 = fm.params.B1;
+        unsigned long const B2 = fm.params.B2;
 
         int const verbose = 0;
         if (method == PM1_METHOD || method == PP1_27_METHOD ||
@@ -157,17 +154,7 @@ weighted_success bench_proba_time_st(gmp_randstate_t state,
 
 int get_nb_word(int r)
 {
-    /*
-     * We add 0.5 to the length of one word, because for our times the
-     * length is inclusive. For example, if MODREDCUL_MAXBITS = 64
-     * bits, a cofactor is in one word if is length is less OR equal to
-     * 64 bits. So, if you don't add 0.5 to MODREDCUL_MAXBITS, you
-     * miss the equality case and thus insert an error in your math.
-     */
-    double half_word = (MODREDCUL_MAXBITS + 0.5) / 2.0;
-    int number_half_wd = floor(r / half_word);
-    int ind = (number_half_wd < 2) ? 0 : number_half_wd - 1;
-    return ind;
+    return (int) factoring_method::time_index((unsigned int) r);
 }
 
 /*
@@ -175,9 +162,8 @@ int get_nb_word(int r)
  * length. In fact, i remove the unnecessary computation to reduce the
  * cost of this binary.
  */
-void bench_time_mini(gmp_randstate_t state, tabular_fm_t * fm, int r)
+void bench_time_mini(gmp_randstate_t state, tabular_fm & fm, int r)
 {
-    unsigned int len = fm->size; // number of methods!
     // precompute 4 arrays for our bench_time!
     //{{
     int len_n;
@@ -197,23 +183,17 @@ void bench_time_mini(gmp_randstate_t state, tabular_fm_t * fm, int r)
     }
     //}}
     int ind = get_nb_word(r);
-    for (unsigned int i = 0; i < len; i++) {
-        fm_t * elem = tabular_fm_get_fm_rw(fm, i);
-        unsigned long const * param = fm_get_method(elem);
-        auto const method = facul_method_code(param[0]);
-        auto const curve = ec_parameterization_t(param[1]);
-        unsigned long const B1 = param[2];
-        unsigned long const B2 = param[3];
-        if (B1 != 0 || B2 != 0) {
-            facul_strategy_oneside st = generate_fm(method, B1, B2, curve, state);
+    for (auto & elem : fm) {
+        auto const & p = elem.params;
+        if (p.B1 != 0 || p.B2 != 0) {
+            facul_strategy_oneside st = generate_fm(
+                p.method, p.B1, p.B2, p.parameterization, state);
 
-            double res[4];
             ASSERT_ALWAYS(ind < 4);
-            res[ind] = bench_time_fm_onelength(st, N, nb_test);
-            fm_set_time(elem, res, 4);
+            elem.time.assign(4, 0);
+            elem.time[ind] = bench_time_fm_onelength(st, N, nb_test);
         } else {
-            double time[4] = {0, 0, 0, 0};
-            fm_set_time(elem, time, 4);
+            elem.time.assign(4, 0);
         }
     }
 }
@@ -223,14 +203,12 @@ void bench_time_mini(gmp_randstate_t state, tabular_fm_t * fm, int r)
   reduce the cost of this binary.
 */
 
-static void bench_proba_mini(gmp_randstate_t state, tabular_fm_t * fm,
+static void bench_proba_mini(gmp_randstate_t state, tabular_fm & fm,
                              unsigned int const * val_p, unsigned int len_val_p,
                              unsigned int len_p_min)
 {
-    unsigned int len = fm->size; // number of methods!
     unsigned int p_max = 100;
-    double * proba = (double *)calloc(p_max, sizeof(double));
-    ASSERT(proba != NULL);
+    std::vector<double> proba(p_max, 0);
 
     //{{Will contain the precomputes of composite integer!
     std::vector<std::vector<cxx_mpz>> N(len_val_p);
@@ -238,15 +216,13 @@ static void bench_proba_mini(gmp_randstate_t state, tabular_fm_t * fm,
 
     //}}
 
-    for (unsigned int i = 0; i < len; i++) {
-        fm_t * elem = tabular_fm_get_fm_rw(fm, i);
-        unsigned long const * param = fm_get_method(elem);
-        auto const method = facul_method_code(param[0]);
-        auto const curve = ec_parameterization_t(param[1]);
-        unsigned long const B1 = param[2];
-        unsigned long const B2 = param[3];
+    for (auto & elem : fm) {
+        auto const & prm = elem.params;
+        unsigned long const B1 = prm.B1;
+        unsigned long const B2 = prm.B2;
 
-        facul_strategy_oneside st = generate_fm(method, B1, B2, curve, state);
+        facul_strategy_oneside st = generate_fm(
+            prm.method, B1, B2, prm.parameterization, state);
 
         unsigned int max_index = 0;
         for (unsigned int j = 0; j < len_val_p; j++) {
@@ -262,9 +238,9 @@ static void bench_proba_mini(gmp_randstate_t state, tabular_fm_t * fm,
             if (ind_proba > max_index)
                 max_index = ind_proba;
         }
-        fm_set_proba(elem, proba, max_index + 1, len_p_min);
+        elem.len_p_min = len_p_min;
+        elem.proba.assign(proba.begin(), proba.begin() + max_index + 1);
     }
-    free(proba);
 }
 
 /************************************************************************/
@@ -290,131 +266,90 @@ int main()
     unsigned int const val_factor[4] = {15, 17, 18, 20};
 
     // fm
-    fm_t * pm1 = fm_create();
-    unsigned long elem1[4] = {PM1_METHOD, 0, 50, 500};
-    fm_set_method(pm1, elem1, 4);
-    fm_t * pp1 = fm_create();
-    unsigned long elem2[4] = {PP1_65_METHOD, 0, 70, 700};
-    fm_set_method(pp1, elem2, 4);
-    fm_t * ecm = fm_create();
-    unsigned long elem3[4] = {EC_METHOD, BRENT12, 80, 1000};
-    fm_set_method(ecm, elem3, 4);
-    tabular_fm_t * tab = tabular_fm_create();
-    tabular_fm_add_fm(tab, pm1);
-    tabular_fm_add_fm(tab, pp1);
-    tabular_fm_add_fm(tab, ecm);
+    tabular_fm tab;
+    tab.push_back(factoring_method::from_fields(PM1_METHOD, 0, 50, 500));
+    tab.push_back(factoring_method::from_fields(PP1_65_METHOD, 0, 70, 700));
+    tab.push_back(factoring_method::from_fields(EC_METHOD, BRENT12, 80, 1000));
+
     // bench our method
     bench_proba_mini(state, tab, val_factor, len_val_factor, fbb);
-    // bench_time_mini (state, tab, r);
-    /* printf ("mini\n"); */
-    /* tabular_fm_print (tab); */
 
-    /* bench_proba (state, tab, fbb); */
-    /* bench_time(state, tab); */
-    /* printf ("\n all \n"); */
-    /* tabular_fm_print (tab); */
     // generate some examples of strategies!
-    strategy_t * strat1 = strategy_create();
-    strategy_add_fm(strat1, tab->tab[0]); // pm1
-    strategy_add_fm(strat1, tab->tab[1]); // pp1
-    strategy_add_fm(strat1, tab->tab[2]); // ecm
+    strategy_t strat1;
+    strat1.add_fm(tab[0]); // pm1
+    strat1.add_fm(tab[1]); // pp1
+    strat1.add_fm(tab[2]); // ecm
     const double prob1 = compute_proba_strategy(init_tab, strat1, fbb, lpb);
-    // double time1 = compute_time_strategy(init_tab, strat1, r);
 
     // Create our strategy to use facul().
     const auto st = convert_strategy_to_facul_strategy(strat1, state);
     // bench our strategies!
     const auto res = bench_proba_time_st(state, st, init_tab, r, lpb);
     const double prob2 = res.prob;
-    // double time2 = res[1];
 
-    printf("prob1 = %lf, prob2 = %lf\n", prob1, prob2);
-    // printf ("time1 = %lf, time2 = %lf\n", time1, time2);
+    fmt::print("prob1 = {:f}, prob2 = {:f}\n", prob1, prob2);
 
     const double precision_p = 0.05;
     if ((prob1 - prob2) > precision_p || (prob2 - prob1) > precision_p) {
-        fprintf(stderr, "error with the test(1)\n");
+        fmt::print(stderr, "error with the test(1)\n");
         return EXIT_FAILURE;
     }
 
     //{{test the function: bench_proba_time_pset()
-    const auto c = int(tab->tab[0]->method[3] / tab->tab[0]->method[2]);
+    const auto c = int(tab[0].B2() / tab[0].B1());
     const int param[6] = {
-        (int)tab->tab[0]->method[2], (int)tab->tab[0]->method[2], 1, c, c, 1};
+        (int)tab[0].B1(), (int)tab[0].B1(), 1, c, c, 1};
 
-    tabular_fm_t * tmp = bench_proba_time_pset(
-        facul_method_code(tab->tab[0]->method[0]),
-        ec_parameterization_t(tab->tab[0]->method[1]),
+    tabular_fm const tmp = bench_proba_time_pset(
+        tab[0].method(), tab[0].params.parameterization,
         state, 17, 20, 18 * 3, param);
 
     /*check this probability: the probability to find a prime number
     of length 17 or 18 bits must be more than this to find 18 bits and
     less than this for 18 bits.*/
-    fm_t * pm1_bis = tmp->tab[1];
-    /* fm_print (tab->tab[0]); */
-    /* fm_print (tmp->tab[1]); */
-    if (pm1_bis->proba[0] < tab->tab[0]->proba[20 - fbb] ||
-        pm1_bis->proba[0] > tab->tab[0]->proba[17 - fbb]) {
-        fprintf(stderr, "error with the test(2)\n");
+    factoring_method const & pm1_bis = tmp[1];
+    if (pm1_bis.proba[0] < tab[0].proba[20 - fbb] ||
+        pm1_bis.proba[0] > tab[0].proba[17 - fbb]) {
+        fmt::print(stderr, "error with the test(2)\n");
         return EXIT_FAILURE;
     }
-    tabular_fm_free(tmp);
-
     //}}
 
     // test the generation of our strategy for one pair of cofactor!!!
     //{{
-    strategy_set_proba(strat1, 0.4);
-    strategy_set_time(strat1, 40);
-    tabular_strategy_t * strat_r0 = tabular_strategy_create();
-    tabular_strategy_t * strat_r1 = tabular_strategy_create();
+    strat1.proba = 0.4;
+    strat1.time = 40;
+    tabular_strategy strat_r0;
+    tabular_strategy strat_r1;
 
     // firstly, create the zero strategy!
-    strategy_t * zero_st = strategy_create();
-    unsigned long tab0[4] = {PM1_METHOD, 0, 0, 0};
-    fm_t * zero_fm = fm_create();
-    fm_set_method(zero_fm, tab0, 4);
-    strategy_add_fm(zero_st, zero_fm);
-    strategy_set_proba(zero_st, 0.0);
+    strategy_t zero_st;
+    zero_st.add_fm(factoring_method::from_fields(PM1_METHOD, 0, 0, 0));
+    zero_st.proba = 0.0;
 
-    tabular_strategy_add_strategy(strat_r0, zero_st);
-    tabular_strategy_add_strategy(strat_r0, strat1);
-    tabular_strategy_add_strategy(strat_r1, zero_st);
-    tabular_strategy_t * res2 = generate_strategy_r0_r1(strat_r0, strat_r1);
+    strat_r0.push_back(zero_st);
+    strat_r0.push_back(strat1);
+    strat_r1.push_back(zero_st);
+    tabular_strategy const res2 = generate_strategy_r0_r1(strat_r0, strat_r1);
 
     // check proba + time!
-    if (!(res2->size == 1 && res2->tab[0]->proba < EPSILON_DBL &&
-          res2->tab[0]->time < EPSILON_DBL)) {
-        fprintf(stderr, "error with the test(3)\n");
+    if (!(res2.size() == 1 && res2[0].proba < EPSILON_DBL &&
+          res2[0].time < EPSILON_DBL)) {
+        fmt::print(stderr, "error with the test(3)\n");
         return EXIT_FAILURE;
     }
-    strategy_set_proba(strat_r1->tab[0], 1.0);
-    tabular_strategy_t * res3 = generate_strategy_r0_r1(strat_r0, strat_r1);
+    strat_r1[0].proba = 1.0;
+    tabular_strategy const res3 = generate_strategy_r0_r1(strat_r0, strat_r1);
 
     // check proba + time!
-    if (!(res3->size == 2 && res3->tab[0]->proba < EPSILON_DBL &&
-          res3->tab[0]->time < EPSILON_DBL &&
-          (res3->tab[1]->proba - strat1->proba) < EPSILON_DBL &&
-          (res3->tab[1]->time - strat1->time) < EPSILON_DBL)) {
-        fprintf(stderr, "error with the test(3)\n");
+    if (!(res3.size() == 2 && res3[0].proba < EPSILON_DBL &&
+          res3[0].time < EPSILON_DBL &&
+          (res3[1].proba - strat1.proba) < EPSILON_DBL &&
+          (res3[1].time - strat1.time) < EPSILON_DBL)) {
+        fmt::print(stderr, "error with the test(3)\n");
         return EXIT_FAILURE;
     }
-
     //}}
-    // free
-    strategy_free(strat1);
-    tabular_fm_free(tab);
-    fm_free(pm1);
-    fm_free(pp1);
-    fm_free(ecm);
-    gmp_randclear(state);
-
-    fm_free(zero_fm);
-    strategy_free(zero_st);
-    tabular_strategy_free(res2);
-    tabular_strategy_free(res3);
-    tabular_strategy_free(strat_r0);
-    tabular_strategy_free(strat_r1);
 
     return EXIT_SUCCESS;
 }

@@ -1,47 +1,56 @@
 #ifndef STRATEGY_HPP
 #define STRATEGY_HPP
 
-#include <cstdio>
+#include <cstddef>
+
+#include <istream>
+#include <ostream>
+#include <vector>
+
+#include "fmt/base.h"
+#include "fmt/ostream.h"
 
 #include "fm.hpp"
 #include "tab_fm.hpp"
 
-/* TODO: kill this! This is just the same as an array of
- * facul_parameters_with_side. Okay, with timings. We can subclass.
+/* A chain of factoring methods, with the probability that it finds a
+ * non-trivial factor and the average time it takes to do so.
+ *
+ * TODO: this is very nearly a std::vector<facul_method::parameters_with_side>
+ * carrying a (probability, time) pair.
  */
-typedef struct strategy {
-    tabular_fm_t * tab_fm;
-    double proba;
-    double time;
-    int * side;
-    unsigned int len_side;
-    // In practice, we use side only one time. So the real and physical
-    // size are the same, and it's not necessary to allocate it for now.
+struct strategy_t {
+    tabular_fm tab_fm;
+    double proba = 0;
+    double time = 0;
 
-} strategy_t;
+    /* side[i] is the side tab_fm[i] applies to. It stays empty while the
+     * strategy is one-sided and no side has been picked yet; printing
+     * then falls back to side 0. */
+    std::vector<int> side;
 
-strategy_t * strategy_create();
+    void add_fm(factoring_method const & fm) { tab_fm.push_back(fm); }
 
-void strategy_free(strategy_t * t);
+    void add_fm(factoring_method const & fm, int s)
+    {
+        tab_fm.push_back(fm);
+        /* Methods may have been added without a side before this one;
+         * they are taken to be on side 0, as they always have been. */
+        side.resize(tab_fm.size(), 0);
+        side.back() = s;
+    }
 
-tabular_fm_t * strategy_get_tab_fm(strategy_t const * t);
+    bool has_sides() const { return side.size() == tab_fm.size(); }
+    int side_of(size_t i) const { return has_sides() ? side[i] : 0; }
+};
 
-double strategy_get_proba(strategy_t const * t);
+std::istream & operator>>(std::istream & is, strategy_t &);
+std::ostream & operator<<(std::ostream & os, strategy_t const &);
 
-double strategy_get_time(strategy_t const * t);
-
-void strategy_set_proba(strategy_t * t, double proba);
-
-void strategy_set_time(strategy_t * t, double time);
-
-void strategy_add_fm(strategy_t * t, fm_t * elem);
-
-void strategy_add_fm_side(strategy_t * t, fm_t * elem, int side);
-
-strategy_t * strategy_copy(strategy_t * t);
-
-int strategy_fprint(FILE * file, strategy_t const * t);
-
-int strategy_print(strategy_t const * t);
+namespace fmt
+{
+template <> struct formatter<strategy_t> : ostream_formatter {
+};
+} // namespace fmt
 
 #endif /* STRATEGY_HPP */

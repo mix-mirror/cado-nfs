@@ -1,183 +1,139 @@
 #include "cado.h" // IWYU pragma: keep
-#include <cstdio>
+
 #include <cstdlib>
-#include "fm.hpp"            // for fm_set_method, fm_set_proba, fm_set_time
-#include "strategy.hpp"      // for strategy_t, strategy_add_fm, strategy_free
-#include "tab_fm.hpp"        // for tabular_fm_get_fm, tabular_fm_t
+
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "fmt/base.h"
+
+#include "fm.hpp"
+#include "strategy.hpp"
+#include "tab_fm.hpp"
 #include "tab_strategy.hpp"
-#include "macros.h"
 
-//test equality between two fm!
-static int fm_are_equals (fm_t const * t1, fm_t const * t2){
-    //test just method because fscan and fprint strategy don't take in
-    //consideration the probabilities and the time for each factoring
-    //method.
-    unsigned int len_met1 = fm_get_len_method (t1);
-    unsigned int len_met2 = fm_get_len_method (t2);
-    if (len_met2 != len_met1)
-	return 0;
-    unsigned long const * tab_t1 = fm_get_method (t1);
-    unsigned long const * tab_t2 = fm_get_method (t2);
-    for (unsigned int i = 0; i < len_met1; i++)
-	if (tab_t1[i] != tab_t2[i])
-	    return 0;
-    return 1;
-}
-
-
-//test equality between two tab_fm!
-static int tab_fm_are_equals (tabular_fm_t const * t1, tabular_fm_t const * t2){
-    const unsigned int len1 = t1->size;
-    const unsigned int len2 = t2->size;
-    if (len1 != len2)
-	return 0;
-    
-    for (unsigned int i = 0; i < len1; i++)
-	if (!fm_are_equals (tabular_fm_get_fm (t1, i),
-			    tabular_fm_get_fm (t2, i)))
-	    return 0;
-    return 1;
-}
-//test equality between two strategies!
-static int strategies_are_equals (strategy_t const * t1, strategy_t const * t2)
+static factoring_method make(unsigned long method, unsigned long curve,
+                             unsigned long B1, unsigned long B2)
 {
-    //equality between two tab_fm
-    if ( !tab_fm_are_equals (strategy_get_tab_fm (t1),
-			     strategy_get_tab_fm (t2)))
-	return 0;
-
-    //equality probab. and time
-    const double p1 = strategy_get_proba (t1);
-    const double p2 = strategy_get_proba (t2);
-    const double prec = 0.0001;
-    if (p1-p2 > prec || p2-p1 > prec)
-	return 0;
-    return 1;
+    factoring_method fm = factoring_method::from_fields(method, curve, B1, B2);
+    fm.len_p_min = 20;
+    fm.proba = {0.5};
+    fm.time = {1, 2, 3, 4};
+    return fm;
 }
 
-//test equality between two tabular_strategy_t!
-static int tabular_strategies_are_equals (tabular_strategy_t const * t1,
-				   tabular_strategy_t const * t2)
+/* The file format keeps only the method, the curve, the bounds and the
+ * side, so that is all a round trip can preserve. */
+static bool same_chain(strategy_t const & a, strategy_t const & b)
 {
-    //equality between two tab_strategy
-    const unsigned int len1 = t1->size;
-    const unsigned int len2 = t2->size;
-    if (len1 != len2)
-	return 0;
-    for (unsigned int i = 0; i < len1; i++)
-	{
-	    if (!strategies_are_equals (t1->tab[i], t2->tab[i]))
-		return 0;
-	}
-    return 1;
+    if (a.tab_fm.size() != b.tab_fm.size())
+        return false;
+    for (size_t i = 0; i < a.tab_fm.size(); i++) {
+        if (!a.tab_fm[i].same_method_as(b.tab_fm[i]))
+            return false;
+        if (a.side_of(i) != b.side_of(i))
+            return false;
+    }
+    return true;
 }
-
 
 int main()
 {
-    //test strategy
-    strategy_t* t1 = strategy_create ();
-    fm_t* elem = fm_create ();
-    unsigned long value[4] = {1,2,3,4};
-    double p = 0.5;
-    double a = 2;
-    fm_set_method (elem, value,4);
-    fm_set_proba (elem, &p, 1,0);
-    fm_set_time (elem, &a, 1);
-    strategy_add_fm (t1, elem);
+    int rc = EXIT_SUCCESS;
+    auto fail = [&rc](std::string const & what) {
+        fmt::print(stderr, "error: {}\n", what);
+        rc = EXIT_FAILURE;
+    };
 
-    p = 0.5;
-    a = 21;
-    fm_set_method (elem, value,4);
-    fm_set_proba (elem, &p, 1,0);
-    fm_set_time (elem, &a, 1);
-    strategy_add_fm (t1, elem);
+    /* a strategy with no side decided yet prints side 0 */
+    {
+        strategy_t s;
+        s.add_fm(make(PM1_METHOD, 0, 315, 2205));
+        s.add_fm(make(EC_METHOD, MONTY12, 105, 3255));
+        if (s.has_sides())
+            fail("a strategy built without sides claims to have them");
+        if (s.side_of(0) != 0 || s.side_of(1) != 0)
+            fail("a strategy without sides did not default to side 0");
+    }
 
-    unsigned long value2[6] = {1,0,10,103};
-    p = 0.7;
-    a = 221;
-    fm_set_method (elem, value2,4);
-    fm_set_proba (elem, &p, 1,0);
-    fm_set_time (elem, &a, 1);
+    /* adding with a side keeps the two arrays in step */
+    {
+        strategy_t s;
+        s.add_fm(make(PM1_METHOD, 0, 315, 2205), 1);
+        s.add_fm(make(EC_METHOD, MONTY12, 105, 3255), 0);
+        if (!s.has_sides())
+            fail("a strategy built with sides does not have them");
+        if (s.side_of(0) != 1 || s.side_of(1) != 0)
+            fail("the sides came back wrong");
+    }
 
-    strategy_add_fm (t1, elem);
-    strategy_set_proba(t1, 0.5);
-    strategy_set_time(t1, 23.458);
+    /* mixing the two: the methods added without a side stay on side 0 */
+    {
+        strategy_t s;
+        s.add_fm(make(PM1_METHOD, 0, 315, 2205));
+        s.add_fm(make(EC_METHOD, MONTY12, 105, 3255), 1);
+        if (!s.has_sides())
+            fail("the side array was not filled in to match");
+        if (s.side_of(0) != 0 || s.side_of(1) != 1)
+            fail("filling in the side array used the wrong value");
+    }
 
-    //test strategy_copy()
-    strategy_t* t2 = strategy_copy(t1);
+    /* round trip through the stream operators */
+    {
+        tabular_strategy t;
 
-    //t1 equal to t2
-    if (strategies_are_equals (t1, t2) != 1)
-	{
-	    fprintf (stderr, "error with the test(1)!!!\n");
-	    return EXIT_FAILURE;
-	}
-    strategy_set_proba(t2, 0.6);
-    if (strategies_are_equals (t1, t2) != 0)
-	{
-	    fprintf (stderr, "error with the test(2)!!!\n");
-	    return EXIT_FAILURE;
-	}
+        strategy_t s1;
+        s1.add_fm(make(PM1_METHOD, 0, 315, 2205), 0);
+        s1.add_fm(make(EC_METHOD, MONTY12, 105, 3255), 1);
+        s1.proba = 0.75;
+        s1.time = 123.5;
+        t.push_back(s1);
 
-    //test side
-    strategy_add_fm_side(t2, elem, 1);
-    if (t2->side[t2->len_side-1]!=1)
-	{
-	    fprintf (stderr, "error with the test(3)!!!\n");
-	    return EXIT_FAILURE;
-	}
+        strategy_t s2;
+        s2.add_fm(make(EC_METHOD, MONTY16, 0, 0), 1);
+        s2.proba = 0;
+        s2.time = 0;
+        t.push_back(s2);
 
-    //Test tabular_strategy
-    //add t and t2 in tab
-    tabular_strategy_t *tab = tabular_strategy_create();
-    tabular_strategy_add_strategy (tab, t1);
-    if(strategies_are_equals (t1, tab->tab[0]) != 1)
-	{
-	    fprintf (stderr, "error with the test(4)!!!\n");
-	    return EXIT_FAILURE;
-	}
+        std::ostringstream os;
+        os << t;
 
-    tabular_strategy_add_strategy (tab, t2);
-    if (strategies_are_equals (t1, tab->tab[1]) != 0)
-	{
-	    fprintf (stderr, "error with the test(5)!!!\n");
-	    return EXIT_FAILURE;
-	}
+        tabular_strategy back;
+        std::istringstream is(os.str());
+        if (!(is >> back))
+            fail("could not read back what we just wrote");
+        if (back.size() != t.size()) {
+            fail("the round trip changed the number of strategies");
+        } else {
+            for (size_t i = 0; i < t.size(); i++) {
+                if (!same_chain(t[i], back[i]))
+                    fail("the round trip changed a chain of methods");
+                /* Probability is written with ten decimals, time with
+                 * six; both of these survive exactly. */
+                if (back[i].proba != t[i].proba)
+                    fail("the round trip changed a probability");
+                if (back[i].time != t[i].time)
+                    fail("the round trip changed a time");
+            }
+        }
+    }
 
-    //test print and scan
+    /* malformed input fails the stream rather than killing the process */
+    {
+        std::istringstream is("1 0 315 2205 0\nProbability: oops\n");
+        tabular_strategy t;
+        if (is >> t)
+            fail("a malformed strategy was accepted");
+    }
 
-    // coverity complains about insecure temp files. For tests, I don't
-    // think it's a problem, really.
-    // coverity[secure_temp]
-    FILE* file = tmpfile();
-    DIE_ERRNO_DIAG(file == nullptr, "tmpfile(%s)", "");
-    const int errf = (tabular_strategy_fprint (file, tab) == -1);
-    if (errf)
-	{
-            fprintf (stderr, "write error on temp file\n");
-	    exit (EXIT_FAILURE);
-	}
-    fseek(file, 0, SEEK_SET);
-    tabular_strategy_t* tab2 = tabular_strategy_fscan (file);
-    if (tab2 == nullptr)
-	{
-            fprintf (stderr, "read error on temp file\n");
-	    exit (EXIT_FAILURE);
-	}
-    fclose (file);
+    /* an empty input is an empty table, not a failure */
+    {
+        std::istringstream is("");
+        tabular_strategy t;
+        if (!(is >> t) || !t.empty())
+            fail("an empty input was not read as an empty table");
+    }
 
-    if (tabular_strategies_are_equals (tab2, tab) != 1)
-	{
-	    fprintf (stderr, "error with the test(6)!!!\n");
-	    return EXIT_FAILURE;
-	}
-    //free 
-    fm_free (elem);
-    strategy_free (t1);
-    strategy_free (t2);
-    tabular_strategy_free (tab);
-    tabular_strategy_free (tab2);
-    return EXIT_SUCCESS;
+    return rc;
 }
-
