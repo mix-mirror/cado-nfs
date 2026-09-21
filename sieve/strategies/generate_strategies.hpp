@@ -55,11 +55,6 @@ strategy_matrix generate_matrix(std::string const & name_directory_decomp,
 /*                      CONVEX_HULL_ST                                  */
 /************************************************************************/
 
-tabular_point convert_tab_point_to_tab_strategy(tabular_strategy const & t);
-
-tabular_strategy convert_tab_strategy_to_tab_point(tabular_point const & t,
-                                                   tabular_strategy const & init);
-
 tabular_strategy convex_hull_strategy(tabular_strategy const & t);
 
 #endif /* GENERATE_STRATEGIES_HPP */

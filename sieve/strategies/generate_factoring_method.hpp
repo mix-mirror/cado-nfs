@@ -95,11 +95,6 @@ tabular_fm filtering(tabular_fm const & fm, int final_nb_methods);
 /*                      CONVEX_HULL_FM                                  */
 /************************************************************************/
 
-tabular_point convert_tab_point_to_tab_fm(tabular_fm const & t);
-
-tabular_fm convert_tab_fm_to_tab_point(tabular_point const & t,
-				       tabular_fm const & init);
-
 tabular_fm convex_hull_fm(tabular_fm const & t);
 
 /************************************************************************/

@@ -350,25 +350,11 @@ strategy_matrix generate_matrix(std::string const & name_directory_decomp,
 /*                      CONVEX_HULL_ST                                  */
 /************************************************************************/
 
-tabular_point convert_tab_point_to_tab_strategy(tabular_strategy const & t)
-{
-    tabular_point res;
-    for (unsigned int i = 0; i < t.size(); i++)
-        res.emplace_back(point {.number = i, .x = t[i].proba, .y = t[i].time});
-    return res;
-}
-
-tabular_strategy convert_tab_strategy_to_tab_point(tabular_point const & t,
-                                                   tabular_strategy const & init)
-{
-    tabular_strategy res;
-    for (auto const & p: t)
-        res.push_back(init[p.number]);
-    return res;
-}
-
+/* The strategies on the trade-off frontier: those for which no other
+ * strategy is both more likely to find a relation and faster. */
 tabular_strategy convex_hull_strategy(tabular_strategy const & t)
 {
-    return convert_tab_strategy_to_tab_point(
-        convex_hull(convert_tab_point_to_tab_strategy(t)), t);
+    return pareto_reduce(t, [](strategy_t const & s) {
+        return std::make_pair(s.proba, s.time);
+    });
 }

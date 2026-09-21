@@ -740,30 +740,11 @@ tabular_fm filtering(tabular_fm const & tab, int final_nb_methods)
 /*                      CONVEX_HULL_FM                                  */
 /************************************************************************/
 
-/*
-  These differents functions allow to use the module convex_hull,
-  to compute the convex hull of a set of factoring methods.
- */
-
-tabular_point convert_tab_point_to_tab_fm(tabular_fm const & t)
-{
-    tabular_point res;
-    for (unsigned int i = 0; i < t.size(); i++)
-        res.emplace_back(point {i, t[i].proba[0], t[i].time[0]});
-    return res;
-}
-
-tabular_fm convert_tab_fm_to_tab_point(tabular_point const & t,
-                                       tabular_fm const & init)
-{
-    tabular_fm res;
-    for (auto const & p: t)
-        res.push_back(init[p.number]);
-    return res;
-}
-
+/* The factoring methods on the trade-off frontier: those for which no
+ * other method is both more likely to succeed and faster. */
 tabular_fm convex_hull_fm(tabular_fm const & t)
 {
-    return convert_tab_fm_to_tab_point(
-        convex_hull(convert_tab_point_to_tab_fm(t)), t);
+    return pareto_reduce(t, [](factoring_method const & fm) {
+        return std::make_pair(fm.proba[0], fm.time[0]);
+    });
 }
