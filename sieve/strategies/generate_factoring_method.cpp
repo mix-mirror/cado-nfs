@@ -15,6 +15,7 @@
 #include "facul_ecm.h"
 #include "fm.hpp"
 #include "generate_factoring_method.hpp"
+#include "random_distributions.hpp"
 #include "macros.h"
 #include "arith/modredc_15ul.h" // MODREDC15UL_MAXBITS
 #include "arith/modredc_2ul2.h" // MODREDC2UL2_MAXBITS
@@ -24,7 +25,7 @@
 /*
   BOUND_SIGMA is used when you generate a random value of sigma.
 */
-int const BOUND_SIGMA = 15;
+unsigned long const BOUND_SIGMA = 15;
 
 /*
    The test fails with probabily equals to 1/4^15 (approx 0) (MILLER RABIN).
@@ -119,14 +120,15 @@ cxx_mpz generate_composite_integer(gmp_randstate_t state, int lenFact1,
     return res;
 }
 
-int select_random_index_according_dist(double * dist, int len)
+int select_random_index_according_dist(double const * dist, int len,
+                                      gmp_randstate_ptr state)
 {
-    int const alea = rand(); /* 0 <= alea <= RAND_MAX */
+    double const alea = random_uniform(state);
     int i = 0;
-    int bound = (int)(dist[0] * (double)RAND_MAX);
+    double bound = dist[0];
     while (i < (len - 1) && alea > bound) {
         i++;
-        bound += (int)(dist[i] * (double)RAND_MAX);
+        bound += dist[i];
     }
     return i;
 }
@@ -137,11 +139,12 @@ int select_random_index_according_dist(double * dist, int len)
   of prime numbers (in 'dist')!
 */
 cxx_mpz generate_composite_integer_interval(gmp_randstate_t state,
-                                            double * dist, int lenFact1_min,
+                                            double const * dist,
+                                            int lenFact1_min,
                                             int lenFact1_max, int lenFactall)
 {
     int const len = lenFact1_max - lenFact1_min + 1;
-    int const index = select_random_index_according_dist(dist, len);
+    int const index = select_random_index_according_dist(dist, len, state);
     return generate_composite_integer(state, lenFact1_min + index, lenFactall);
     // return lenFact1_min + index;
 }
@@ -152,7 +155,8 @@ cxx_mpz generate_composite_integer_interval(gmp_randstate_t state,
 
 facul_strategy_oneside generate_fm(facul_method_code method, unsigned long B1,
                                    unsigned long B2,
-                                   ec_parameterization_t curve)
+                                   ec_parameterization_t curve,
+                                   gmp_randstate_ptr state)
 {
     facul_method::parameters m;
 
@@ -165,7 +169,7 @@ facul_strategy_oneside generate_fm(facul_method_code method, unsigned long B1,
         else if (curve == BRENT12)
             sigma = 11;
         else
-            sigma = 2 + rand() % BOUND_SIGMA;
+            sigma = 2 + gmp_urandomm_ui(state, BOUND_SIGMA);
         m = {method, B1, B2, curve, sigma, 1};
     }
 
@@ -256,7 +260,7 @@ void bench_proba(gmp_randstate_t state, tabular_fm_t * fm, int len_p_min,
         unsigned long const B1 = param[2];
         unsigned long const B2 = param[3];
 
-        facul_strategy_oneside const st = generate_fm(method, B1, B2, curve);
+        facul_strategy_oneside const st = generate_fm(method, B1, B2, curve, state);
 
         int ind_proba = 0;
         do {
@@ -307,7 +311,7 @@ void bench_time(gmp_randstate_t state, tabular_fm_t * fm, size_t nb_test)
         unsigned long const B2 = param[3];
         if (B1 != 0 || B2 != 0) {
             facul_strategy_oneside const st =
-                generate_fm(method, B1, B2, curve);
+                generate_fm(method, B1, B2, curve, state);
             double time[4];
             time[0] = bench_time_fm_onelength(st, N1, nb_test);
             time[1] = bench_time_fm_onelength(st, N2, nb_test);
@@ -523,7 +527,7 @@ tabular_fm_t * bench_proba_time_pset(facul_method_code method,
 
         while (B1 <= b1_max && proba < max_proba) {
             facul_strategy_oneside const & fm =
-                generate_fm(method, B1, B2, curve);
+                generate_fm(method, B1, B2, curve, state);
             weighted_success const res =
                 bench_proba_time_pset_onefm(fm, N, nb_test_max);
             proba = res.prob;

@@ -3,7 +3,6 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
-#include <ctime>
 
 #include <vector>
 
@@ -36,6 +35,7 @@ static void declare_usage(cxx_param_list & pl)
     pl.declare_usage("m",
 			  "to specify the method : PM1, PP1-27, PP1-65, ECM-M12, ECM-M16,\n ECM-B12. By default, we use all methods one after the other.");
     pl.declare_usage("ch", "to apply the convex hull.");
+    pl.declare_usage("seed", "random seed");
 
     pl.declare_usage("b1min", "to set b1_min (sieve region).");
     pl.declare_usage("b1max", "to set b1_max (sieve region).");
@@ -155,8 +155,9 @@ static int main_(int argc, char const * argv[])
 	}
 
 	cxx_gmp_randstate state;
-	/* Initializing radom generator */
-	gmp_randseed_ui(state, time(nullptr));
+	unsigned long seed = 0;
+	if (pl.parse("seed", seed))
+	    gmp_randseed_ui(state, seed);
 
 	/*
 	   To generate our factoring methods!

@@ -2,6 +2,7 @@
 #include "generate_factoring_method.hpp"
 #include <cstdlib>
 #include <cmath>
+#include "gmp_aux.h"
 #include "fm.hpp"                           // for fm_t, fm_create, fm_free
 #include "tab_fm.hpp"                       // for tabular_fm_free, tabular_fm_t
 
@@ -31,6 +32,8 @@ int check_filt (tabular_fm_t* res, unsigned int init_nb_method)
 // coverity[root_function]
 int main ()
 {
+    cxx_gmp_randstate state;
+
     unsigned int nb_fm = 10;
     unsigned int final_nb_fm = 4;
 
@@ -39,7 +42,9 @@ int main ()
     fm_t* fm = fm_create();
     for (unsigned int i = 0; i < nb_fm; i++)
 	{
-	    unsigned long elem[4] = {i, 0, i*(1+rand()%10),  i*(1+rand()%10)};
+	    unsigned long elem[4] = {i, 0,
+	        i*(1+gmp_urandomm_ui(state, 10)),
+	        i*(1+gmp_urandomm_ui(state, 10))};
 	    fm_set_method (fm, elem, 4);
 	    //proba
 	    int len_proba = 4;

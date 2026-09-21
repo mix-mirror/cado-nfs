@@ -94,10 +94,9 @@ static double psi_probabilistic(std::vector<double> const & by_interval,
         double mfb0,
         double mfb1,
         std::vector<unsigned int> const & l,
-        unsigned long lim, size_t number_of_trials)
+        unsigned long lim, size_t number_of_trials,
+        gmp_randstate_ptr rstate)
 {
-    cxx_gmp_randstate rstate;
-
     double S = 1;
     for (auto c : l) {
         ASSERT_ALWAYS(c <= by_interval.size());
@@ -217,16 +216,23 @@ struct psi_backend_probabilistic {
     static constexpr const size_t ntrials = 100000;
     using R = runtime_numeric_cast<unsigned int>;
     std::vector<double> B;
-    explicit psi_backend_probabilistic(psi_backend_base const & psi0)
+    /* One state for the whole run: each call to operator() must continue
+     * the same random sequence, not restart it. */
+    cxx_gmp_randstate rstate;
+    explicit psi_backend_probabilistic(psi_backend_base const & psi0,
+                                       unsigned long seed = 0)
         : psi0(psi0)
         , B(prime_counts_in_geometric_intervals(2,
                     psi0.mfb + psi0.max_factors + 1,
                     double(psi0.lim)))
     {
+        if (seed)
+            gmp_randseed_ui(rstate, seed);
     }
-    double operator()(std::vector<unsigned int> const & q) const
+    double operator()(std::vector<unsigned int> const & q)
     {
-        return psi_probabilistic(B, psi0.mfb-1, psi0.mfb, q, psi0.lim, ntrials);
+        return psi_probabilistic(B, psi0.mfb-1, psi0.mfb, q, psi0.lim, ntrials,
+                                 rstate);
     }
 };
 
@@ -260,7 +266,7 @@ static tabular_decomp generate_all_decomp(unsigned int mfb, unsigned long lim)
     tabular_decomp res;
 
     const psi_backend_base psi0(mfb, lim);
-    const T psi(psi0);
+    T psi(psi0);
 
     for(unsigned int nfactors = 2 ; nfactors <= psi0.max_factors ; nfactors++) {
         /* generate partitions of mfb + k with exactly nfactors summands,
@@ -283,10 +289,11 @@ static tabular_decomp generate_all_decomp(unsigned int mfb, unsigned long lim)
     return res;
 }
 
-void generate_all_decomp_compare(unsigned int mfb, unsigned int lim)
+void generate_all_decomp_compare(unsigned int mfb, unsigned int lim,
+                                 unsigned long seed)
 {
     const psi_backend_base psi0(mfb, lim);
-    const psi_backend_probabilistic psi1(psi0);
+    psi_backend_probabilistic psi1(psi0, seed);
     const psi_backend_series psi2(psi0);
 
     for(unsigned int nfactors = 2 ; nfactors <= psi0.max_factors ; nfactors++) {

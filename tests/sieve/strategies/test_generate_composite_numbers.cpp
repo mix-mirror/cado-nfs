@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <vector>
 
+#include "gmp_aux.h"
+
 /*
   This program tests the following funtions:
   - distribution_prime_number()              (in generate_factoring_method.c)
@@ -16,6 +18,8 @@
 
 int main ()
 {
+    cxx_gmp_randstate state;
+
     //check dist
     double precision = 0.00001;
     int len_p_min = 10;
@@ -59,7 +63,7 @@ int main ()
     int nb_test = 10000;
     for (int i = 0; i < nb_test; i++)
 	{
-	    int index = select_random_index_according_dist(dist, len);
+	    int index = select_random_index_according_dist(dist, len, state);
 	    dist_test[index]+=1;
 	}
     //check the similarity!!!

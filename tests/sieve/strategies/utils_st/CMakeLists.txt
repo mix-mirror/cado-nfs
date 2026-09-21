@@ -5,7 +5,8 @@ include_directories(${CADO_NFS_SOURCE_DIR})
 include_directories(${CADO_NFS_SOURCE_DIR}/sieve/ecm)
 include_directories(${CADO_NFS_SOURCE_DIR}/sieve)
 
-cado_define_test(test_fm.cpp ${SUF_SRC}fm.cpp ${SUF_SRC}tab_fm.cpp) 
+cado_define_test(test_fm.cpp ${SUF_SRC}fm.cpp ${SUF_SRC}tab_fm.cpp
+  LIBRARIES utils)
 
 cado_define_test(test_strategy.cpp
   ${SUF_SRC}tab_strategy.cpp ${SUF_SRC}strategy.cpp

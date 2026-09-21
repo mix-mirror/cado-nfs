@@ -26,11 +26,12 @@ generate_composite_integer(gmp_randstate_t state,
 			   int lenFact1, int lenFactall);
 
 int
-select_random_index_according_dist(double *dist, int len);
+select_random_index_according_dist(double const * dist, int len,
+                                   gmp_randstate_ptr state);
 
 cxx_mpz
 generate_composite_integer_interval(gmp_randstate_t state,
-				    double *dist, int lenFact1_min,
+				    double const * dist, int lenFact1_min,
 				    int lenFact1_max, int lenFactall);
 
 /************************************************************************/
@@ -38,11 +39,12 @@ generate_composite_integer_interval(gmp_randstate_t state,
 /************************************************************************/
 
 /* This generate a 1-sided strategy with just one single method, and (for
- * ECM) a randomly chosen parameter sigma. extra_primes is set to 1.
+ * ECM) a parameter sigma drawn from state. extra_primes is set to 1.
  */
 facul_strategy_oneside generate_fm (facul_method_code method,
                                unsigned long B1, unsigned long B2,
-                               ec_parameterization_t curve
+                               ec_parameterization_t curve,
+                               gmp_randstate_ptr state
                                );
 
 /************************************************************************/

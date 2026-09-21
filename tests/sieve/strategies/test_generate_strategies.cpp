@@ -33,7 +33,8 @@
 static double EPSILON_DBL = LDBL_EPSILON;
 
 // convert type: from strategy_t to facul_strategy_oneside.
-facul_strategy_oneside convert_strategy_to_facul_strategy(strategy_t const * t)
+facul_strategy_oneside convert_strategy_to_facul_strategy(strategy_t const * t,
+                                                          gmp_randstate_ptr state)
 {
     tabular_fm_t * tab_fm = strategy_get_tab_fm(t);
     unsigned int nb_methods = tab_fm->size;
@@ -57,8 +58,9 @@ facul_strategy_oneside convert_strategy_to_facul_strategy(strategy_t const * t)
             strategy.methods.emplace_back(
                 facul_method::parameters(method, B1, B2), verbose);
         } else if (method == EC_METHOD) {
-            /* XXX see with generate_fm which uses BOUND_SIGMA */
-            unsigned long const sigma = curve == MONTY16 ? 1 : (2 + rand());
+            /* the same sigma range as generate_fm(), which uses BOUND_SIGMA */
+            unsigned long const sigma =
+                curve == MONTY16 ? 1 : (2 + gmp_urandomm_ui(state, 15));
             int const extra_primes = 0;
 
             strategy.methods.emplace_back(
@@ -203,7 +205,7 @@ void bench_time_mini(gmp_randstate_t state, tabular_fm_t * fm, int r)
         unsigned long const B1 = param[2];
         unsigned long const B2 = param[3];
         if (B1 != 0 || B2 != 0) {
-            facul_strategy_oneside st = generate_fm(method, B1, B2, curve);
+            facul_strategy_oneside st = generate_fm(method, B1, B2, curve, state);
 
             double res[4];
             ASSERT_ALWAYS(ind < 4);
@@ -244,7 +246,7 @@ static void bench_proba_mini(gmp_randstate_t state, tabular_fm_t * fm,
         unsigned long const B1 = param[2];
         unsigned long const B2 = param[3];
 
-        facul_strategy_oneside st = generate_fm(method, B1, B2, curve);
+        facul_strategy_oneside st = generate_fm(method, B1, B2, curve, state);
 
         unsigned int max_index = 0;
         for (unsigned int j = 0; j < len_val_p; j++) {
@@ -320,7 +322,7 @@ int main()
     // double time1 = compute_time_strategy(init_tab, strat1, r);
 
     // Create our strategy to use facul().
-    const auto st = convert_strategy_to_facul_strategy(strat1);
+    const auto st = convert_strategy_to_facul_strategy(strat1, state);
     // bench our strategies!
     const auto res = bench_proba_time_st(state, st, init_tab, r, lpb);
     const double prob2 = res.prob;

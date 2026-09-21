@@ -3,7 +3,9 @@
 #include <cstdlib>
 #include <fcntl.h>              /* for _O_BINARY */
 #include "fm.hpp"      // for fm_set_proba, fm_set_method, fm_set_time, fm_free
+#include "gmp_aux.h"
 #include "macros.h"
+#include "random_distributions.hpp"
 #include "tab_fm.hpp"
 
 //test equality between two fm!  check all parameters in the structure
@@ -78,6 +80,8 @@ static int check_sort (tabular_fm_t const * tab)
 
 int main ()
 {
+    cxx_gmp_randstate state;
+
     //create a first fm!
     fm_t* t = fm_create();
     unsigned long elem[4];
@@ -166,7 +170,7 @@ int main ()
     	{
     	    double elem_p[5];
     	    for (int j = 0; j < 5; j++)
-    		elem_p[j] = (rand()%1000)/1000;
+    		elem_p[j] = random_uniform(state);
     	    fm_set_proba (t, elem_p, 5,0);
     	    tabular_fm_add_fm (tab4, t);
     	}

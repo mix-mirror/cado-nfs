@@ -2,7 +2,6 @@
 
 #include <cstdlib>
 #include <cstdio>
-#include <ctime>
 #include <gmp.h>
 
 #include "tab_fm.hpp"
@@ -27,6 +26,7 @@ static void declare_usage(cxx_param_list & pl)
 			  "to keep only a number of factoring methods.");
     pl.declare_usage("out",
 			  "to locate the file which contains our benchmark.");
+    pl.declare_usage("seed", "random seed");
 
 }
 
@@ -70,7 +70,9 @@ static int main_(int argc, char const * argv[])
         pl.fail("missing argument -out");
 
     cxx_gmp_randstate state;
-    gmp_randseed_ui(state, time(NULL));
+    unsigned long seed = 0;
+    if (pl.parse("seed", seed))
+        gmp_randseed_ui(state, seed);
 
     FILE *file_in = fopen(pathname_in, "r");
     tabular_fm_t *c = tabular_fm_fscan(file_in);

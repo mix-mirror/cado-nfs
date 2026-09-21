@@ -3,7 +3,8 @@
 
 #include "tab_decomp.hpp"
 
-void generate_all_decomp_compare(unsigned int mfb, unsigned int lim);
+void generate_all_decomp_compare(unsigned int mfb, unsigned int lim,
+                                 unsigned long seed = 0);
 tabular_decomp generate_all_decomp(unsigned int mfb, unsigned long lim);
 
 #endif /* CADO_GEN_DECOMP_HPP */
