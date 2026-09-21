@@ -48,3 +48,66 @@ facul_strategy_oneside::default_strategy() that has drifted: it uses
 B2 = 17*B1 where the live code uses 50*B1, and it names MONTY12/BRENT12
 where the live default is MONTYTWED12. This file therefore describes the
 strategy cado used to have, not the one it has now.
+
+
+expected/ -- the pinned outputs
+===============================
+
+test_strategies_pinned.sh and test_strategies_pinned_notime.sh compare what
+the binaries produce against the references in expected/. Both scripts take
+REGEN=1 to rewrite those references in place, which is how they were made
+and how they should be remade after a deliberate change of behaviour; read
+the diff before committing it.
+
+Everything below is for one small instance, chosen so that the whole thing
+runs in well under a second:
+
+    lim0 = lim1 = 1024     lpb0 = lpb1 = 16     mfb0 = mfb1 = 26
+    ncurves = 3            methods = sample_methods.txt
+
+fbb = ceil(log2(lim+1)) = 11 here, so gst treats a cofactor of fewer than
+2*fbb-1 = 21 bits as prime and hands it a trivial strategy. The band
+[21, 26] is where the generator actually does work, and it is where the
+references are taken.
+
+  decomps.txt      gst -gdc -lim0 1024 -mfb0 r, for r in [21, 26],
+                   concatenated with each section labelled by its file name
+  oneside.txt      gst -gst_r -lim0 1024 -lpb0 16 -r0 r -ncurves 3
+                   -in sample_methods.txt, for r in [21, 26]
+  pairs.txt        gst -gst -r0 a -r1 b, for the four pairs 21_21, 21_26,
+                   24_25 and 26_26 -- the two ends of the diagonal, one
+                   cell off it, and one strongly asymmetric cell
+  matrix.txt       the same four cells, from gst with no mode switch,
+                   which computes the whole matrix in one go
+  matrix.sha256    a digest over all 27*27 cells of that matrix: too large
+                   to pin verbatim, but a change anywhere in it is noticed
+  final_st_0.01    finalst -st <that matrix> -dist <a fixed distribution
+  final_st_100     over the 16 pairs with r0, r1 in {21, 23, 24, 26}>
+                   -t 0.01 and -t 100, two points of the slope selection
+                   in compute_best_strategy()
+
+The second script covers gfm and benchfm, which measure wall-clock time and
+so never write the same bytes twice. Its references are compared with the
+timing column stripped off, which is what the .notime suffix means:
+
+  gfm_<family>.notime   gfm -lb 16 -ub 19 -m <family> -seed 1 over the
+                        sieve region b1 in [100, 400] step 100, c in
+                        [10, 40] step 10, for each of the six families.
+                        That region keeps c well clear of b1: gfm aborts
+                        in stage2_make_plan() when B2 = c*B1 lands within
+                        30 of B1*B1.
+  gfm_fch.txt           gfm -fch -fch_in sample_methods.txt: a convex hull
+                        of a fixed file, so no measurement is involved
+  benchfm_p.txt         benchfm -in sample_methods.txt -p -lb 10 -N 200
+                        -seed 2; -p writes back the timings it was given,
+                        so this one is reproducible as it stands
+  benchfm_pt.notime     the same with -p -t
+  benchfm_f3.txt        benchfm -in sample_methods.txt -f 3 -lb 10:
+                        filtering a fixed file, again with no measurement
+
+gfm -ch is deliberately not pinned. The convex hull ranks methods by
+(probability, time), so timing noise changes which methods survive: eight
+runs at one seed gave three different answers, with hulls of two different
+sizes. It is smoke-checked only, and the same hull code is pinned through
+-fch above.
+

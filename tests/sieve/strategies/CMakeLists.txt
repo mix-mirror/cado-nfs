@@ -51,6 +51,24 @@ cado_define_test(SCRIPT
     TIMEOUT 40
 )
 
+# gst and finalst are pure functions of their input files, so their output
+# is pinned byte for byte. gfm and benchfm measure wall-clock time, so
+# theirs is pinned with the timing columns stripped. Both scripts take
+# REGEN=1 to rewrite their references in the source tree.
+cado_define_test(SCRIPT
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_strategies_pinned.sh
+    PROVIDE_TEMPORARY_WDIR
+    TARGET_DEPENDENCIES gst finalst
+    TIMEOUT 40
+)
+
+cado_define_test(SCRIPT
+    ${CMAKE_CURRENT_SOURCE_DIR}/test_strategies_pinned_notime.sh
+    PROVIDE_TEMPORARY_WDIR
+    TARGET_DEPENDENCIES gfm benchfm
+    TIMEOUT 60
+)
+
 if(DEFINED ENV{CHECKS_EXPENSIVE})
     cado_define_test(SCRIPT
         ${CMAKE_CURRENT_SOURCE_DIR}/test_main_script.sh
