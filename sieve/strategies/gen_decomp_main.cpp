@@ -3,8 +3,11 @@
 #include <cstdlib>
 #include <climits>
 
+#include "fmt/base.h"
+
 #include "macros.h"
 #include "gen_decomp.hpp"
+#include "tab_decomp.hpp"
 #include "cado_main.hpp"
 
 static int main_(int argc, char const * argv[]);
@@ -24,7 +27,9 @@ static int main_(int argc, char const * argv[])
   unsigned long lim = strtoul (argv[2], &p, 0);
   ASSERT_ALWAYS(*p == '\0');
 
-  generate_all_decomp((int) mfb, lim);
-  
+  /* This is the same estimate that gst -gdc writes, and the same one
+   * that test_gen_decomp prints in its first column. */
+  fmt::print("{}", generate_all_decomp((unsigned int) mfb, lim));
+
   return EXIT_SUCCESS;
 }
