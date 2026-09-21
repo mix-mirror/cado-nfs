@@ -30,6 +30,14 @@ lim=$(($lim0>$lim1?$lim1:$lim0))
 lpb=$(($lpb0>$lpb1?$lpb1:$lpb0))
 fbb=`echo "l($lim)/l(2)" | bc -l | cut -d "." -f 1`
 
+# gfm and benchfm draw their test integers from a gmp random state that
+# defaults to a fixed seed, so every invocation below gets a seed of its
+# own -- distinct runs, yet the whole script is reproducible. Override the
+# base to get a different sample. seed_counter is bumped in the calling
+# shell: a command substitution would run in a subshell and lose it.
+: ${CREATE_STRAT_FILE_SEED=1}
+seed_counter=0
+
 GFM=$cadodir/sieve/strategies/gfm
 GST=$cadodir/sieve/strategies/gst
 FINALST=$cadodir/sieve/strategies/finalst
@@ -99,8 +107,8 @@ echo "### First selection of methods"
 x=0
 while read m b1min b1max b1step cmin cmax cstep; do
     outfile=`mktemp -p . data_${m}_XXXXXXX`
-    sleep 1
-    cmd="$GFM -lb $fbb -ub $lpb  -m $m -b1min $b1min -b1max $b1max -b1step $b1step -cmin $cmin -cmax $cmax -cstep $cstep -out $outfile"
+    seed_counter=$((seed_counter+1))
+    cmd="$GFM -lb $fbb -ub $lpb  -m $m -b1min $b1min -b1max $b1max -b1step $b1step -cmin $cmin -cmax $cmax -cstep $cstep -seed $((CREATE_STRAT_FILE_SEED+seed_counter)) -out $outfile"
     echo $cmd
     let x=$x+1
     if [ $x == 10 ] ; then
@@ -135,7 +143,8 @@ echo "######## Second selection of methods, full bench"
 echo "######## This might take some time, be patient..."
 for XXX in PP1_27 PM1 PP1_65 ECM_M12 ECM_M16 ECM_B12; do 
     echo "# $XXX"
-    cmd="$BENCHFM -in data_${XXX}_ch -p -t -lb $fbb -out data_${XXX}_pt"
+    seed_counter=$((seed_counter+1))
+    cmd="$BENCHFM -in data_${XXX}_ch -p -t -lb $fbb -seed $((CREATE_STRAT_FILE_SEED+seed_counter)) -out data_${XXX}_pt"
     echo $cmd
     $cmd
 done
