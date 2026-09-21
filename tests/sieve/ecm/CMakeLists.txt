@@ -89,6 +89,11 @@ cado_define_test(test_strategy_file_parser_pipe_1
      SCRIPT bash -c "$<TARGET_FILE:test_strategy_file_parser> 2 ${CMAKE_CURRENT_SOURCE_DIR}/../F9.st | $<TARGET_FILE:test_strategy_file_parser> 2"
      TARGET_DEPENDENCIES test_strategy_file_parser)
  
+# The writing half of the strategy file format lives next to the parser;
+# this checks that what it writes is what the parser reads back.
+cado_define_test(test_strategy_file_roundtrip.cpp
+    LIBRARIES tests facul utils)
+
 cado_divert_test(test_strategy_file_parser buggy
     EXPECT_FAIL
     NO_DEFAULT_RUN)

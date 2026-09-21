@@ -206,7 +206,7 @@ nb_curves99 (const unsigned int lpb)
 /*}}}*/
 
 /* TODO: move elsewhere. */
-static const char * parameterization_name(ec_parameterization_t p)
+const char * parameterization_name(ec_parameterization_t p)
 {
     switch(p) {
         case BRENT12:     return "ECM-B12";
@@ -217,6 +217,26 @@ static const char * parameterization_name(ec_parameterization_t p)
     }
     ASSERT_ALWAYS(0);
     return nullptr;
+}
+
+std::string facul_method_name(facul_method::parameters const & p)
+{
+    switch (p.method) {
+        case PM1_METHOD:    return "PM1";
+        case PP1_27_METHOD: return "PP1-27";
+        case PP1_65_METHOD: return "PP1-65";
+        case EC_METHOD:     return parameterization_name(p.parameterization);
+        default: break;
+    }
+    ASSERT_ALWAYS(0);
+    return {};
+}
+
+std::ostream & operator<<(std::ostream & os,
+                          facul_method::parameters_with_side const & m)
+{
+    return os << fmt::format("[S{}: {}, {}, {} ] ", m.side,
+                             facul_method_name(m), m.B1, m.B2);
 }
 
 struct strategy_file_parser {/*{{{*/

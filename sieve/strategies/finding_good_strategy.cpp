@@ -14,6 +14,7 @@
 
 #include "facul_ecm.h"
 #include "facul_method.hpp"
+#include "facul_strategies.hpp"
 #include "finding_good_strategy.hpp"
 #include "fm.hpp"
 #include "macros.h"
@@ -242,35 +243,15 @@ best_strategies compute_best_strategy(strategy_matrix const & matrix_strat,
 /*                  DESIGN OUR RESULT                                   */
 /************************************************************************/
 
-static char const * method_name(facul_method::parameters const & p)
-{
-    switch (p.method) {
-    case PP1_27_METHOD:
-        return "PP1-27";
-    case PP1_65_METHOD:
-        return "PP1-65";
-    case PM1_METHOD:
-        return "PM1";
-    default: // EC_METHOD
-        switch (p.parameterization) {
-        case BRENT12:
-            return "ECM-B12";
-        case MONTY12:
-            return "ECM-M12";
-        default: // MONTY16
-            return "ECM-M16";
-        }
-    }
-}
-
 /* Print the strategies chosen for each pair (r0,r1) that las actually
  * met in the distribution of cofactors. */
 void strategy_fprint_design(std::ostream & os, strategy_t const & t)
 {
     for (size_t i = 0; i < t.tab_fm.size(); i++) {
-        auto const & p = t.tab_fm[i].params;
-        fmt::print(os, "[S{}: {}, {}, {} ] ", t.side_of(i), method_name(p),
-                   p.B1, p.B2);
+        /* the writer lives next to the parser in sieve/ecm, so that the
+         * two halves of this file format cannot drift apart */
+        os << facul_method::parameters_with_side(t.side_of(i),
+                                                 t.tab_fm[i].params);
     }
     os << "\n";
 }

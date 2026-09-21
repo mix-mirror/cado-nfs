@@ -2,6 +2,8 @@
 #define CADO_FACUL_STRATEGIES_HPP
 
 #include <cstdio>      // for FILE
+#include <ostream>
+#include <string>
 #include <vector>
 #include <vector>
 #include <map>
@@ -11,6 +13,17 @@
 struct cxx_mpz;
 
 extern int nb_curves (const unsigned int lpb, const unsigned int mfb);
+
+/* The name a strategy file gives this method, and which the parser in
+ * facul_strategies.cpp reads back: PM1, PP1-27, PP1-65, ECM-B12,
+ * ECM-M12, ECM-M16, ECM-TM12, ECM-TM16. */
+std::string facul_method_name(facul_method::parameters const & p);
+
+/* One method as a strategy file spells it, e.g. "[S0: PM1, 315, 2205 ] ".
+ * This is the writing half of the format that strategy_file_parser
+ * reads; the two are kept together so that they cannot drift apart. */
+std::ostream & operator<<(std::ostream & os,
+                          facul_method::parameters_with_side const & m);
 
 /* All prime factors in the input number must be > fb. A factor of the 
    input number is assumed to be prime if it is < fb^2.
