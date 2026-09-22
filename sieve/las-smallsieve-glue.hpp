@@ -87,7 +87,6 @@ struct small_sieve_base {/*{{{*/
     int sublatm;
     int sublati0;
     int sublatj0;
-    int row0_is_oddj;
     bool has_origin;
     inline int F() const { return 1 << min_logI_logB; }
     inline int I() const { return 1 << logI; }
@@ -108,7 +107,6 @@ struct small_sieve_base {/*{{{*/
         // I     = (1<<logI);
         i0    = ((region_rank_in_line<<LOG_BUCKET_REGION)-(1 << (logI-1)));
         // i1    = (i0+(1<<min_logI_logB));
-        // row0_is_oddj  = ((j0*sublatm+sublatj0)&1);
 
         sublatm = sublat.m ? sublat.m : 1;
         sublati0 = sublat.i0;
@@ -118,6 +116,55 @@ struct small_sieve_base {/*{{{*/
         bool has_vaxis = region_rank_in_line == ((regions_per_line-1)/2);
         has_origin = has_haxis && has_vaxis;
     }/*}}}*/
+
+    /* {{{ parity of the real (i,j) coordinates
+     *
+     * The sieve position x on row dj of this bucket region has real
+     * coordinates
+     *
+     *      ii = sublatm * (i0 + x)  + sublati0
+     *      jj = sublatm * (j0 + dj) + sublatj0
+     *
+     * and the small sieve never has to touch a position where ii and jj
+     * are both even, since gcd(ii,jj) >= 2 there. Note that i0 is always
+     * even, so it never contributes to the parity of ii.
+     *
+     * When sublatm is odd -- which includes the ordinary case
+     * sublatm == 1 -- ii and jj have the parities of x + sublati0 and
+     * dj + sublatj0. So the parity of a row flips as dj grows, and on an
+     * even row every other x must be skipped.
+     *
+     * When sublatm is even, both parities are *constant* over the whole
+     * sublattice: ii has the parity of sublati0, jj that of sublatj0.
+     * The caller never asks for the class where both are even (las.cpp
+     * skips i_cong == j_cong == 0), so at least one of the two is odd
+     * everywhere in the class, and there is nothing to skip on any row.
+     *
+     * That is why an even modulus -- in particular m == 2, the classical
+     * "oddness type" decomposition used by the Franke-Kleinjung sievers
+     * -- is the easy case rather than a harder one: the alternating
+     * logic simply does not apply.
+     */
+    bool has_even_sublatm() const { return (sublatm & 1) == 0; }
+
+    /* Does row dj == 0 of this region need the skip-every-other-x
+     * treatment, and does that property flip from one row to the next? */
+    bool row0_needs_parity_skip() const {
+        if (has_even_sublatm()) {
+            ASSERT(((sublati0 | sublatj0) & 1) != 0);
+            return false;
+        }
+        return ((j0 + sublatj0) & 1) == 0;
+    }
+    bool parity_skip_alternates() const { return !has_even_sublatm(); }
+
+    /* On a row whose jj is even, which x have ii even and must therefore
+     * be skipped: 0 for none at all, 1 for the even x, 2 for the odd x. */
+    int parity_skip_class() const {
+        if (has_even_sublatm()) return 0;
+        return (sublati0 & 1) ? 2 : 1;
+    }
+    /* }}} */
 
     /* Returns (ii - sublati0 + k*q) / sublatm with k >= 0 minimal so that
        result is an integer */
@@ -528,9 +575,8 @@ struct small_sieve : public small_sieve_base {/*{{{*/
          * So whether we add I or (i1-i0) to S0 does not matter much.
          */
 
-        bool row0_even = (((j0&super::sublatm)+super::sublatj0) & 1) == 0;
-        bool dj_row0_evenness = (super::sublatm & 1);
-        bool even = row0_even;
+        bool even = super::row0_needs_parity_skip();
+        const bool alternates = super::parity_skip_alternates();
 
         for(unsigned int j = j0; j < j1; j++) {
             WHERE_AM_I_UPDATE(w, j, j - j0);
@@ -548,8 +594,8 @@ struct small_sieve : public small_sieve_base {/*{{{*/
             }
             S0 += I();
             S1 += I();
-            pos += r; if (pos >= (spos_t) p) pos -= p; 
-            even ^= dj_row0_evenness;
+            pos += r; if (pos >= (spos_t) p) pos -= p;
+            even ^= alternates;
         }
         return true;
     }/*}}}*/
@@ -570,8 +616,8 @@ struct small_sieve : public small_sieve_base {/*{{{*/
              */
 
 #ifdef HAVE_SSE41
-            bool row0_even = (((j0&super::sublatm)+super::sublatj0) & 1) == 0;
-            bool dj_row0_evenness = (super::sublatm & 1);
+            const bool row0_even = super::row0_needs_parity_skip();
+            const bool alternates = super::parity_skip_alternates();
 
             for( ; index + 3 < sorted_limit ; index+=4) {
                 /* find 4 index values with no special prime */
@@ -662,7 +708,7 @@ struct small_sieve : public small_sieve_base {/*{{{*/
                     S1 += I();
                     pos = _mm_add_epi32(pos, r);
                     pos = _mm_sub_epi32(pos, _mm_andnot_si128(_mm_cmplt_epi32(pos, p), p));
-                    even ^= dj_row0_evenness;
+                    even ^= alternates;
                 }
             }
 #endif

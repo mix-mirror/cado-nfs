@@ -300,12 +300,23 @@ las_small_sieve_data::small_sieve_init(
                 }
 
                 if (sublatm) {
-                    // In sublat mode, disable pattern sieving and primes
-                    // dividing m. (pp is the prime, here)
-                    //
-                    // FIXME. ok, they're certainly not "nice", but we should
-                    // sieve them nonetheless.
-                    if (pp == 3 || (sublatm % pp) == 0) {
+                    /* Primes dividing the sublattice modulus cannot be
+                     * small-sieved as things stand: fix_sublat_i() cannot
+                     * divide by m when the modulus of the congruence it is
+                     * solving shares a factor with m, and the residue class
+                     * either contains no hit at all or needs a different
+                     * computation.
+                     *
+                     * FIXME. ok, they're certainly not "nice", but we should
+                     * sieve them nonetheless. For m = 2 this costs about
+                     * three bits of sieve report value on every position,
+                     * which is a lot.
+                     *
+                     * Note that this used to read `pp == 3 || (sublatm % pp)
+                     * == 0`. The first half was redundant whenever 3 divides
+                     * m -- the only case that had been tried -- and simply
+                     * threw away the prime 3 for every other modulus. */
+                    if ((sublatm % pp) == 0) {
                         continue;
                     }
                 }
@@ -1046,13 +1057,11 @@ void small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
         }
 #endif
         if (jj % 2 == 0) {
-            if (super::sublatm == 3 && super::sublati0 == 1) {
-                /* Skip odd indices which correspond to even ii */
-                skip_mod_2 = 2;
-            } else {
-                /* Skip even indices which correspond to even ii */
-                skip_mod_2 = 1;
-            }
+            /* 0 to skip nothing, 1 to skip the even indices, 2 to skip
+             * the odd ones -- whichever of them have ii even. This used
+             * to be spelled out for sublatm == 3 only; see the parity
+             * discussion in small_sieve_base. */
+            skip_mod_2 = super::parity_skip_class();
         }
         for (auto const & ssp : not_nice_primes) {
             ASSERT_ALWAYS(i < not_nice_primes.size());
@@ -1169,10 +1178,13 @@ las_small_sieve_data::resieve_small_bucket_region(
 
     unsigned int const i_compens_sublat = sublati0 & 1;
 
-    // Odd/even property of j is the same as for j+2, even with
-    // sublat, unless sublat.m is even, which is not handled right
-    // now. Same for i.
-    ASSERT_ALWAYS(!sublatm || ((sublatm & 1) == 1));
+    /* Whether a row needs the skip-every-other-i treatment, and whether
+     * that flips from one row to the next, is decided by
+     * small_sieve_base -- see the long comment there. For an even
+     * sublattice modulus both parities are fixed over the whole class,
+     * so nothing is ever skipped and nothing ever flips. */
+    bool const row0_even = C.row0_needs_parity_skip();
+    bool const alternates = C.parity_skip_alternates();
 
     for(size_t index = 0 ; index < resieve_end_offset ; index++) {
         auto const & ssps_cur(ssps[index]);
@@ -1192,27 +1204,25 @@ las_small_sieve_data::resieve_small_bucket_region(
          * j odd: (sieve all values of index)
          *   for(index = pos                  ; index < I ; index += p)
          *
-         * we may merge the two by setting q=p&-!((j&1)^row0_is_oddj)
-         *
-         * which, when (j+row0_is_oddj) is even, is p, and is 0
-         * otherwise.
+         * we may merge the two by setting q to p on the rows where even
+         * i must be skipped, and to 0 on the others.
          *
          * In turn, since q changes for each j, 1 xor within the loop
          * is enough to make it alternate between 0 and p, once the
-         * starting value is correct.
+         * starting value is correct -- but only when the parity does
+         * alternate at all, which is not the case for an even
+         * sublattice modulus (see small_sieve_base).
          *
          * TODO: ok, this is nice and good, but:
          *
          *  - I haven't seen this win for simple small sieve, so I
          *    doubt it's a good idea. Relying on the branch predictor
          *    or the compiler does not seem to be so stupid after all.
-         *  - as present, the behaviour is obviously buggy for
-         *    sublatm even.
          *  - we really want to have the same structure both for
          *    small sieve and resieving.
          */
-        bool const row0_even = (((j0&sublatm)+sublatj0) & 1) == 0;
         unsigned int q = row0_even ? p : 0;
+        unsigned int const dq = alternates ? p : 0;
         int i = 0; /* placate gcc */
         for (unsigned int j = j0; j < j1; j ++) {
             WHERE_AM_I_UPDATE(w, j, j);
@@ -1234,7 +1244,7 @@ las_small_sieve_data::resieve_small_bucket_region(
             if (pos >= (spos_t) p) pos -= (spos_t) p;
 
             S_ptr += I;
-            q ^= p;
+            q ^= dq;
         }
     }
 
