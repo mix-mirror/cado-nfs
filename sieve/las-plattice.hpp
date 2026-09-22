@@ -353,11 +353,22 @@ inline uint32_t invmod(uint32_t x, uint32_t m)
  * based on plattice_x_t).
  */
 struct plattice_enumerator_base {
-    static plattice_x_t starting_point(plattice_info const & pli,
-                                       int const logI, sublat_t const & sublat)
+    /* M is the sublattice modulus, as a compile-time constant.
+     *
+     * That matters: this function is called once per (prime, root,
+     * sublattice class), and with a runtime modulus the seven `% m` and
+     * `/ m` below are seven 64-bit integer divisions, which dominate it
+     * completely. With M fixed the compiler turns them into shifts, or
+     * into a multiply-high for M == 3 and M == 6. The non-sublattice
+     * path, for comparison, is a single shift.
+     */
+    template<uint32_t M>
+    static plattice_x_t starting_point_mod(plattice_info const & pli,
+                                           int const logI,
+                                           sublat_t const & sublat)
     {
         int64_t I = int64_t(1) << logI;
-        uint32_t m = sublat.m;
+        constexpr uint32_t m = M;
 
         // first FK vector a
         int64_t i0 = pli.get_i0();
@@ -435,6 +446,23 @@ struct plattice_enumerator_base {
         // convert it to the plattice_x_t type.
         plattice_x_t res = (ii + I / 2) + (jj << logI);
         return res;
+    }
+
+    static plattice_x_t starting_point(plattice_info const & pli,
+                                       int const logI, sublat_t const & sublat)
+    {
+        /* invmod() above only knows how to invert modulo 2, 3 and 6, so
+         * these are the only moduli that can occur here anyway. */
+        switch (sublat.m) {
+        case 2:
+            return starting_point_mod<2>(pli, logI, sublat);
+        case 3:
+            return starting_point_mod<3>(pli, logI, sublat);
+        case 6:
+            return starting_point_mod<6>(pli, logI, sublat);
+        default:
+            ASSERT_ALWAYS(0);
+        }
     }
 };
 
