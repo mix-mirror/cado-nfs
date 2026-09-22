@@ -54,6 +54,18 @@ void make_lattice_bases(
         increment_counter_on_dtor<slice_offset_t> const _dummy(i_entry);
         if (!Q.is_coprime_to(e.p))
             continue;
+#ifdef BUCKET_SIEVE_POWERS
+        /* Same guard as in fill_in_buckets_toplevel_impl: a prime power
+         * whose prime divides the sublattice modulus cannot be handled by
+         * the sublattice machinery, because the congruence it defines
+         * cannot be divided through by m. Bucket-sieving powers means
+         * that, say, 2^15 shows up here as a bucket-sieved entry with
+         * p = 2, and without this test it produced updates that do not
+         * divide -- which only showed up once the toplevel was 2 or more,
+         * since at toplevel 1 the guard in the toplevel fill covers it. */
+        if (sublat.m && gcd_ul(e.p, sublat.m) > 1)
+            continue;
+#endif
         if (discard_power_for_bucket_sieving(e))
             continue;
         e.transform_roots(transformed, Q);

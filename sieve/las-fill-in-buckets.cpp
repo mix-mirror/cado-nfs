@@ -330,7 +330,12 @@ static void fill_in_buckets_one_side(nfs_work & ws, nfs_aux & aux,
         auto w_copy = std::make_shared<where_am_I>(w);
         slice_index_t const idx = s.get_index();
         ASSERT_ALWAYS(P.first_slice_index + pushed == idx);
-        plattices_dense_vector_t * pre = Vpre ? &((*Vpre)[idx]) : nullptr;
+        /* Vpre is indexed within this part, so the global slice index has
+         * to be shifted -- exactly as fb.hpp does it. This only made no
+         * difference while the toplevel was 1, where first_slice_index is
+         * 0; at toplevel 2 or 3 it wrote past the end of the vector. */
+        plattices_dense_vector_t * pre =
+            Vpre ? &((*Vpre)[idx - P.first_slice_index]) : nullptr;
         using entry_t = std::decay_t<decltype(s)>::entry_t;
 
         pool.add_task(thread_pool::QUEUE_GENERIC, s.get_weight(),
