@@ -564,16 +564,29 @@ search_survivors_in_line(unsigned char * const SS[2],
             }
         }
 
-        // Naive version when we have sublattices, because unsieving is
-        // harder. TODO: implement a fast version
+        /* No sublattice-aware unsieving yet, so coprimality is tested one
+         * candidate at a time. Splitting that into two loops matters: the
+         * first is a plain elementwise comparison over the whole line and
+         * vectorises, the second only looks at the few positions that got
+         * past it. In a single loop the gcd call in the body prevents
+         * vectorisation and the line scan degenerates to byte-at-a-time.
+         *
+         * TODO: implement a fast version. unsieve_not_coprime_line() needs
+         * two things before it can serve here: the row it factors must be
+         * the real jj = m*j + sublat.j0 rather than j -- which also means
+         * j_divisibility_helper has to be built for m*J instead of J --
+         * and the start index it derives, currently (-i0) % p, becomes
+         * (-i0 - sublat.i0 * m^-1) % p for the odd primes p it walks. */
         if constexpr (M > 1) {
-            for (int x = 0; x < (i1 - i0); x++) {
-                if (!sieve_info_test_lognorm(bound[0], bound[1], SS[0][x], SS[1][x])) {
+            int const len = i1 - i0;
+            for (int x = 0; x < len; x++) {
+                if (!sieve_info_test_lognorm(bound[0], bound[1], SS[0][x], SS[1][x]))
                     SS[0][x] = 255;
-                    continue;
-                }
+            }
+            const unsigned int jj = M*j+sublat.j0;
+            for (int x = 0; x < len; x++) {
+                if (SS[0][x] == 255) continue;
                 const unsigned int i = abs(int(M)*(i0 + x)+int(sublat.i0));
-                const unsigned int jj = M*j+sublat.j0;
                 if ((((jj % 2) == 0) && ((i % 2) == 0)) ||
                         (bin_gcd_int64_safe (i, jj) != 1)) {
                     SS[0][x] = 255;
@@ -619,16 +632,18 @@ search_survivors_in_line(unsigned char * const SS[2],
             }
         }
 
-        // Naive version when we have sublattices, because unsieving is
-        // harder. TODO: implement a fast version
+        /* Same two-loop split as in the two-sided case above, and the
+         * same TODO. */
         if constexpr (M > 1) {
-            for (int x = 0; x < (i1 - i0); x++) {
-                if (Sf[x] > b) {
+            int const len = i1 - i0;
+            for (int x = 0; x < len; x++) {
+                if (Sf[x] > b)
                     Sf[x] = 255;
-                    continue;
-                }
+            }
+            const unsigned int jj = M*j+sublat.j0;
+            for (int x = 0; x < len; x++) {
+                if (Sf[x] == 255) continue;
                 const unsigned int i = abs(int(M)*(i0 + x)+int(sublat.i0));
-                const unsigned int jj = M*j+sublat.j0;
                 if ((((jj % 2) == 0) && ((i % 2) == 0)) ||
                         (bin_gcd_int64_safe (i, jj) != 1)) {
                     Sf[x] = 255;
