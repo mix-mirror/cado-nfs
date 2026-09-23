@@ -299,27 +299,24 @@ las_small_sieve_data::small_sieve_init(
                     continue;
                 }
 
-                if (sublatm) {
-                    /* Primes dividing the sublattice modulus cannot be
-                     * small-sieved as things stand: fix_sublat_i() cannot
-                     * divide by m when the modulus of the congruence it is
-                     * solving shares a factor with m, and the residue class
-                     * either contains no hit at all or needs a different
-                     * computation.
-                     *
-                     * FIXME. ok, they're certainly not "nice", but we should
-                     * sieve them nonetheless. For m = 2 this costs about
-                     * three bits of sieve report value on every position,
-                     * which is a lot.
-                     *
-                     * Note that this used to read `pp == 3 || (sublatm % pp)
-                     * == 0`. The first half was redundant whenever 3 divides
-                     * m -- the only case that had been tried -- and simply
-                     * threw away the prime 3 for every other modulus. */
-                    if ((sublatm % pp) == 0) {
-                        continue;
-                    }
-                }
+                /* A prime power sharing a factor with the sublattice
+                 * modulus needs the reduced stride that
+                 * small_sieve_base::sublat_reduced_modulus() describes.
+                 * handle_power_of_2() knows about it, so affine powers of
+                 * two under an even modulus are fine; everything else in
+                 * that situation is still dropped.
+                 *
+                 * Note that this test used to read `pp == 3 || (sublatm %
+                 * pp) == 0`. The first half was redundant whenever 3
+                 * divides m -- the only case that had been tried -- and
+                 * simply threw the prime 3 away for every other modulus.
+                 */
+                bool const shares_factor_with_m =
+                    sublatm && (sublatm % pp) == 0;
+                bool const handled_by_pow2_code =
+                    shares_factor_with_m && pp == 2 && (sublatm % 2) == 0;
+                if (shares_factor_with_m && !handled_by_pow2_code)
+                    continue;
 
                 const unsigned char logp = fb_log_delta (pp, root.exp, root.oldexp, scale);
 
@@ -338,6 +335,18 @@ las_small_sieve_data::small_sieve_init(
                             is_proj_in_ij ? "1/" : "", r_q);
 
                 ssp_t new_ssp(p, r_q, logp, is_proj_in_ij);
+
+                if (handled_by_pow2_code) {
+                    /* Only the affine case goes through handle_power_of_2;
+                     * a projective power of two under an even modulus would
+                     * land in handle_projective_prime(), which does not know
+                     * about the reduced stride. */
+                    if (new_ssp.is_proj())
+                        continue;
+                    /* and it must not be pattern-sieved either, for the
+                     * same reason */
+                    new_ssp.unset_pattern_sieved();
+                }
 
                 if (p != pp)
                     new_ssp.set_pow(pp);

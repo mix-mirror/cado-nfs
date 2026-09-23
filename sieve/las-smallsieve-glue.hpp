@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <climits>
+#include <cstdint>
 
 #include <vector>
 #include <list>
@@ -13,6 +14,7 @@
 
 #include "las-forwardtypes.hpp"         // spos_t
 #include "fb-types.hpp"
+#include "gcd.h"
 #include "las-smallsieve-lowlevel.hpp"
 #include "las-smallsieve.hpp"
 
@@ -89,6 +91,10 @@ struct small_sieve_base {/*{{{*/
     inline int F() const { return 1 << min_logI_logB; }
     inline int I() const { return 1 << logI; }
     static const bool skip_line_jj0 = false;
+    /* returned by first_position_power_of_two() when the prime power has
+     * no hit at all in the residue class being sieved, which can happen
+     * once the sublattice modulus is even */
+    static constexpr spos_t NO_POSITION = INT32_MIN;
     small_sieve_base(int logI, int N, sublat_runtime_t const & sublat)/*{{{*/
         : logI(logI)
         , N(N)
@@ -160,6 +166,56 @@ struct small_sieve_base {/*{{{*/
     int parity_skip_class() const {
         if (has_even_sublatm()) return 0;
         return (sublat.i0 & 1) ? 2 : 1;
+    }
+    /* }}} */
+
+    /* {{{ prime powers that are not coprime to the sublattice modulus
+     *
+     * Write g = gcd(q, sublat.m). The congruence
+     *
+     *      ii == r * jj  (mod q),   ii = m*x + sublat.i0, jj = m*y + sublat.j0
+     *
+     * becomes, in sublattice coordinates,
+     *
+     *      m*x == m*r*y + c  (mod q),      c = r*sublat.j0 - sublat.i0
+     *
+     * which has a solution only when g divides c, and which then reads
+     *
+     *      x == r*y + (c/g) * (m/g)^-1   (mod q/g).
+     *
+     * So a prime power q behaves, in sublattice coordinates, exactly like
+     * the prime power q/g -- same root, shifted offset -- and either it is
+     * absent from this residue class altogether, or it hits with stride
+     * q/g rather than q. Verified exhaustively for m in {2,3,6} by
+     * bench/cado/verify-sublat-powers.py in the siever-archaeology repo.
+     *
+     * For g = 1, which is every case except a prime dividing the modulus,
+     * all of this collapses to the identity and nothing changes.
+     *
+     * Concretely for m = 2 and q = 2^k: the class (1,0) -- i odd, j even --
+     * never has any power of two dividing, while the classes (0,1) and
+     * (1,1) have stride 2^(k-1) for the roots of the right parity.
+     */
+    fbprime_t sublat_reduced_modulus(fbprime_t q) const {
+        return q / (fbprime_t) gcd_ul(q, (unsigned long) sublat.m);
+    }
+
+    /* Like fix_sublat_i(), but works when q and sublat.m share a factor,
+     * and says so when the congruence has no solution in this class
+     * (in which case *res is untouched). */
+    bool fix_sublat_i_checked(int64_t ii, fbprime_t q, int & res) const {
+        unsigned long const g = gcd_ul(q, (unsigned long) sublat.m);
+        if (g == 1) {
+            res = fix_sublat_i(ii, q);
+            return true;
+        }
+        /* Adding q to ii cannot change ii mod g, so either it is already
+         * right or there is nothing to be done. */
+        int64_t d = ii - (int64_t) sublat.i0;
+        if (d % (int64_t) g)
+            return false;
+        res = fix_sublat_i(ii, q);
+        return true;
     }
     /* }}} */
 
@@ -351,6 +407,11 @@ struct small_sieve_base {/*{{{*/
          * power for i-j*r multiple of our power of 2, which means
          * i even too. Thus a useless report.
          */
+        /* With an even sublattice modulus the parity of the real j is
+         * fixed over the whole class, so either every row is odd and
+         * there is no "next odd line" to look for, or no row is and this
+         * power of two has no hit here at all. See the discussion of
+         * sublat_reduced_modulus() above. */
         unsigned int j = j0;
         uint64_t jj = j*sublat.m + sublat.j0;
         // uint64_t ii = i0*sublat.m + sublat.i0;
@@ -358,13 +419,19 @@ struct small_sieve_base {/*{{{*/
         // This was: jj |= 1;
         int i0ref = i0;
         if ((jj & 1) == 0) {
+            if (has_even_sublatm())
+                return NO_POSITION;
             jj += sublat.m;
             i0ref = (-I()/2);
         }
-        spos_t x = (spos_t)jj * (spos_t)ssp.get_r();
-        x = fix_sublat_i(x, ssp.get_p());
-        x = (x - i0ref) & (ssp.get_p() - 1);
-        if (x < 0) x += ssp.get_p();
+        fbprime_t const q = sublat_reduced_modulus(ssp.get_p());
+        int xi;
+        if (!fix_sublat_i_checked((spos_t)jj * (spos_t)ssp.get_r(),
+                                  ssp.get_p(), xi))
+            return NO_POSITION;
+        spos_t x = xi;
+        x = (x - i0ref) & (q - 1);
+        if (x < 0) x += q;
         /* our target is position x in the bucket region which starts
          * at coordinates (i0ref, jj). How far is that from us ?
          */
@@ -514,6 +581,17 @@ struct small_sieve : public small_sieve_base {/*{{{*/
         unsigned char *S_ptr = S;
 
         int pos = super::first_position_power_of_two(ssp);
+        if (pos == super::NO_POSITION)
+            return;
+
+        /* In sublattice coordinates this power of two hits with stride
+         * q = p/gcd(p,sublat.m), not p. With an even modulus the parity of
+         * the real j is constant, so every sublattice row is sieved and
+         * consecutive rows are one apart rather than two; the position
+         * then advances by r per row instead of 2r. See
+         * sublat_reduced_modulus(). */
+        const fbprime_t q = super::sublat_reduced_modulus(p);
+        const unsigned int dj = super::has_even_sublatm() ? 1 : 2;
 
         unsigned int j = j0;
         /* Our encoding is that when the first row is even, the
@@ -530,20 +608,22 @@ struct small_sieve : public small_sieve_base {/*{{{*/
          */
 
         if ((j*super::sublat.m + super::sublat.j0) % 2 == 0) {
+            /* cannot happen for an even modulus: first_position_power_of_two
+             * returned NO_POSITION in that case */
+            ASSERT(!super::has_even_sublatm());
             ASSERT(pos >= F());
             pos -= F(); S_ptr += F();
             j++;
         }
-        if (j < j1) pos &= (p-1);
-        for( ; j < j1 ; j+= 2) {
-            for (int i = pos; i < F(); i += p) {
+        if (j < j1) pos &= (q-1);
+        for( ; j < j1 ; j += dj) {
+            for (int i = pos; i < F(); i += q) {
                 WHERE_AM_I_UPDATE(w, x, ((size_t) (j-j0) << logI) + i);
                 sieve_increase (S_ptr + i, logp, w);
             }
-            // odd lines only.
-            pos = (pos + (r << 1)) & (p - 1);
-            S_ptr += I();
-            S_ptr += I();
+            pos = (pos + r * dj) & (q - 1);
+            for (unsigned int k = 0; k < dj; k++)
+                S_ptr += I();
         }
 #if 0
         /* see above. Because we do j+=2, we have either j==j1 or

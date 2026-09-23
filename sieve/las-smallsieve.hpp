@@ -100,6 +100,10 @@ public:
     void set_pow2() {flags |= SSP_POW2; rootp=2;}
     void set_proj() {flags |= SSP_PROJ;}
     void set_pattern_sieved() {flags |= SSP_PATTERN_SIEVED;}
+    /* Powers of two under an even sublattice modulus have to go through
+     * handle_power_of_2(), which knows about the reduced stride; sieve2357
+     * does not. */
+    void unset_pattern_sieved() {flags &= ~SSP_PATTERN_SIEVED;}
 
 private:
     void init_proj(fbprime_t p, fbprime_t r, unsigned char _logp,
