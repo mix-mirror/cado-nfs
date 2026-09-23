@@ -111,3 +111,31 @@ runs at one seed gave three different answers, with hulls of two different
 sizes. It is smoke-checked only, and the same hull code is pinned through
 -fch above.
 
+Where these references are valid
+================================
+
+They were produced on x86-64 with gcc, and the two scripts only run where
+that arithmetic is reproducible. CMake guards them; if they do not appear
+in the ctest list, this is why.
+
+  - Byte-exact pinning needs a double to be a double. The pipeline chooses
+    between candidate strategies by comparing a (probability, time)
+    trade-off, and ties are common -- several chains cost the same to the
+    last bit, and the convex hull keeps whichever wins the comparison.
+    On i386 with x87 arithmetic, which is what gcc selects for -m32 unless
+    told -mfpmath=sse, intermediates keep 80 bits and those ties break the
+    other way. The strategies that come out are just as good; they are not
+    the same ones, and since what differs is a choice and not a digit, no
+    tolerance in the comparison can absorb it. config/excess-precision.cpp
+    is the test, via FLT_EVAL_METHOD.
+
+  - The .notime references need a 64-bit unsigned long as well.
+    survey_cofactoring_methods draws the sizes of its random composites
+    through random_uniform(), which consumes ULONG_MAX worth of randomness
+    per call, so a fixed -seed does not give the same stream on a 32-bit
+    build, and the methods surveyed differ. That is a property of
+    random_uniform() in utils, not of this directory.
+
+Both are checks on the reference, not on the code: a 32-bit build computes
+strategies that are just as good, and everything else in this directory
+passes there.

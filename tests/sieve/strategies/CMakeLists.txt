@@ -55,19 +55,37 @@ cado_define_test(SCRIPT
 # is pinned byte for byte. gfm and benchfm measure wall-clock time, so
 # theirs is pinned with the timing columns stripped. Both scripts take
 # REGEN=1 to rewrite their references in the source tree.
+#
+# Both are guarded, because a byte-exact reference is only reproducible
+# where the arithmetic that produced it is. See the README for the
+# details; in short, this pipeline chooses between candidate strategies
+# by comparing a (probability, time) trade-off, exact ties are common,
+# and a compiler that keeps intermediate doubles in wider registers
+# breaks those ties the other way. It then picks strategies that are just
+# as good but not the same ones, which no tolerance in the comparison can
+# absorb.
+if(HAVE_IEEE_DOUBLE_EVALUATION)
 cado_define_test(SCRIPT
     ${CMAKE_CURRENT_SOURCE_DIR}/test_strategies_pinned.sh
     PROVIDE_TEMPORARY_WDIR
     TARGET_DEPENDENCIES gst finalst
     TIMEOUT 40
 )
+endif()
 
+# This one needs the word size as well: survey_cofactoring_methods picks
+# the sizes of its random composites with random_uniform(), which draws
+# ULONG_MAX worth of randomness per call, so the seeded stream itself --
+# and hence the methods surveyed -- depends on how wide an unsigned long
+# is.
+if(HAVE_IEEE_DOUBLE_EVALUATION AND ULONG_BITS EQUAL 64)
 cado_define_test(SCRIPT
     ${CMAKE_CURRENT_SOURCE_DIR}/test_strategies_pinned_notime.sh
     PROVIDE_TEMPORARY_WDIR
     TARGET_DEPENDENCIES gfm benchfm
     TIMEOUT 60
 )
+endif()
 
 if(DEFINED ENV{CHECKS_EXPENSIVE})
     cado_define_test(SCRIPT

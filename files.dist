@@ -55,6 +55,8 @@ config/compression.cmake
 config/cxxabi.cmake
 config/detect-coverage.cmake
 config/detect-static-analysis.cmake
+config/excess-precision.cmake
+config/excess-precision.cpp
 config/execinfo.cmake
 config/fenv.cmake
 config/fenv.cpp
