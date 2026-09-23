@@ -412,8 +412,16 @@ void nfs_work::prepare_for_new_q(las_info & las0, special_q_task * task, typenam
     bk_multiplier = las0.get_bk_multiplier();
     compute_toplevel_and_buckets();
 
-    jd = las0.get_j_divisibility_helper(J);
-    us = las0.get_unsieve_data(conf);
+    /* Coprimality is decided on the *real* row jj = m*j + sublat.j0, which
+     * runs up to m*J, so both helpers have to be built for that range and
+     * not for J. Getting this wrong reads past the end of their tables. */
+    {
+        unsigned int const m = Q.sublat.m;
+        int extra = 0;
+        while ((1U << extra) < m) extra++;
+        jd = las0.get_j_divisibility_helper(J * m);
+        us = las0.get_unsieve_data(conf.logI, conf.logA + extra);
+    }
 
     /* we may now allocate the bucket regions for all threads. Those are
      * quite unsignificant of course, but in cases where we have gobs of

@@ -54,8 +54,12 @@ struct sublat_runtime_t {
 
     sublat_runtime_t() = default;
 
-    sublat_runtime_t(uint32_t m, uint32_t i0, uint32_t j0)
+    constexpr sublat_runtime_t(uint32_t m, uint32_t i0, uint32_t j0)
         : m(m), i0(i0), j0(j0) {}
+
+    /* The identity mapping, for the code paths that are only ever reached
+     * without sublattices (the pattern-3 and pattern-5 variants). */
+    static constexpr sublat_runtime_t no_sublat() { return { 1, 0, 0 }; }
 
     template<uint32_t M>
     explicit sublat_runtime_t(sublat_t<M> const & s)
@@ -102,6 +106,28 @@ struct sublat_runtime_t {
             for(uint32_t j = 0 ; j < m ; j++)
                 if ((i || j) && !degenerate(i, j)) res.emplace_back(m, i, j);
         return res;
+    }
+
+    /* the real row */
+    unsigned int jj(unsigned int j) const { return m*j + j0; }
+
+    /* |ii| for the sublattice abscissa x, given the region's i0 */
+    unsigned int abs_ii(int region_i0, int x) const {
+        return (unsigned int) std::abs((long) m * (region_i0 + x) + (long) i0);
+    }
+
+    /* Which x have ii even, on a row whose jj is even. The small sieve
+     * leaves those alone because gcd(ii,jj) >= 2 there, and the survivor
+     * search has to agree with it. 0 means "none of them": that is the
+     * case for an even modulus, where the parity of ii is fixed at si0 and
+     * the class with both parities even is never sieved. Otherwise i0 is
+     * even, so ii has the parity of x + si0.
+     *
+     * Returns 0 for none, 1 for the even x, 2 for the odd x.
+     */
+    int parity_skip_class() const {
+        if ((m & 1) == 0) return 0;
+        return (i0 & 1) ? 2 : 1;
     }
 };
 template<uint32_t M>

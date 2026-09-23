@@ -4,6 +4,7 @@
 #include "cado_config.h"
 
 #include <cstdint>
+#include <cstdlib>
 
 #include <array>
 #include <utility>
@@ -94,38 +95,12 @@ extract_j_div(unsigned int (*div)[2], const unsigned int j, j_divisibility_helpe
 
 j_divisibility_helper * init_j_div(uint32_t);
 void clear_j_div(j_divisibility_helper *);
-template<uint32_t M>
 void search_survivors_in_line(unsigned char * const SS[2], 
         const unsigned char bound[2],
         unsigned int j, int i0, int i1,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max, unsieve_data const & us,
-        std::vector<uint32_t> &survivors, sublat_t<M>);
-/* At least for the time being, we work with explicit instantiations */
-extern template void search_survivors_in_line<1>(unsigned char * const [2], 
-        const unsigned char [2],
-        unsigned int, int, int,
-        int, j_divisibility_helper const &,
-        unsigned int, unsieve_data const &,
-        std::vector<uint32_t> &, sublat_t<1>);
-extern template void search_survivors_in_line<2>(unsigned char * const [2], 
-        const unsigned char [2],
-        unsigned int, int, int,
-        int, j_divisibility_helper const &,
-        unsigned int, unsieve_data const &,
-        std::vector<uint32_t> &, sublat_t<2>);
-extern template void search_survivors_in_line<3>(unsigned char * const [2], 
-        const unsigned char [2],
-        unsigned int, int, int,
-        int, j_divisibility_helper const &,
-        unsigned int, unsieve_data const &,
-        std::vector<uint32_t> &, sublat_t<3>);
-extern template void search_survivors_in_line<6>(unsigned char * const [2], 
-        const unsigned char [2],
-        unsigned int, int, int,
-        int, j_divisibility_helper const &,
-        unsigned int, unsieve_data const &,
-        std::vector<uint32_t> &, sublat_t<6>);
+        std::vector<uint32_t> &survivors, sublat_runtime_t);
 
 template<std::size_t nsides>
 void search_survivors_in_line(
@@ -133,19 +108,22 @@ void search_survivors_in_line(
         const std::array<unsigned char, nsides> bound,
         unsigned int length,
         std::vector<uint16_t> &survivors);
-#ifdef HAVE_SSE2 
+#ifdef HAVE_SSE2
+/* j, i0 and i1 are sublattice coordinates; the real coordinates are
+ * ii = sublat.m*(i0+x) + sublat.i0 and jj = sublat.m*j + sublat.j0, and
+ * sublat.m == 0 means no sublattices, in which case the two coincide. */
 void search_survivors_in_line_sse2(unsigned char * const SS[2],
         const unsigned char bound[2],
         unsigned int j, int i0, int i1,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max,
-        std::vector<uint32_t> &survivors);
+        std::vector<uint32_t> &survivors, sublat_runtime_t sublat);
 void search_survivors_in_line_sse2_oneside(unsigned char * const SS,
         const unsigned char bound,
         unsigned int j, int i0, int i1,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max,
-        std::vector<uint32_t> &survivors);
+        std::vector<uint32_t> &survivors, sublat_runtime_t sublat);
 void search_survivors_in_line_sse2_siqs(
         unsigned char * SS,
         unsigned char bound,
