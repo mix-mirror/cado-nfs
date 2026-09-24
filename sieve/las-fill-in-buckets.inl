@@ -18,18 +18,21 @@
 #include "chronograms.hpp"
 #include "las-where-am-i-proxy.hpp"
 #include "las-where-am-i.hpp"
+#include "las-sublat.hpp"
 
-template <int LEVEL, class FB_ENTRY_TYPE>
+template <int LEVEL, class FB_ENTRY_TYPE, uint32_t M>
 void make_lattice_bases(
         worker_thread * worker,
         int side,
         nfs_work & ws,
         qlattice_basis const & Q,
+        /* We're passing it by value because it lives as a temporary at
+         * the caller site */
+        sublat_t<M> sublat,
         precomp_plattice_t<LEVEL> & V,
         fb_slice<FB_ENTRY_TYPE> const & slice)
 {
     int const logI = ws.conf.logI;
-    sublat_t const & sublat(Q.sublat);
 
     auto const index0 = ws.sides[side].fbs->get_part(LEVEL).first_slice_index;
     auto const index = slice.get_index();
@@ -63,7 +66,7 @@ void make_lattice_bases(
          * p = 2, and without this test it produced updates that do not
          * divide -- which only showed up once the toplevel was 2 or more,
          * since at toplevel 1 the guard in the toplevel fill covers it. */
-        if (sublat.m && gcd_ul(e.p, sublat.m) > 1)
+        if (sublat_t<M>::not_coprime(e.p))
             continue;
 #endif
         if (discard_power_for_bucket_sieving(e))
@@ -77,7 +80,7 @@ void make_lattice_bases(
                 plattice_info(transformed.get_q(), r, proj, logI);
             plattice_enumerator ple(pli, i_entry, logI, sublat);
             // Skip (0,0) unless we have sublattices.
-            if (!sublat.m)
+            if constexpr (M == 1)
                 ple.next(F);
             if (LIKELY(!pli.is_discarded()))
                 result.push_back(ple);
@@ -111,20 +114,21 @@ void make_lattice_bases(
 // enumeration loop is exactly as tight as it was when this file carried
 // three hand-specialised copies of it.
 
-enum class toplevel_mode {
-    plain,          /* no sublattices */
-    sublat_first,   /* first sublattice: compute the FK bases and save them */
-    sublat_replay,  /* later sublattices: reuse the saved FK bases */
-};
-
-template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT,
-          toplevel_mode MODE>
+template <int LEVEL,
+         class FB_ENTRY_TYPE,
+         hint_type TARGET_HINT,
+         uint32_t M,
+         bool is_first_sublat>
 static void fill_in_buckets_toplevel_impl(
-    bucket_array_t<LEVEL, TARGET_HINT> & orig_BA, nfs_work & ws,
-    fb_slice<FB_ENTRY_TYPE> const & slice, qlattice_basis const & Q,
-    plattices_dense_vector_t * p_precomp_slice, where_am_I & w)
+    bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
+    nfs_work & ws,
+    fb_slice<FB_ENTRY_TYPE> const & slice,
+    qlattice_basis const & Q,
+    sublat_t<M> const & sublat,
+    plattices_dense_vector_t * p_precomp_slice,
+    where_am_I & w)
 {
-    constexpr bool with_sublat = MODE != toplevel_mode::plain;
+    constexpr bool with_sublat = M > 1;
 
     int const logI = ws.conf.logI;
 
@@ -154,10 +158,7 @@ static void fill_in_buckets_toplevel_impl(
     auto handle_one_lattice = [&](plattice_info const & pli,
                                   slice_offset_t const i_entry) {
         plattice_enumerator ple = [&]() {
-            if constexpr (with_sublat)
-                return plattice_enumerator(pli, i_entry, logI, Q.sublat);
-            else
-                return plattice_enumerator(pli, i_entry, logI);
+            return plattice_enumerator(pli, i_entry, logI, sublat);
         }();
 
         if constexpr (with_sublat) {
@@ -253,7 +254,7 @@ static void fill_in_buckets_toplevel_impl(
         }
     };
 
-    if constexpr (MODE == toplevel_mode::sublat_replay) {
+    if (!is_first_sublat) {
         for (auto const & psl: *p_precomp_slice) {
             plattice_info const pli(psl.unpack(logI));
             handle_one_lattice(pli, psl.get_hint());
@@ -271,7 +272,7 @@ static void fill_in_buckets_toplevel_impl(
                  * means that powers of the primes that divide the
                  * sublattice determinant may be bucket-sieved. And of
                  * course, that leads to problems. */
-                if (gcd_ul(e.p, Q.sublat.m) > 1)
+                if (sublat_t<M>::not_coprime(e.p))
                     continue;
             }
 #endif
@@ -284,7 +285,7 @@ static void fill_in_buckets_toplevel_impl(
                 bool const proj = transformed.get_proj(i_root);
                 plattice_info const pli(transformed.get_q(), r, proj, logI);
 
-                if constexpr (MODE == toplevel_mode::sublat_first) {
+                if constexpr (M > 1) {
                     // In sublat mode, save it for later use
                     p_precomp_slice->push_back(
                         plattice_info_dense_t(pli, i_entry));
@@ -298,40 +299,30 @@ static void fill_in_buckets_toplevel_impl(
     orig_BA = std::move(BA);
 }
 
-template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
-static void fill_in_buckets_toplevel_sublat(
+/* TARGET_HINT is shorthint_t or void */
+template <int LEVEL,
+    class FB_ENTRY_TYPE,
+    hint_type TARGET_HINT>
+static void fill_in_buckets_toplevel(
     bucket_array_t<LEVEL, TARGET_HINT> & orig_BA, nfs_work & ws,
-    qlattice_basis const & Q, plattices_dense_vector_t * p_precomp_slice,
-    fb_slice<FB_ENTRY_TYPE> const & slice, where_am_I & w)
+    fb_slice<FB_ENTRY_TYPE> const & slice,
+    qlattice_basis const & Q,
+    plattices_dense_vector_t * p_precomp_slice,
+    where_am_I & w)
 {
-    ASSERT_ALWAYS(Q.sublat.m);
+    static_assert(!TARGET_HINT::is_long_v);
     /* The sublattice we visit first computes the Franke-Kleinjung bases
      * and stores them; the ones after that replay them. This is the only
      * runtime test, and it is outside everything that matters. */
-    if (Q.sublat.i0 == 0 && Q.sublat.j0 == 1) {
-        fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT,
-                                      toplevel_mode::sublat_first>(
-            orig_BA, ws, slice, Q, p_precomp_slice, w);
-    } else {
-        fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT,
-                                      toplevel_mode::sublat_replay>(
-            orig_BA, ws, slice, Q, p_precomp_slice, w);
-    }
-}
-
-/* TARGET_HINT is shorthint_t or void */
-template <int LEVEL, class FB_ENTRY_TYPE, hint_type TARGET_HINT>
-static void
-fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
-                         nfs_work & ws, fb_slice<FB_ENTRY_TYPE> const & slice,
-                         qlattice_basis const & Q,
-                         plattices_dense_vector_t * p_precomp_slice,
-                         where_am_I & w)
-{
-    ASSERT_ALWAYS(!Q.sublat.m);
-    fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT,
-                                  toplevel_mode::plain>(
-        orig_BA, ws, slice, Q, p_precomp_slice, w);
+    dispatch_sublat(Q.sublat, [&](auto sublat) {
+            constexpr uint32_t M = decltype(sublat)::modulus;
+            if (Q.sublat.is_first())
+            fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT, M, true>(
+                    orig_BA, ws, slice, Q, sublat, p_precomp_slice, w);
+            else
+            fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT, M, false>(
+                    orig_BA, ws, slice, Q, sublat, p_precomp_slice, w);
+            });
 }
 
 /* TARGET_HINT is shorthint_t or void */
@@ -401,7 +392,7 @@ fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
         // Handle the rare special cases
         /* see fill_in_bucket_toplevel. */
         if (UNLIKELY(ple.is_projective_like(logI))) {
-            if (Q.sublat.m)
+            if (Q.sublat.m > 1)
                 continue; /* XXX headaches ! */
 
             while (!ple.done(F)) {
@@ -416,7 +407,7 @@ fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
              * be interesting as we go towards increasing j's
              */
         } else if (UNLIKELY(ple.is_vertical_line(logI))) {
-            if (Q.sublat.m)
+            if (Q.sublat.m > 1)
                 continue; /* XXX headaches ! */
 
             if (!ple.done(F)) {
@@ -429,7 +420,7 @@ fill_in_buckets_lowlevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
             /* Now, do the real work: the filling of the buckets */
             // Without sublattices, we test (very basic) coprimality,
             // otherwise not atm. FIXME!
-            if (!Q.sublat.m) {
+            if (Q.sublat.m == 1) {
                 while (!ple.done(F)) {
                     if (LIKELY(ple.probably_coprime(F))) {
                         u.set_x(ple.get_x() & bmask);

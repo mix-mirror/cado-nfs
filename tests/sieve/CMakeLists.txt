@@ -330,8 +330,19 @@ cado_divert_test(F9_batch try_to_reuse_foreign
     batchfile0=${CMAKE_CURRENT_SOURCE_DIR}/bogus.batch0)
 set_tests_properties(F9_batch_try_to_reuse_foreign PROPERTIES WILL_FAIL 1)
 
+# We're not enabling the even-sublat tests yet.
 
-cado_divert_test(F9 sublat
+# cado_divert_test(F9 sublat_2
+#         APPEND_ENVIRONMENT
+#             las_I=10
+#             REL_COUNT=NNNNNN
+#             REFERENCE_SHA1=SSSSSSSSSSSSS
+#             REFERENCE_REVISION=RRRRRRRRRRRRRRRR
+#         APPEND_ARGUMENTS -sublat 2
+#         TIMEOUT 150
+#         )
+# 
+cado_divert_test(F9 sublat_3
         APPEND_ENVIRONMENT
             las_I=10
             REL_COUNT=246
@@ -341,6 +352,16 @@ cado_divert_test(F9 sublat
         TIMEOUT 150
         )
 
+# cado_divert_test(F9 sublat_6
+#         APPEND_ENVIRONMENT
+#             las_I=10
+#             REL_COUNT=NNNNNN
+#             REFERENCE_SHA1=SSSSSSSSSSSSS
+#             REFERENCE_REVISION=RRRRRRRRRRRRRRRR
+#         APPEND_ARGUMENTS -sublat 6
+#         TIMEOUT 150
+#         )
+# 
 cado_divert_test(F9 skipped
         APPEND_ENVIRONMENT
             las_I=10

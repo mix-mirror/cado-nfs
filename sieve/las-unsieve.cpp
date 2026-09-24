@@ -530,6 +530,7 @@ search_survivors_in_line1_oneside(unsigned char * Sf,
  * for:
  * -I/2 + linefragment <= i < -I/2 + MIN(2^LOG_BUCKET_REGION, I)
  */
+template<uint32_t M>
 void
 search_survivors_in_line(unsigned char * const SS[2], 
         const unsigned char bound[2],
@@ -537,41 +538,42 @@ search_survivors_in_line(unsigned char * const SS[2],
         int i0, int i1,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max, unsieve_data const & us,
-        std::vector<uint32_t> &survivors, sublat_t sublat)
+        std::vector<uint32_t> &survivors, sublat_t<M> sublat)
 {
     ASSERT_ALWAYS(SS[0] || SS[1]);
     unsigned char * Sf = SS[0];
 
     if (SS[0] && SS[1]) {
-
         /* In line j = 0, only the coordinate (i, j) = (-1, 0) may survive */
         // FIXME: in sublat mode, this is broken!
-        if (j == 0 && (!sublat.m)) {
-            if (i0 <= 0 && i1 > 0) {
-                unsigned char const s0 = SS[0][1-i0];
-                unsigned char const s1 = SS[1][1-i0];
-                memset(SS[0], 255, i1 - i0);
-                if (s0 <= bound[0] && s1 <= bound[1]) {
-                    SS[0][1 - i0] = s0;
-                    SS[1][1 - i0] = s1;
-                    survivors.push_back(1 - i0);
+        if constexpr (M == 1) {
+            if (j == 0) {
+                if (i0 <= 0 && i1 > 0) {
+                    unsigned char const s0 = SS[0][1-i0];
+                    unsigned char const s1 = SS[1][1-i0];
+                    memset(SS[0], 255, i1 - i0);
+                    if (s0 <= bound[0] && s1 <= bound[1]) {
+                        SS[0][1 - i0] = s0;
+                        SS[1][1 - i0] = s1;
+                        survivors.push_back(1 - i0);
+                    }
+                } else {
+                    memset(SS[0], 255, i1 - i0);
                 }
-            } else {
-                memset(SS[0], 255, i1 - i0);
+                return;
             }
-            return;
         }
 
         // Naive version when we have sublattices, because unsieving is
         // harder. TODO: implement a fast version
-        if (sublat.m) {
+        if constexpr (M > 1) {
             for (int x = 0; x < (i1 - i0); x++) {
                 if (!sieve_info_test_lognorm(bound[0], bound[1], SS[0][x], SS[1][x])) {
                     SS[0][x] = 255;
                     continue;
                 }
-                const unsigned int i = abs(int(sublat.m)*(i0 + x)+int(sublat.i0));
-                const unsigned int jj = sublat.m*j+sublat.j0;
+                const unsigned int i = abs(int(M)*(i0 + x)+int(sublat.i0));
+                const unsigned int jj = M*j+sublat.j0;
                 if ((((jj % 2) == 0) && ((i % 2) == 0)) ||
                         (bin_gcd_int64_safe (i, jj) != 1)) {
                     SS[0][x] = 255;
@@ -601,30 +603,32 @@ search_survivors_in_line(unsigned char * const SS[2],
 
         /* In line j = 0, only the coordinate (i, j) = (-1, 0) may survive */
         // FIXME: in sublat mode, this is broken!
-        if (j == 0 && (!sublat.m)) {
-            if (i0 <= 0 && i1 > 0) {
-                unsigned char const s = Sf[1-i0];
-                memset(Sf, 255, i1 - i0);
-                if (s <= b) {
-                    Sf[1 - i0] = s;
-                    survivors.push_back(1 - i0);
+        if constexpr (M == 1) {
+            if (j == 0) {
+                if (i0 <= 0 && i1 > 0) {
+                    unsigned char const s = Sf[1-i0];
+                    memset(Sf, 255, i1 - i0);
+                    if (s <= b) {
+                        Sf[1 - i0] = s;
+                        survivors.push_back(1 - i0);
+                    }
+                } else {
+                    memset(Sf, 255, i1 - i0);
                 }
-            } else {
-                memset(Sf, 255, i1 - i0);
+                return;
             }
-            return;
         }
 
         // Naive version when we have sublattices, because unsieving is
         // harder. TODO: implement a fast version
-        if (sublat.m) {
+        if constexpr (M > 1) {
             for (int x = 0; x < (i1 - i0); x++) {
                 if (Sf[x] > b) {
                     Sf[x] = 255;
                     continue;
                 }
-                const unsigned int i = abs(int(sublat.m)*(i0 + x))+int(sublat.i0);
-                const unsigned int jj = sublat.m*j+sublat.j0;
+                const unsigned int i = abs(int(M)*(i0 + x)+int(sublat.i0));
+                const unsigned int jj = M*j+sublat.j0;
                 if ((((jj % 2) == 0) && ((i % 2) == 0)) ||
                         (bin_gcd_int64_safe (i, jj) != 1)) {
                     Sf[x] = 255;
@@ -646,6 +650,30 @@ search_survivors_in_line(unsigned char * const SS[2],
 #endif
     }
 }
+template void search_survivors_in_line<1>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<1>);
+template void search_survivors_in_line<2>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<2>);
+template void search_survivors_in_line<3>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<3>);
+template void search_survivors_in_line<6>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<6>);
 
 /* assume SS[i] != NULL for all 0 <= i < nsides. */
 template<std::size_t nsides>

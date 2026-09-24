@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "arith/ularith.h"
-#include "fb-types.hpp"
+#include "las-sublat.hpp"
 
 #ifdef HAVE_SSE2
 #include <emmintrin.h>
@@ -94,12 +94,39 @@ extract_j_div(unsigned int (*div)[2], const unsigned int j, j_divisibility_helpe
 
 j_divisibility_helper * init_j_div(uint32_t);
 void clear_j_div(j_divisibility_helper *);
+template<uint32_t M>
 void search_survivors_in_line(unsigned char * const SS[2], 
         const unsigned char bound[2],
         unsigned int j, int i0, int i1,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max, unsieve_data const & us,
-        std::vector<uint32_t> &survivors, sublat_t);
+        std::vector<uint32_t> &survivors, sublat_t<M>);
+/* At least for the time being, we work with explicit instantiations */
+extern template void search_survivors_in_line<1>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<1>);
+extern template void search_survivors_in_line<2>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<2>);
+extern template void search_survivors_in_line<3>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<3>);
+extern template void search_survivors_in_line<6>(unsigned char * const [2], 
+        const unsigned char [2],
+        unsigned int, int, int,
+        int, j_divisibility_helper const &,
+        unsigned int, unsieve_data const &,
+        std::vector<uint32_t> &, sublat_t<6>);
+
 template<std::size_t nsides>
 void search_survivors_in_line(
         std::array<unsigned char * const, nsides> SS,

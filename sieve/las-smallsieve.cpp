@@ -533,7 +533,7 @@ las_small_sieve_data::small_sieve_start(
         std::vector<spos_t> & ssdpos,
         unsigned int first_region_index,
         int logI,
-        sublat_t const & sl)
+        sublat_runtime_t const & sl)
 {
     /* We want to compute the index of the "next" hit, counted from the
      * starting offset of the "current" bucket region at (i0,j0). The
@@ -575,7 +575,7 @@ las_small_sieve_data::small_sieve_prepare_many_start_positions_range(
         unsigned int first_region_index,
         int nregions,
         int logI,
-        sublat_t const & sl,
+        sublat_runtime_t const & sl,
         bool is_first)
 {
     auto tt = worker_thread::trace(worker, chronograms::SSS(side, 1));
@@ -645,7 +645,7 @@ las_small_sieve_data::small_sieve_prepare_many_start_positions(
         unsigned int first_region_index,
         int nregions,
         int logI,
-        sublat_t const & sl)
+        sublat_runtime_t const & sl)
 {
     size_t const S = ssps.size();
     if (S == 0) {
@@ -681,7 +681,7 @@ las_small_sieve_data::small_sieve_prepare_many_start_positions(
         unsigned int first_region_index,
         int nregions,
         int logI,
-        sublat_t const & sl)
+        sublat_runtime_t const & sl)
 {
     /* We're going to stage the next batch of init values in
      * ssdpos_many_next, while the init values in ssdpos_many are
@@ -1010,14 +1010,14 @@ void small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
        updated in line j = 0. If disabled, the more general pattern-sieving
        code below will be used for line 0, too, but that will hit all locations
        with odd i. */
-    if (skip_line_jj0 && j == 0 && super::sublatj0 == 0) {
+    if (skip_line_jj0 && j == 0 && super::sublat.j0 == 0) {
         const int verbose = 0;
         WHERE_AM_I_UPDATE(w, j, 0);
         /* If sublattice, does this sublattice contain ii = 1 ?
            If we sieve fragments of a line, does this fragment contain
            i = 1? We assume that a fragment contains i = 1 iff it contains
            the origin */
-        if ((super::sublatm == 1 || super::sublati0 == 1) &&
+        if ((super::sublat.m == 1 || super::sublat.i0 == 1) &&
             super::has_origin) {
             for (auto const & ssp : not_nice_primes) {
                 /* Primes that are not pattern-sieved are handled elsewhere */
@@ -1046,7 +1046,7 @@ void small_sieve::do_pattern_sieve(where_am_I & w MAYBE_UNUSED)
     for ( ; j < j1; j++) {
         size_t i = 0;   // Info: this is not an abscissa, here, but a plain counter
         const unsigned int dj = j - j0;
-        const unsigned int jj = j * super::sublatm + super::sublatj0;
+        const unsigned int jj = j * super::sublat.m + super::sublat.j0;
         const size_t x0 = (size_t) dj << logI;
         int skip_mod_2 = 0;
         WHERE_AM_I_UPDATE(w, j, dj);
@@ -1135,7 +1135,7 @@ las_small_sieve_data::sieve_small_bucket_region(
         unsigned int N,
         int bucket_relative_index,
         int logI,
-        sublat_t const & sl,
+        sublat_runtime_t const & sl,
         where_am_I & w) const
 {
     std::vector<spos_t> const & ssdpos = ssdpos_many[bucket_relative_index];
@@ -1166,7 +1166,7 @@ las_small_sieve_data::resieve_small_bucket_region(
         unsigned int N,
         int bucket_relative_index,
         int logI,
-        sublat_t const & sl,
+        sublat_runtime_t const & sl,
         where_am_I & w MAYBE_UNUSED)
 {
     std::vector<spos_t> const & ssdpos = ssdpos_many[bucket_relative_index];

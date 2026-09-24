@@ -9,6 +9,7 @@
 #include "macros.h"
 
 #include "fb-types.hpp"
+#include "las-sublat.hpp"
 #include "gcd.h"
 #include "las-config.hpp"
 #include "misc.h"
@@ -363,9 +364,8 @@ struct plattice_enumerator_base {
      * path, for comparison, is a single shift.
      */
     template<uint32_t M>
-    static plattice_x_t starting_point_mod(plattice_info const & pli,
-                                           int const logI,
-                                           sublat_t const & sublat)
+    static plattice_x_t starting_point(plattice_info const & pli,
+                                       int const logI, sublat_t<M> const & sublat)
     {
         int64_t I = int64_t(1) << logI;
         constexpr uint32_t m = M;
@@ -447,23 +447,6 @@ struct plattice_enumerator_base {
         plattice_x_t res = (ii + I / 2) + (jj << logI);
         return res;
     }
-
-    static plattice_x_t starting_point(plattice_info const & pli,
-                                       int const logI, sublat_t const & sublat)
-    {
-        /* invmod() above only knows how to invert modulo 2, 3 and 6, so
-         * these are the only moduli that can occur here anyway. */
-        switch (sublat.m) {
-        case 2:
-            return starting_point_mod<2>(pli, logI, sublat);
-        case 3:
-            return starting_point_mod<3>(pli, logI, sublat);
-        case 6:
-            return starting_point_mod<6>(pli, logI, sublat);
-        default:
-            ASSERT_ALWAYS(0);
-        }
-    }
 };
 
 /* Class for enumerating lattice points with the Franke-Kleinjung algorithm */
@@ -497,29 +480,32 @@ class plattice_enumerator : public plattice_enumerator_base
         }
     };
 
+    template<uint32_t M>
     plattice_enumerator(plattice_info const & basis, slice_offset_t const hint,
-                        int const logI, sublat_t const & sublat)
+                        int const logI, sublat_t<M> const & sublat)
         : inc_warp(basis.get_inc_warp(logI))
         , inc_step(basis.get_inc_step(logI))
         , bound_step(basis.get_bound_step(logI))
         , bound_warp(basis.get_bound_warp(logI))
         , hint(hint)
+        , x(plattice_enumerator_base::starting_point(basis, logI, sublat))
     {
-        if (!sublat.m)
-            x = plattice_x_t(1) << (logI - 1);
-        else {
-            x = plattice_enumerator_base::starting_point(basis, logI, sublat);
-        }
+        static_assert(M > 1);
     }
 
     plattice_enumerator(plattice_info const & basis, slice_offset_t const hint,
-                        int const logI)
+                        int const logI, sublat_t<1> const &)
         : inc_warp(basis.get_inc_warp(logI))
         , inc_step(basis.get_inc_step(logI))
         , bound_step(basis.get_bound_step(logI))
         , bound_warp(basis.get_bound_warp(logI))
         , hint(hint)
         , x(plattice_x_t(1) << (logI - 1))
+    {}
+
+    plattice_enumerator(plattice_info const & basis, slice_offset_t const hint,
+                        int const logI)
+        : plattice_enumerator(basis, hint, logI, sublat_t<1>{})
     {
     }
 
@@ -607,9 +593,10 @@ class plattice_enumerator_coprime : public plattice_enumerator
     typedef typename super::fence fence;
 
   public:
+    template<uint32_t M>
     plattice_enumerator_coprime(plattice_info const & basis,
                                 slice_offset_t const hint, int const logI,
-                                sublat_t const & sublat)
+                                sublat_t<M> const & sublat)
         : plattice_enumerator(basis, hint, logI, sublat)
         , u(0)
         , v(0)

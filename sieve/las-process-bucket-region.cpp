@@ -487,15 +487,17 @@ process_bucket_region_run::survivors_t process_bucket_region_run::search_survivo
 
         ASSERT(j < ws.J);
 
-        search_survivors_in_line(both_S, both_bounds,
-                j,
-                i0, i1,
-                N,
-                *ws.jd,
-                ws.conf.unsieve_thresh,
-                *ws.us,
-                temp_sv,
-                Q.sublat);
+        dispatch_sublat(Q.sublat, [&](auto sublat) {
+                search_survivors_in_line(both_S, both_bounds,
+                        j,
+                        i0, i1,
+                        N,
+                        *ws.jd,
+                        ws.conf.unsieve_thresh,
+                        *ws.us,
+                        temp_sv,
+                        sublat);
+                });
 
         /* Survivors written by search_survivors_in_line() have index
          * relative to their j-line. We need to convert to index within

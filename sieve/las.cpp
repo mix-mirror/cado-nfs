@@ -936,23 +936,11 @@ do_one_special_q(
         }
     }
 
-    unsigned int sublat_bound = Q.sublat.m;
-    if (sublat_bound == 0)
-        sublat_bound = 1;
-
-    for (unsigned int i_cong = 0; i_cong < sublat_bound; ++i_cong) {
-        for (unsigned int j_cong = 0; j_cong < sublat_bound; ++j_cong) {
-            if (Q.sublat.m) {
-                if (i_cong == 0 && j_cong == 0)
-                    continue;
-                Q.sublat.i0 = i_cong;
-                Q.sublat.j0 = j_cong;
-                verbose_fmt_print(0, 1,
-                        "# Sublattice (i,j) == ({}, {}) mod {}\n",
-                        Q.sublat.i0, Q.sublat.j0, Q.sublat.m);
-            }
-            do_one_special_q_sublat(ws, wc_p, aux_p, Q, pool);
-        }
+    for (auto const & ij: Q.sublat.sublattices()) {
+        Q.sublat = ij;
+        if (Q.sublat.m > 1)
+            verbose_fmt_print(0, 1, "# Sublattice {}\n", Q.sublat);
+        do_one_special_q_sublat(ws, wc_p, aux_p, Q, pool);
     }
 
     /* It's better than before, but still. We're going to keep this data

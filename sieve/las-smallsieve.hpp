@@ -14,6 +14,7 @@
 #include "macros.h"
 #include "smallsieve.hpp"
 #include "threadpool.hpp"
+#include "las-sublat.hpp"
 
 
 /* Simple primes/roots. These are implicitly "nice", i.e., odd primes/powers
@@ -120,7 +121,7 @@ public:
             unsigned int first_region_index,
             int nregions,
             int logI,
-            sublat_t const & sl) final;
+            sublat_runtime_t const & sl) final;
 
     // Multithreaded thread_pool interface
     void small_sieve_prepare_many_start_positions(
@@ -129,7 +130,7 @@ public:
             unsigned int first_region_index,
             int nregions,
             int logI,
-            sublat_t const & sl) final;
+            sublat_runtime_t const & sl) final;
 
 protected:
     void small_sieve_prepare_many_start_positions_range(
@@ -139,7 +140,7 @@ protected:
             unsigned int first_region_index,
             int nregions,
             int logI,
-            sublat_t const & sl,
+            sublat_runtime_t const & sl,
             bool is_first);
 public:
     void small_sieve_init(
@@ -162,7 +163,7 @@ public:
             unsigned int N,
             int bucket_relative_index,
             int logI,
-            sublat_t const & sl,
+            sublat_runtime_t const & sl,
             where_am_I & w) const final;
 
     void resieve_small_bucket_region(
@@ -171,7 +172,7 @@ public:
             unsigned int N,
             int bucket_relative_index,
             int logI,
-            sublat_t const & sl,
+            sublat_runtime_t const & sl,
             where_am_I & w MAYBE_UNUSED) final;
 
 protected:
@@ -179,7 +180,7 @@ protected:
             std::vector<spos_t> & ssdpos,
             unsigned int first_region_index,
             int logI,
-            sublat_t const & sl);
+            sublat_runtime_t const & sl);
 
     void small_sieve_print_contents(const char * prefix) const;
 

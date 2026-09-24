@@ -10,6 +10,7 @@
 #include "threadpool.hpp"
 #include "fb-types.hpp"
 #include "macros.h"
+#include "las-sublat.hpp"
 
 #define SSP_POW2            (1u<<0)
 #define SSP_PROJ            (1u<<1)
@@ -51,7 +52,7 @@ public:
             unsigned int first_region_index,
             int nregions,
             int logI,
-            sublat_t const & sl) = 0;
+            sublat_runtime_t const & sl) = 0;
 
     virtual void small_sieve_prepare_many_start_positions(
             thread_pool &,
@@ -59,7 +60,7 @@ public:
             unsigned int first_region_index,
             int nregions,
             int logI,
-            sublat_t const & sl)
+            sublat_runtime_t const & sl)
     {
         // by default, fall back to the single-threaded code
         small_sieve_prepare_many_start_positions(first_region_index, nregions, logI, sl);
@@ -71,7 +72,7 @@ public:
             unsigned int N,
             int bucket_relative_index,
             int logI,
-            sublat_t const & sl,
+            sublat_runtime_t const & sl,
             where_am_I & w) const = 0;
 
     virtual void resieve_small_bucket_region(
@@ -80,7 +81,7 @@ public:
             unsigned int N,
             int bucket_relative_index,
             int logI,
-            sublat_t const & sl,
+            sublat_runtime_t const & sl,
             where_am_I & w MAYBE_UNUSED) = 0;
 
     virtual ~small_sieve_data() = default;
