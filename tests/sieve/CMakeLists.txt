@@ -346,6 +346,8 @@ cado_divert_test(F9 sublat_3
         APPEND_ENVIRONMENT
             las_I=10
             REL_COUNT=251
+            REFERENCE_SHA1=11265404868eea3023cf74f30d65b61c878e73d8
+            REFERENCE_REVISION=210c914e4
         APPEND_ARGUMENTS -sublat 3
         TIMEOUT 150
         )
