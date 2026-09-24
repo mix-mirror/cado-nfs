@@ -126,6 +126,7 @@ static void fill_in_buckets_toplevel_impl(
     qlattice_basis const & Q,
     sublat_t<M> const & sublat,
     plattices_dense_vector_t * p_precomp_slice,
+    uint32_t const window,
     where_am_I & w)
 {
     constexpr bool with_sublat = M > 1;
@@ -137,7 +138,10 @@ static void fill_in_buckets_toplevel_impl(
 
     slice_index_t const slice_index = slice.get_index();
 
-    /* Write new set of pointers for the new slice */
+    /* Write new set of pointers for the new slice. All the passes below
+     * write to this same bucket array, and no other slice writes to it
+     * in the meantime, so the updates of this slice are still
+     * contiguous in each bucket. */
     BA.add_slice_index(slice_index);
     WHERE_AM_I_UPDATE(w, i, slice_index);
 
@@ -153,8 +157,59 @@ static void fill_in_buckets_toplevel_impl(
     typename bucket_array_t<LEVEL, TARGET_HINT>::update_t::br_index_t const
         bmask = (1UL << logB) - 1;
 
-    /* Everything that happens once a p-lattice is known, which is the
-     * only part that is performance-critical. */
+    /* The fill goes in passes over windows of `window` buckets. In the
+     * first pass, the lattices that are not exhausted are parked here,
+     * and the next passes resume them. With a single pass, nothing is
+     * parked. */
+    bool const multipass = plattice_x_t(window) << logB < F.end;
+    auto window_fence = [&](plattice_x_t n) {
+        return plattice_enumerator::fence(ws.conf.logI, ws.J,
+                (n + 1) * (plattice_x_t(window) << logB));
+    };
+    plattice_enumerator::fence const F0 = multipass ? window_fence(0) : F;
+    static thread_local std::vector<plattice_enumerator> parked;
+    parked.clear();
+
+    auto make_update = [&](slice_offset_t const hint) {
+        WHERE_AM_I_UPDATE(w, h, hint);
+#ifdef TRACE_K
+        const fbprime_t p = slice.get_prime(hint);
+        WHERE_AM_I_UPDATE(w, p, p);
+#else
+        const fbprime_t p = 0;
+#endif
+        return typename bucket_array_t<LEVEL, TARGET_HINT>::update_t(
+                0, p, hint, slice_index);
+    };
+
+    /* This is the only part that is performance-critical. Both the
+     * enumerator and the fence are taken by value: with references, gcc
+     * reloads the fence from memory at each step and no longer uses cmov
+     * in ple.next(), which costs 8% of the fill time on a Xeon Gold 6130.
+     * The final position is returned. */
+    auto fill = [&](plattice_enumerator ple,
+                    plattice_enumerator::fence const Fw) {
+        auto u = make_update(ple.get_hint());
+        while (!ple.done(Fw)) {
+            /* Without sublattices, we test (very basic) coprimality.
+             * With sublattices we do not: for an even modulus the
+             * test is vacuous anyway, since the parities of i and j
+             * are then fixed over the whole class and the class
+             * where both are even is never sieved. For an odd
+             * modulus it would still be worth something. */
+            bool keep = true;
+            if constexpr (!with_sublat)
+                keep = LIKELY(ple.probably_coprime(Fw));
+            if (keep) {
+                u.set_x(ple.get_x() & bmask);
+                BA.push_update(ple.get_x() >> logB, u, w);
+            }
+            ple.next(Fw);
+        }
+        return ple.get_x();
+    };
+
+    /* Everything that happens once a p-lattice is known */
     auto handle_one_lattice = [&](plattice_info const & pli,
                                   slice_offset_t const i_entry) {
         plattice_enumerator ple = [&]() {
@@ -172,20 +227,9 @@ static void fill_in_buckets_toplevel_impl(
         if (pli.is_discarded())
             return;
 
-        slice_offset_t const hint = ple.get_hint();
-        ASSERT(hint == i_entry);
-        WHERE_AM_I_UPDATE(w, h, hint);
-#ifdef TRACE_K
-        const fbprime_t p = slice.get_prime(hint);
-        WHERE_AM_I_UPDATE(w, p, p);
-#else
-        const fbprime_t p = 0;
-#endif
+        ASSERT(ple.get_hint() == i_entry);
 
-        typename bucket_array_t<LEVEL, TARGET_HINT>::update_t u(0, p, hint,
-                                                                slice_index);
-
-        // Handle the rare special cases
+        // Handle the rare special cases, in one go.
         /* projective-like:
          *
          * ple sets its first position in the (i,j) plane to (1,0),
@@ -213,6 +257,7 @@ static void fill_in_buckets_toplevel_impl(
                  * should be fixed rather than papered over. */
                 return;
             } else {
+                auto u = make_update(i_entry);
                 while (!ple.done(F)) {
                     u.set_x(ple.get_x() & bmask);
                     int const N = ple.get_x() >> logB;
@@ -228,6 +273,7 @@ static void fill_in_buckets_toplevel_impl(
                 return; /* same story as just above */
             } else {
                 if (!ple.done(F)) {
+                    auto u = make_update(i_entry);
                     u.set_x(ple.get_x() & bmask);
                     BA.push_update(ple.get_x() >> logB, u, w);
                     ple.finish();
@@ -235,22 +281,9 @@ static void fill_in_buckets_toplevel_impl(
             }
         } else {
             /* Now, do the real work: the filling of the buckets */
-            while (!ple.done(F)) {
-                /* Without sublattices, we test (very basic) coprimality.
-                 * With sublattices we do not: for an even modulus the
-                 * test is vacuous anyway, since the parities of i and j
-                 * are then fixed over the whole class and the class
-                 * where both are even is never sieved. For an odd
-                 * modulus it would still be worth something. */
-                bool keep = true;
-                if constexpr (!with_sublat)
-                    keep = LIKELY(ple.probably_coprime(F));
-                if (keep) {
-                    u.set_x(ple.get_x() & bmask);
-                    BA.push_update(ple.get_x() >> logB, u, w);
-                }
-                ple.next(F);
-            }
+            ple.set_x(fill(ple, F0));
+            if (multipass && !ple.done(F))
+                parked.push_back(ple);
         }
     };
 
@@ -295,6 +328,17 @@ static void fill_in_buckets_toplevel_impl(
             }
         }
     }
+
+    for (plattice_x_t n = 1; !parked.empty(); n++) {
+        plattice_enumerator::fence const Fn = window_fence(n);
+        size_t k = 0;
+        for (auto & ple: parked) {
+            ple.set_x(fill(ple, Fn));
+            if (!ple.done(F))
+                parked[k++] = ple;
+        }
+        parked.erase(parked.begin() + k, parked.end());
+    }
     // printf("%.3f\n", BA.max_full());
     orig_BA = std::move(BA);
 }
@@ -308,6 +352,7 @@ static void fill_in_buckets_toplevel(
     fb_slice<FB_ENTRY_TYPE> const & slice,
     qlattice_basis const & Q,
     plattices_dense_vector_t * p_precomp_slice,
+    uint32_t window,
     where_am_I & w)
 {
     static_assert(!TARGET_HINT::is_long_v);
@@ -318,10 +363,10 @@ static void fill_in_buckets_toplevel(
             constexpr uint32_t M = decltype(sublat)::modulus;
             if (Q.sublat.is_first())
             fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT, M, true>(
-                    orig_BA, ws, slice, Q, sublat, p_precomp_slice, w);
+                    orig_BA, ws, slice, Q, sublat, p_precomp_slice, window, w);
             else
             fill_in_buckets_toplevel_impl<LEVEL, FB_ENTRY_TYPE, TARGET_HINT, M, false>(
-                    orig_BA, ws, slice, Q, sublat, p_precomp_slice, w);
+                    orig_BA, ws, slice, Q, sublat, p_precomp_slice, window, w);
             });
 }
 

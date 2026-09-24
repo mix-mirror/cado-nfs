@@ -139,6 +139,7 @@ fill_in_buckets_toplevel(bucket_array_t<LEVEL, TARGET_HINT> & orig_BA,
                          nfs_work & ws, fb_slice<FB_ENTRY_TYPE> const & slice,
                          siqs_special_q_data const & Q,
                          plattices_dense_vector_t * /* unused */,
+                         uint32_t /* window, unused */,
                          where_am_I & w)
 {
     /* yes, it should be a compile-time error. */

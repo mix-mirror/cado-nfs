@@ -99,6 +99,7 @@ static void configure_aliases(cxx_param_list & pl)
 {
     pl.configure_alias("log-bucket-region", "B");
     pl.configure_alias("log-bucket-region-step", "Bi");
+    pl.configure_alias("bucket-pass-log-updates", "bkpass");
     pl.configure_alias("bucket-batch-size", "bbs");
     pl.configure_alias("nr-workspaces", "nw");
     las_output::configure_aliases(pl);
@@ -140,6 +141,8 @@ static void declare_usage(cxx_param_list & pl)/*{{{*/
 
     pl.declare_usage("log-bucket-region", "set bucket region to 2^x");
     pl.declare_usage("log-bucket-region-step", "set the number of level-(n-1) buckets inside a level-n bucket to 2^x");
+    pl.declare_usage("bucket-pass-log-updates", "fill the top-level buckets in windows sized so that each prime writes about 2^x updates per window (default 7; 0 = one pass over all buckets)");
+    pl.declare_usage("bucket-pass-ratio", "ratio between the primes that get two consecutive window sizes with -bucket-pass-log-updates (default 2)");
 
     siever_config::declare_usage<ALGO>(pl);
 
@@ -1432,6 +1435,10 @@ static int las_main (int argc0, char const * argv0[])/*{{{*/
         pl.parse("grace-time-ratio", general_grace_time_ratio);
     pl.parse("log-bucket-region", LOG_BUCKET_REGION);
     pl.parse("log-bucket-region-step", LOG_BUCKET_REGION_step);
+    pl.parse("bucket-pass-log-updates", BUCKET_PASS_LOG_UPDATES);
+    pl.parse("bucket-pass-ratio", BUCKET_PASS_RATIO);
+    if (BUCKET_PASS_RATIO <= 1)
+        throw cado::error("-bucket-pass-ratio must be > 1");
     set_LOG_BUCKET_REGION();
 
     tdict::interpret_parameters(pl);
