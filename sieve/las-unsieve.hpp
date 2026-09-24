@@ -124,6 +124,31 @@ void search_survivors_in_line_sse2_oneside(unsigned char * const SS,
         int N, j_divisibility_helper const & j_div,
         unsigned int td_max,
         std::vector<uint32_t> &survivors, sublat_runtime_t sublat);
+/* Whether las was built to use the pattern-3 and pattern-5 variants of the
+ * survivor search. This is a compile-time choice, made in las-unsieve-sse2.cpp
+ * on the grounds that the patterns are a win on some microarchitectures and a
+ * loss on others. The tuner in tests/sieve checks it against measurement.
+ */
+extern bool const search_survivors_uses_patterns;
+
+/* Same as the two functions above, but with the pattern choice forced. Only
+ * the tuner uses these; las goes through the wrappers.
+ */
+template<bool use_patterns>
+void search_survivors_in_line_sse2_choice(unsigned char * const SS[2],
+        const unsigned char bound[2],
+        unsigned int j, int i0, int i1,
+        int N, j_divisibility_helper const & j_div,
+        unsigned int td_max,
+        std::vector<uint32_t> &survivors, sublat_runtime_t sublat);
+template<bool use_patterns>
+void search_survivors_in_line_sse2_oneside_choice(unsigned char * const SS,
+        unsigned char bound,
+        unsigned int j, int i0, int i1,
+        int N, j_divisibility_helper const & j_div,
+        unsigned int td_max,
+        std::vector<uint32_t> &survivors, sublat_runtime_t sublat);
+
 void search_survivors_in_line_sse2_siqs(
         unsigned char * SS,
         unsigned char bound,

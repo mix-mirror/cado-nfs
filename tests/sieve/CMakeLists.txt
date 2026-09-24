@@ -750,6 +750,33 @@ cado_divert_test(test-smallsieve line_fragments2 # bucket region = quarter line
     ARGUMENTS -q -C -A 18 -I 15 -B 13)
 endif()
 
+# This one is a tuner rather than a test: it times the two variants of the
+# survivor search and checks the compile-time choice in las-unsieve-sse2.cpp
+# against what it measures. The answer differs across microarchitectures,
+# hence the check.
+if(HAVE_SSE2 AND DEFINED ENV{CHECKS_EXPENSIVE})
+    set(unsieve_sources
+        ${PROJECT_SOURCE_DIR}/sieve/las-unsieve.cpp
+        ${PROJECT_SOURCE_DIR}/sieve/las-unsieve-sse2.cpp)
+    if(HAVE_AVX2)
+        list(APPEND unsieve_sources
+            ${PROJECT_SOURCE_DIR}/sieve/las-unsieve-avx2.cpp)
+    endif()
+    cado_define_test(test-unsieve-patterns.cpp ${unsieve_sources}
+        ${PROJECT_SOURCE_DIR}/sieve/las-where-am-i-prod.cpp
+        LIBRARIES utils ${gmplib})
+    set_property(TARGET test-unsieve-patterns
+        PROPERTY COMPILE_DEFINITIONS UNSIEVE_PATTERN_TUNER=1)
+    # Without this, the tuner measures the code-placement lottery instead of
+    # the loops: on Skylake-SP an unaligned build reported the one-sided
+    # search as slower than the two-sided one, which is impossible. The flag
+    # is for the tuner only, whatever the rest of the tree is built with.
+    if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|amd64|AMD64)$")
+        set_property(TARGET test-unsieve-patterns
+            APPEND PROPERTY COMPILE_OPTIONS -falign-loops=64)
+    endif()
+endif()
+
 if(HAVE_JEVENTS)
   set(jevents_lib "-ljevents")
 else()

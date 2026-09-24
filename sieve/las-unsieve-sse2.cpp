@@ -573,22 +573,43 @@ search_survivors_in_line5_sse2_oneside(unsigned char * const SS,
 }
 
 
-/* My measurements indicates that patterns are a win on intel skylake (a
- * few %), and a net loss on AMD Zen4 (more than 15%). None of this has a
- * really dramatic impact on overall performance, but we can still make
- * our default (assuming we compile with -march=native) reflect that.
+/* Whether to use the pattern-3 and pattern-5 variants at all.
+ *
+ * The patterns cost about 1.5 extra cycles per 16 bytes scanned -- the bound
+ * pattern rotates through three (or five) values held on the stack, where the
+ * generic variant keeps a single one in a register. What they buy is one
+ * fewer entry in div[], i.e. one multiply-compare saved for each position
+ * that passes the bound test. That only pays off when such positions are
+ * dense, and in las they are not: the survivor ratio is around 1e-4, and
+ * tests/sieve/test-unsieve-patterns puts the break-even point two orders of
+ * magnitude above that.
+ *
+ * Measured on whole RSA-768 runs, with -falign-loops=64 so that code
+ * placement does not drown the signal, the patterns cost 17 to 18% of
+ * search_survivors on Intel Skylake-SP and 14 to 18% on AMD Zen 4, in every
+ * configuration tried. So the default is to leave them alone. None of this
+ * has a dramatic impact overall -- search_survivors is well under one percent
+ * of a run -- but there is no reason to pay for it.
+ *
+ * -DUNSIEVE_PATTERNS=0/1 overrides the default, which is how one acts on what
+ * the tuner reports on a microarchitecture we have not measured.
  */
-
-#if defined(__skylake_avx512__)
-static constexpr bool use_unsieve_patterns = true;
-#elif defined(__znver4__)
-static constexpr bool use_unsieve_patterns = false;
+#if defined(UNSIEVE_PATTERNS)
+static constexpr bool use_unsieve_patterns = UNSIEVE_PATTERNS != 0;
 #else
-static constexpr bool use_unsieve_patterns = true;
+static constexpr bool use_unsieve_patterns = false;
 #endif
 
+bool const search_survivors_uses_patterns = use_unsieve_patterns;
+
+/* The two functions below are templates only so that the tuner in
+ * tests/sieve can time both settings against the code that las really
+ * runs. Production code always goes through the wrappers that follow,
+ * which hard-wire use_unsieve_patterns.
+ */
+template<bool use_patterns>
 void
-search_survivors_in_line_sse2(unsigned char * const SS[2], 
+search_survivors_in_line_sse2_choice(unsigned char * const SS[2], 
         const unsigned char bound[2],
         unsigned int j,
         int i0, int i1,
@@ -597,7 +618,7 @@ search_survivors_in_line_sse2(unsigned char * const SS[2],
         const unsigned int td_max, std::vector<uint32_t> &survivors,
         sublat_runtime_t sublat)
 {
-    if constexpr (use_unsieve_patterns) {
+    if constexpr (use_patterns) {
         /* The patterns are indexed by x but select the positions whose *real*
          * abscissa is a multiple of 3 or 5, and the branch is on the real row.
          * pattern_kill_offset() carries the sublattice into the offset. */
@@ -617,8 +638,9 @@ search_survivors_in_line_sse2(unsigned char * const SS[2],
             td_max, survivors, sublat);
 }
 
+template<bool use_patterns>
 void
-search_survivors_in_line_sse2_oneside(unsigned char * const SS, 
+search_survivors_in_line_sse2_oneside_choice(unsigned char * const SS, 
         const unsigned char bound,
         unsigned int j,
         int i0, int i1,
@@ -627,7 +649,7 @@ search_survivors_in_line_sse2_oneside(unsigned char * const SS,
         const unsigned int td_max, std::vector<uint32_t> &survivors,
         sublat_runtime_t sublat)
 {
-    if constexpr (use_unsieve_patterns) {
+    if constexpr (use_patterns) {
         /* see the comment in search_survivors_in_line_sse2() */
         const unsigned int jj = sublat.jj(j);
         if (jj % 3 == 0) {
@@ -643,6 +665,58 @@ search_survivors_in_line_sse2_oneside(unsigned char * const SS,
     }
     search_survivors_in_line1_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
             td_max, survivors, sublat);
+}
+
+/* Instantiated only for the tuner, which compiles this file itself. las gets
+ * the single instantiation that the wrappers below ask for, and no extra
+ * symbols: this code is placement-sensitive enough that it is not worth
+ * moving it around for the sake of a test.
+ */
+#ifdef UNSIEVE_PATTERN_TUNER
+template void search_survivors_in_line_sse2_choice<false>(
+        unsigned char * const SS[2], const unsigned char bound[2],
+        unsigned int, int, int, int, j_divisibility_helper const &,
+        unsigned int, std::vector<uint32_t> &, sublat_runtime_t);
+template void search_survivors_in_line_sse2_choice<true>(
+        unsigned char * const SS[2], const unsigned char bound[2],
+        unsigned int, int, int, int, j_divisibility_helper const &,
+        unsigned int, std::vector<uint32_t> &, sublat_runtime_t);
+template void search_survivors_in_line_sse2_oneside_choice<false>(
+        unsigned char * const SS, unsigned char,
+        unsigned int, int, int, int, j_divisibility_helper const &,
+        unsigned int, std::vector<uint32_t> &, sublat_runtime_t);
+template void search_survivors_in_line_sse2_oneside_choice<true>(
+        unsigned char * const SS, unsigned char,
+        unsigned int, int, int, int, j_divisibility_helper const &,
+        unsigned int, std::vector<uint32_t> &, sublat_runtime_t);
+#endif
+
+void
+search_survivors_in_line_sse2(unsigned char * const SS[2],
+        const unsigned char bound[2],
+        unsigned int j,
+        int i0, int i1,
+        int N,
+        j_divisibility_helper const & j_div,
+        const unsigned int td_max, std::vector<uint32_t> &survivors,
+        sublat_runtime_t sublat)
+{
+    search_survivors_in_line_sse2_choice<use_unsieve_patterns>(SS, bound, j,
+            i0, i1, N, j_div, td_max, survivors, sublat);
+}
+
+void
+search_survivors_in_line_sse2_oneside(unsigned char * const SS,
+        const unsigned char bound,
+        unsigned int j,
+        int i0, int i1,
+        int N,
+        j_divisibility_helper const & j_div,
+        const unsigned int td_max, std::vector<uint32_t> &survivors,
+        sublat_runtime_t sublat)
+{
+    search_survivors_in_line_sse2_oneside_choice<use_unsieve_patterns>(SS,
+            bound, j, i0, i1, N, j_div, td_max, survivors, sublat);
 }
 
 void
