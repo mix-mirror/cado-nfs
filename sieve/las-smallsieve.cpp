@@ -324,42 +324,6 @@ las_small_sieve_data::small_sieve_init(
                 fbroot_t const r_q = Rq.r;
                 bool const is_proj_in_ij = Rq.is_projective();
 
-                bool handled_by_pow2_code = false;
-
-                if (shares_factor_with_m) {
-                    if ((sublatm % p) == 0) {
-                        /* Here p (the power itself) divides the modulus.
-                         * Every position of the class has i = sublat.i0
-                         * and j = sublat.j0 mod p, hence the sieving
-                         * condition i = r*j mod p holds either for the
-                         * whole class or for none of it. Sieving it would
-                         * add a constant to the region; accumulate that
-                         * constant instead, and let search_survivors()
-                         * raise the bound by the same amount.
-                         *
-                         * We only do this for affine roots. A projective
-                         * root would be constant just the same, but
-                         * only if p divides sublat.j0; we leave that to
-                         * the general projective rework. */
-                        if (!is_proj_in_ij) {
-                            unsigned int const si0 = Q.sublat.i0 % p;
-                            unsigned int const sj0 = Q.sublat.j0 % p;
-                            if ((si0 + p - (r_q * sj0) % p) % p == 0) {
-                                /* logs are small, but let's not wrap */
-                                unsigned int const c = constant_logp + logp;
-                                constant_logp = c < 254 ? c : 254;
-                            }
-                        }
-                        continue;
-                    }
-                    /* Only powers of two have reduced-stride support, and
-                     * only in the affine case: a projective power of two
-                     * would land in handle_projective_prime(), which does
-                     * not know about the reduced stride. */
-                    if (pp != 2 || is_proj_in_ij)
-                        continue;
-                    handled_by_pow2_code = true;
-                }
                 /* If this root is somehow interesting (projective in (a,b) or
                    in (i,j) plane), print a message */
                 if (verbose && (Rab.is_projective() || is_proj_in_ij))
@@ -371,6 +335,57 @@ las_small_sieve_data::small_sieve_init(
                             is_proj_in_ij ? "1/" : "", r_q);
 
                 ssp_t new_ssp(p, r_q, logp, is_proj_in_ij);
+
+                bool handled_by_pow2_code = false;
+
+                if (shares_factor_with_m) {
+                    /* An entry is "flat" over the sublattice class when the
+                     * condition it expresses does not involve the position
+                     * at all. Its log is then a constant, which we hand to
+                     * search_survivors() through constant_logp rather than
+                     * write over the whole region.
+                     *
+                     * Affine, with p (the power itself) dividing m: the
+                     * condition is i == r*j (mod p), and i and j are
+                     * sublat.i0 and sublat.j0 mod p everywhere.
+                     *
+                     * Projective with q == 1 and g dividing m: the
+                     * condition is g | j alone, i.e. g | sublat.j0, since
+                     * j is sublat.j0 mod g everywhere.
+                     *
+                     * In both cases "flat" cuts both ways: when the
+                     * congruence fails, the entry contributes nothing
+                     * anywhere and is simply dropped.
+                     */
+                    bool flat = false, hits = false;
+                    if (!is_proj_in_ij && (sublatm % p) == 0) {
+                        unsigned int const si0 = Q.sublat.i0 % p;
+                        unsigned int const sj0 = Q.sublat.j0 % p;
+                        flat = true;
+                        hits = (si0 + p - (r_q * sj0) % p) % p == 0;
+                    } else if (is_proj_in_ij && new_ssp.get_q() == 1
+                               && (sublatm % new_ssp.get_g()) == 0) {
+                        flat = true;
+                        hits = (Q.sublat.j0 % new_ssp.get_g()) == 0;
+                    }
+                    if (flat) {
+                        if (hits) {
+                            /* logs are small, but let's not wrap */
+                            unsigned int const c = constant_logp + logp;
+                            constant_logp = c < 254 ? c : 254;
+                        }
+                        continue;
+                    }
+                    /* What is left needs a reduced stride. Only affine
+                     * powers of two have it, in handle_power_of_2(); the
+                     * projective ones would land in
+                     * handle_projective_prime(), which does not know about
+                     * sublattices at all when g or q shares a factor with
+                     * the modulus. */
+                    if (pp != 2 || is_proj_in_ij)
+                        continue;
+                    handled_by_pow2_code = true;
+                }
 
                 if (handled_by_pow2_code) {
                     /* The pattern-sieving code does not know about the
