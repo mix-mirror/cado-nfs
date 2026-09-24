@@ -32,6 +32,19 @@ extern size_t BUCKET_REGIONS[FB_MAX_PARTS];
 
 extern int NB_DEVIATIONS_BUCKET_REGIONS;
 
+/* Top-level bucket fill in several passes. A prime p writes about
+ * 2^logB/p updates per bucket, so it takes p*2^(K-logB) buckets to write
+ * 2^K of them, at which point the per-prime cost of the loop is
+ * amortized. The slices whose smallest prime is in [p0*R^k, p0*R^(k+1))
+ * (p0 being the smallest bucket-sieved prime) are therefore filled in
+ * windows of p0*R^k*2^(K-logB) buckets, one window after the other,
+ * which keeps the set of buckets that are written to small. K ==
+ * BUCKET_PASS_LOG_UPDATES and R == BUCKET_PASS_RATIO; K == 0 disables
+ * this.
+ */
+extern int BUCKET_PASS_LOG_UPDATES;
+extern double BUCKET_PASS_RATIO;
+
 #define DESCENT_DEFAULT_GRACE_TIME_RATIO 0.2 /* default value */
 
 /* (Re-)define this to support larger q. This is almost mandatory for the

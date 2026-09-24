@@ -7,7 +7,9 @@
  * The WHERE_AM_I_UPDATE macro itself is defined in las-where-am-i.hpp
  */
 
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 
 #include <array>
 #include <functional>
@@ -166,6 +168,25 @@ void fill_in_buckets_prepare_plattices(
     });
 }
 
+/* The number of top-level buckets that one pass of the fill covers, for
+ * this slice. See BUCKET_PASS_LOG_UPDATES in las-config.hpp.
+ */
+template <int LEVEL, class FB_ENTRY_TYPE>
+static uint32_t bucket_pass_window(nfs_work const & ws, int side,
+        fb_slice<FB_ENTRY_TYPE> const & slice)
+{
+    uint32_t const nb = ws.nb_buckets[LEVEL];
+    if (!BUCKET_PASS_LOG_UPDATES || slice.begin() == slice.end())
+        return nb;
+    double const p0 = ws.sides[side].fbK.thresholds[LEVEL - 1];
+    double const pmin = std::max(p0, double(slice.begin()->get_q()));
+    double const R = BUCKET_PASS_RATIO;
+    double const k = std::floor(std::log(pmin / p0) / std::log(R));
+    double const H = std::ldexp(p0 * std::pow(R, k),
+            BUCKET_PASS_LOG_UPDATES - LOG_BUCKET_REGIONS[LEVEL]);
+    return H >= nb ? nb : std::max(uint32_t(1), uint32_t(std::ceil(H)));
+}
+
 // At top level.
 // We need to interleave the root transforms and the FK walk,
 // otherwise, we spend all the time waiting for memory.
@@ -220,7 +241,8 @@ fill_in_buckets_toplevel_wrapper(worker_thread * worker,
 
         fill_in_buckets_toplevel<LEVEL, FB_ENTRY_TYPE, TARGET_HINT>(
                 acquired.access(),
-                ws, slice, Q, plattices_dense_vector, w);
+                ws, slice, Q, plattices_dense_vector,
+                bucket_pass_window<LEVEL>(ws, side, slice), w);
         return;
     } catch (buckets_are_full & e) {
         e.side = side;
