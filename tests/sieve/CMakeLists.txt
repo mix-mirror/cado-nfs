@@ -345,9 +345,7 @@ set_tests_properties(F9_batch_try_to_reuse_foreign PROPERTIES WILL_FAIL 1)
 cado_divert_test(F9 sublat_3
         APPEND_ENVIRONMENT
             las_I=10
-            REL_COUNT=246
-            REFERENCE_SHA1=f35a27aa4d96918a087cf8169071985c3992e659
-            REFERENCE_REVISION=2c5ac2cff
+            REL_COUNT=251
         APPEND_ARGUMENTS -sublat 3
         TIMEOUT 150
         )

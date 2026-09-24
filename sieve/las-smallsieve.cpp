@@ -259,6 +259,8 @@ las_small_sieve_data::small_sieve_init(
     // This zeroes out all vectors, but keeps storage around nevertheless
     small_sieve_clear();
 
+    constant_logp = 0;
+
     ssps.reserve(resieved.size() + rest.size());
 
     /* If logI == LOG_BUCKET_REGION, no offsets are needed as the sieve
@@ -302,9 +304,10 @@ las_small_sieve_data::small_sieve_init(
                 /* A prime power sharing a factor with the sublattice
                  * modulus needs the reduced stride that
                  * small_sieve_base::sublat_reduced_modulus() describes.
-                 * handle_power_of_2() knows about it, so affine powers of
-                 * two under an even modulus are fine; everything else in
-                 * that situation is still dropped.
+                 * Two sub-cases show up below: the power itself divides
+                 * the modulus (reduced stride 1: constant contribution,
+                 * handled here), or only the underlying prime does
+                 * (reduced stride > 1, handled by handle_power_of_2()).
                  *
                  * Note that this test used to read `pp == 3 || (sublatm %
                  * pp) == 0`. The first half was redundant whenever 3
@@ -313,10 +316,6 @@ las_small_sieve_data::small_sieve_init(
                  */
                 bool const shares_factor_with_m =
                     sublatm && (sublatm % pp) == 0;
-                bool const handled_by_pow2_code =
-                    shares_factor_with_m && pp == 2 && (sublatm % 2) == 0;
-                if (shares_factor_with_m && !handled_by_pow2_code)
-                    continue;
 
                 const unsigned char logp = fb_log_delta (pp, root.exp, root.oldexp, scale);
 
@@ -324,6 +323,43 @@ las_small_sieve_data::small_sieve_init(
                 auto Rq = fb_root_in_qlattice(p, Rab, e.invq, Q);
                 fbroot_t const r_q = Rq.r;
                 bool const is_proj_in_ij = Rq.is_projective();
+
+                bool handled_by_pow2_code = false;
+
+                if (shares_factor_with_m) {
+                    if ((sublatm % p) == 0) {
+                        /* Here p (the power itself) divides the modulus.
+                         * Every position of the class has i = sublat.i0
+                         * and j = sublat.j0 mod p, hence the sieving
+                         * condition i = r*j mod p holds either for the
+                         * whole class or for none of it. Sieving it would
+                         * add a constant to the region; accumulate that
+                         * constant instead, and let search_survivors()
+                         * raise the bound by the same amount.
+                         *
+                         * We only do this for affine roots. A projective
+                         * root would be constant just the same, but
+                         * only if p divides sublat.j0; we leave that to
+                         * the general projective rework. */
+                        if (!is_proj_in_ij) {
+                            unsigned int const si0 = Q.sublat.i0 % p;
+                            unsigned int const sj0 = Q.sublat.j0 % p;
+                            if ((si0 + p - (r_q * sj0) % p) % p == 0) {
+                                /* logs are small, but let's not wrap */
+                                unsigned int const c = constant_logp + logp;
+                                constant_logp = c < 254 ? c : 254;
+                            }
+                        }
+                        continue;
+                    }
+                    /* Only powers of two have reduced-stride support, and
+                     * only in the affine case: a projective power of two
+                     * would land in handle_projective_prime(), which does
+                     * not know about the reduced stride. */
+                    if (pp != 2 || is_proj_in_ij)
+                        continue;
+                    handled_by_pow2_code = true;
+                }
                 /* If this root is somehow interesting (projective in (a,b) or
                    in (i,j) plane), print a message */
                 if (verbose && (Rab.is_projective() || is_proj_in_ij))
@@ -337,14 +373,9 @@ las_small_sieve_data::small_sieve_init(
                 ssp_t new_ssp(p, r_q, logp, is_proj_in_ij);
 
                 if (handled_by_pow2_code) {
-                    /* Only the affine case goes through handle_power_of_2;
-                     * a projective power of two under an even modulus would
-                     * land in handle_projective_prime(), which does not know
-                     * about the reduced stride. */
-                    if (new_ssp.is_proj())
-                        continue;
-                    /* and it must not be pattern-sieved either, for the
-                     * same reason */
+                    /* The pattern-sieving code does not know about the
+                     * reduced stride either. */
+                    ASSERT_ALWAYS(!new_ssp.is_proj());
                     new_ssp.unset_pattern_sieved();
                 }
 

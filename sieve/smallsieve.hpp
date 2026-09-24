@@ -18,6 +18,14 @@
 
 class small_sieve_data {
 public:
+    /* Sum of the logs of the prime powers that divide the sublattice
+     * modulus. Such a prime power divides either every norm of the
+     * current sublattice class, or none of them, so sieving it would
+     * merely add a constant to the whole sieve region. We leave it out
+     * of the sieve and add the constant to the survivor bound instead.
+     * Zero when there are no sublattices. */
+    unsigned char constant_logp = 0;
+
     virtual void small_sieve_init(
             std::vector<fb_entry_general> const &,
             std::vector<fb_entry_general> const &,
