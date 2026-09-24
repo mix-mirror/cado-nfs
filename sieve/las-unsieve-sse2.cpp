@@ -573,10 +573,18 @@ search_survivors_in_line5_sse2_oneside(unsigned char * const SS,
 }
 
 
-#define USE_PATTERN_3 1
-#define USE_PATTERN_5 1
-#if USE_PATTERN_5 && ! USE_PATTERN_3
-#error "USE_PATTERN_5 requires USE_PATTERN_3"
+/* My measurements indicates that patterns are a win on intel skylake (a
+ * few %), and a net loss on AMD Zen4 (more than 15%). None of this has a
+ * really dramatic impact on overall performance, but we can still make
+ * our default (assuming we compile with -march=native) reflect that.
+ */
+
+#if defined(__skylake_avx512__)
+static constexpr bool use_unsieve_patterns = true;
+#elif defined(__znver4__)
+static constexpr bool use_unsieve_patterns = false;
+#else
+static constexpr bool use_unsieve_patterns = true;
 #endif
 
 void
@@ -589,23 +597,24 @@ search_survivors_in_line_sse2(unsigned char * const SS[2],
         const unsigned int td_max, std::vector<uint32_t> &survivors,
         sublat_runtime_t sublat)
 {
-#if USE_PATTERN_3
-    /* The patterns are indexed by x but select the positions whose *real*
-     * abscissa is a multiple of 3 or 5, and the branch is on the real row.
-     * pattern_kill_offset() carries the sublattice into the offset. */
-    const unsigned int jj = sublat.jj(j);
-    if (jj % 3 == 0)
-      search_survivors_in_line3_sse2(SS, bound, j, i0, i1, N, j_div,
-              td_max, survivors, sublat);
-#if USE_PATTERN_5
-    else if (jj % 5 == 0)
-      search_survivors_in_line5_sse2(SS, bound, j, i0, i1, N, j_div,
-              td_max, survivors, sublat);
-#endif
-    else
-#endif
-      search_survivors_in_line1_sse2(SS, bound, j, i0, i1, N, j_div,
-              td_max, survivors, sublat);
+    if constexpr (use_unsieve_patterns) {
+        /* The patterns are indexed by x but select the positions whose *real*
+         * abscissa is a multiple of 3 or 5, and the branch is on the real row.
+         * pattern_kill_offset() carries the sublattice into the offset. */
+        const unsigned int jj = sublat.jj(j);
+        if (jj % 3 == 0) {
+            search_survivors_in_line3_sse2(SS, bound, j, i0, i1, N, j_div,
+                    td_max, survivors, sublat);
+            return;
+        }
+        if (jj % 5 == 0) {
+            search_survivors_in_line5_sse2(SS, bound, j, i0, i1, N, j_div,
+                    td_max, survivors, sublat);
+            return;
+        }
+    }
+    search_survivors_in_line1_sse2(SS, bound, j, i0, i1, N, j_div,
+            td_max, survivors, sublat);
 }
 
 void
@@ -618,21 +627,22 @@ search_survivors_in_line_sse2_oneside(unsigned char * const SS,
         const unsigned int td_max, std::vector<uint32_t> &survivors,
         sublat_runtime_t sublat)
 {
-#if USE_PATTERN_3
-    /* see the comment in search_survivors_in_line_sse2() */
-    const unsigned int jj = sublat.jj(j);
-    if (jj % 3 == 0)
-      search_survivors_in_line3_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
-              td_max, survivors, sublat);
-#if USE_PATTERN_5
-    else if (jj % 5 == 0)
-      search_survivors_in_line5_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
-              td_max, survivors, sublat);
-#endif
-    else
-#endif
-      search_survivors_in_line1_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
-              td_max, survivors, sublat);
+    if constexpr (use_unsieve_patterns) {
+        /* see the comment in search_survivors_in_line_sse2() */
+        const unsigned int jj = sublat.jj(j);
+        if (jj % 3 == 0) {
+            search_survivors_in_line3_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
+                    td_max, survivors, sublat);
+            return;
+        }
+        if (jj % 5 == 0) {
+            search_survivors_in_line5_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
+                    td_max, survivors, sublat);
+            return;
+        }
+    }
+    search_survivors_in_line1_sse2_oneside(SS, bound, j, i0, i1, N, j_div,
+            td_max, survivors, sublat);
 }
 
 void
@@ -649,10 +659,10 @@ search_survivors_in_line_sse2_siqs(
     {
         /* Do bounds check using SSE pattern, set non-survivors in SS[0] array
            to 255 */
-        __m128i * ptrS = (__m128i *)(SS + x_start);
+        auto * ptrS = (__m128i *)(SS + x_start);
         __m128i const s = *ptrS;
         __m128i m = _mm_cmpgt_epi8(B, _mm_xor_si128(s, sign_conversion));
-        unsigned int bitmask = (unsigned int) _mm_movemask_epi8(m);
+        auto bitmask = (unsigned int) _mm_movemask_epi8(m);
         m = _mm_xor_si128(m, ff);
         *ptrS = _mm_or_si128(s, m);
 
