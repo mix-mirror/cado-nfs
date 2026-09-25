@@ -380,8 +380,9 @@ struct plattice_enumerator_base {
         // FIXME: should have a better understanding of those cases
         // (and not only in the sublat case, to be honest)
         // Right now, we desactivate them, by putting a starting point
-        // above the limit.
-        if ((i1 == 0) || (j1 == 0)) {
+        // above the limit. This includes the vertical lines (i0 == 0,
+        // and i1 >= I).
+        if ((i1 == 0) || (j1 == 0) || (i0 == 0) || (i1 >= I)) {
             return plattice_x_t(UMAX(plattice_x_t));
         }
 
@@ -407,22 +408,36 @@ struct plattice_enumerator_base {
         int64_t ii = (al * i0 + be * i1 - sublat.i0) / m; // exact divisions
         int64_t jj = (al * j0 + be * j1 - sublat.j0) / m;
 
-        // But here, ii might be beyond the bounds. So, let's fix.
-        // It should be enough to subtract one of the FK vectors.
-        // Note that a is the vector with negative abscissa.
+        // The points of this translate of the lattice that lie in the
+        // strip -I/2 <= ii < I/2 form a chain, and the FK walk goes from
+        // one to the next. We want the first one with jj >= 0.
+        //
+        // First, get into the strip. Since 0 <= al,be < m, we have
+        // -I <= ii < I. Recall that a = (i0,j0) = (-mi0,j0) and
+        // b = (i1,j1), with 0 < mi0 < I, 0 <= i1 < I, and mi0 + i1 >= I,
+        // so that at least one of mi0 and i1 is >= I/2. One step with
+        // that vector is enough.
+        ASSERT((ii >= -I) && (ii < I));
         if (ii < -I / 2) {
-            ASSERT(ii - i0 >= 0);
-            ii -= i0;
-            jj -= j0;
-        } else if (ii > I / 2 - 1) {
-            ASSERT(ii - i1 <= 0);
-            ii -= i1;
-            jj -= j1;
+            if (-i0 >= I / 2) {
+                ii -= i0;
+                jj -= j0;
+            } else {
+                ii += i1;
+                jj += j1;
+            }
+        } else if (ii >= I / 2) {
+            if (i1 >= I / 2) {
+                ii -= i1;
+                jj -= j1;
+            } else {
+                ii += i0;
+                jj += j0;
+            }
         }
         ASSERT((ii >= -I / 2) && (ii < I / 2));
 
-        // But now, jj might be negative! So let's start the FK walk until we
-        // go positive.
+        // If jj is negative, walk forward until we go positive.
         while (jj < 0) {
             int64_t aux = ii;
             if (aux >= I / 2 - i1) {
@@ -433,6 +448,29 @@ struct plattice_enumerator_base {
                 ii += i1;
                 jj += j1;
             }
+        }
+
+        // Otherwise, we may be past the first point of the chain with
+        // jj >= 0 (this does not happen for m == 2, but it does for m == 3
+        // and m == 6). The predecessor of a point in the strip is
+        // obtained by subtracting b, a, or a+b, and exactly one of those
+        // lands in the strip.
+        for (;;) {
+            int64_t pi, pj;
+            if (ii >= -I / 2 + i1) {
+                pi = ii - i1;
+                pj = jj - j1;
+            } else if (ii < I / 2 + i0) {
+                pi = ii - i0;
+                pj = jj - j0;
+            } else {
+                pi = ii - i0 - i1;
+                pj = jj - j0 - j1;
+            }
+            if (pj < 0)
+                break;
+            ii = pi;
+            jj = pj;
         }
 
         // Now, (ii,jj) is the starting point we are looking for. Let's
