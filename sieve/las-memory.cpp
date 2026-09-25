@@ -127,6 +127,15 @@ void * las_memory_accessor::physical_alloc(size_t size)
 
 }
 
+size_t las_memory_accessor::physical_footprint(size_t size)
+{
+#if (defined(HAVE_MMAP) && defined(MAP_HUGETLB)) || defined(MADV_HUGEPAGE)
+    return iceildiv(size, LARGE_PAGE_SIZE) * LARGE_PAGE_SIZE;
+#else
+    return iceildiv(size, pagesize()) * pagesize();
+#endif
+}
+
 void las_memory_accessor::touch(void * p, size_t x)
 {
     size_t i, m;

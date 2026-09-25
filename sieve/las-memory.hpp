@@ -63,6 +63,11 @@ class las_memory_accessor {
     void * physical_alloc(size_t) ATTR_ASSUME_ALIGNED(256);
     void physical_free(void*, size_t);
 
+    /* How much memory physical_alloc(size) actually occupies, once it
+     * is all touched: it is rounded up to large pages when these are
+     * available. The memory estimate uses this. */
+    static size_t physical_footprint(size_t size);
+
     struct unique_frequent_array_deleter {
         size_t size = 0;
         las_memory_accessor * a = nullptr;
