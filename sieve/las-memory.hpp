@@ -48,8 +48,8 @@ class las_memory_accessor {
      */
     lock_guarded_container<std::set<void*>> was_mmapped; // used on free()
 
-    void touch(void *, size_t);
     public:
+    void touch(void *, size_t);
 
     static size_t bucket_region_size() {
         /* round to next multiple of 128 */
@@ -60,7 +60,7 @@ class las_memory_accessor {
     unsigned char * alloc_bucket_region() { return (unsigned char *) alloc_frequent_size(bucket_region_size()); }
     void free_bucket_region(unsigned char * p) { free_frequent_size((void *) p, bucket_region_size()); }
 
-    void * physical_alloc(size_t, bool = false) ATTR_ASSUME_ALIGNED(256);
+    void * physical_alloc(size_t) ATTR_ASSUME_ALIGNED(256);
     void physical_free(void*, size_t);
 
     struct unique_frequent_array_deleter {
@@ -93,9 +93,9 @@ class las_memory_accessor {
         using unique_physical_array = std::unique_ptr<T, unique_physical_array_deleter>;
 
     template<typename T>
-    unique_physical_array<T> make_unique_physical_array(size_t size, bool affect = false)
+    unique_physical_array<T> make_unique_physical_array(size_t size)
     {
-        return { static_cast<T *>(physical_alloc(size * sizeof(T), affect)),
+        return { static_cast<T *>(physical_alloc(size * sizeof(T))),
                  { size, this } };
     }
 

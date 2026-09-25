@@ -76,7 +76,7 @@ void las_memory_accessor::free_frequent_size(void * v, size_t size)
     pool.push(v);
 }
 
-void * las_memory_accessor::physical_alloc(size_t size, bool affect)
+void * las_memory_accessor::physical_alloc(size_t size)
 {
 #if defined(HAVE_MMAP) && defined(MAP_HUGETLB)
     {
@@ -92,7 +92,10 @@ void * las_memory_accessor::physical_alloc(size_t size, bool affect)
                 std::lock_guard<std::mutex> const dummy(was_mmapped.mutex());
                 was_mmapped.insert(m);
             }
-            if (affect) touch(m, size);
+            // this is flawed (and thus disabled) because doing so now
+            // before we possibly free the area we're reallocating is
+            // going to bump the RSS
+            // if (affect) touch(m, size);
             return m;
         }
     }
@@ -118,7 +121,8 @@ void * las_memory_accessor::physical_alloc(size_t size, bool affect)
     void * m = malloc_pagealigned(size);
 #endif
 
-    if (affect) touch(m, size);
+    // see comment above
+    // if (affect) touch(m, size);
     return m;
 
 }
