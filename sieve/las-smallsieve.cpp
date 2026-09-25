@@ -336,8 +336,6 @@ las_small_sieve_data::small_sieve_init(
 
                 ssp_t new_ssp(p, r_q, logp, is_proj_in_ij);
 
-                bool handled_by_pow2_code = false;
-
                 if (shares_factor_with_m) {
                     /* An entry is "flat" over the sublattice class when the
                      * condition it expresses does not involve the position
@@ -376,26 +374,27 @@ las_small_sieve_data::small_sieve_init(
                         }
                         continue;
                     }
-                    /* What is left needs a reduced stride. Only affine
-                     * powers of two have it, in handle_power_of_2(); the
-                     * projective ones would land in
-                     * handle_projective_prime(), which does not know about
-                     * sublattices at all when g or q shares a factor with
-                     * the modulus. */
-                    if (pp != 2 || is_proj_in_ij)
-                        continue;
-                    handled_by_pow2_code = true;
-                }
-
-                if (handled_by_pow2_code) {
-                    /* The pattern-sieving code does not know about the
-                     * reduced stride either. */
-                    ASSERT_ALWAYS(!new_ssp.is_proj());
-                    new_ssp.unset_pattern_sieved();
+                    /* What is left depends on the position, with a
+                     * reduced stride, and for a projective entry a
+                     * condition on the row as well. Neither the pattern
+                     * sieve nor handle_projective_prime() know about
+                     * this. */
+                    new_ssp.set_sublat_rowwise();
+                } else if (sublatm > 1 && is_proj_in_ij
+                           && !new_ssp.is_pattern_sieved()) {
+                    /* handle_projective_prime() decides which positions
+                     * have both coordinates even from the sublattice
+                     * coordinates, not from the real ones. */
+                    new_ssp.set_sublat_rowwise();
                 }
 
                 if (p != pp)
                     new_ssp.set_pow(pp);
+
+                if (new_ssp.is_sublat_rowwise()) {
+                    ssp.push_back(new_ssp);
+                    continue;
+                }
 
                 /* pattern-sieved primes go to ssp */
                 if (new_ssp.is_proj()) {
@@ -1308,11 +1307,34 @@ las_small_sieve_data::resieve_small_bucket_region(
          * obviously won't resieve powers of two, so we're bound to deal
          * with only projective primes here.
          */
-        ASSERT(sp.is_pow2() || sp.is_proj() || sp.is_pattern_sieved());
+        ASSERT(sp.is_pow2() || sp.is_proj() || sp.is_pattern_sieved()
+                || sp.is_sublat_rowwise());
 
         /* FIXME: I should not have to do this test */
         if (sp.is_pow() || sp.is_pow2())
             continue;
+
+        if (sp.is_sublat_rowwise()) {
+            /* see small_sieve::handle_sublat_rowwise(). Contrary to what
+             * we do below, we also deal with projective entries that do
+             * not sieve full lines. */
+            const fbprime_t p = sp.is_proj() ? sp.get_g() * sp.get_q() : sp.get_p();
+            if (p < fbK.td_thresh)
+                continue;
+            WHERE_AM_I_UPDATE(w, p, p);
+            C.foreach_sublat_rowwise_row(sp,
+                    [&](unsigned int dj, int64_t pos, int64_t s) {
+                        size_t const x0 = (size_t) dj << logI;
+                        for ( ; pos < C.F() ; pos += s) {
+                            if (S[x0 + pos] == 255) continue;
+                            bucket_update_t<1, primehint_t> prime;
+                            prime.p = p;
+                            prime.x = x0 + pos;
+                            BP->push_update(prime);
+                        }
+                    });
+            continue;
+        }
 
         /* TODO: it doesn't seem very smart to resieve projective primes
          */
@@ -1354,39 +1376,26 @@ las_small_sieve_data::resieve_small_bucket_region(
             unsigned int j = j0 + (pos >> logI);
             for (; j < j1; j += g) {
                 unsigned char *S_ptr = S + pos;
-                /* FIXME: sublat */
-                if (!(j & 1)) {
-                    /* Even j: test only odd ii-coordinates */
-                    for (int ii = 1; ii < C.F(); ii += 2) {
-                        if (S_ptr[ii] == 255) continue;
-                        bucket_update_t<1, primehint_t> prime;
-                        const unsigned int x = pos + ii;
-                        if (resieve_very_verbose) {
-                            verbose_fmt_print(0, 1,
-                                    "# resieve_small_bucket_region even j:"
-                                    " root {},inf divides at x = {}",
-                                    g, x);
-                        }
-                        prime.p = g;
-                        prime.x = x;
-                        BP->push_update(prime);
+                /* On a row whose real ordinate jj is even, the positions
+                 * whose real abscissa is even are useless. Which ones
+                 * they are is decided by small_sieve_base. */
+                const unsigned int jj = j * C.sublat.m + C.sublat.j0;
+                const int skip = (jj & 1) ? 0 : C.parity_skip_class();
+                const int x0 = (skip == 1);
+                const int dx = skip ? 2 : 1;
+                for (int ii = x0; ii < C.F(); ii += dx) {
+                    if (S_ptr[ii] == 255) continue;
+                    bucket_update_t<1, primehint_t> prime;
+                    const unsigned int x = pos + ii;
+                    if (resieve_very_verbose) {
+                        verbose_fmt_print(0, 1,
+                                "# resieve_small_bucket_region:"
+                                " root {},inf divides at x = {}",
+                                g, x);
                     }
-                } else {
-                    /* Odd j: test all ii-coordinates */
-                    for (int ii = 0; ii < C.F(); ii++) {
-                        if (S_ptr[ii] == 255) continue;
-                        bucket_update_t<1, primehint_t> prime;
-                        const unsigned int x = pos + ii;
-                        if (resieve_very_verbose) {
-                            verbose_fmt_print(0, 1,
-                                    "# resieve_small_bucket_region odd j:"
-                                    " root {},inf divides at x = {}",
-                                    g, x);
-                        }
-                        prime.p = g;
-                        prime.x = x;
-                        BP->push_update(prime);
-                    }
+                    prime.p = g;
+                    prime.x = x;
+                    BP->push_update(prime);
                 }
                 pos += gI;
             }

@@ -15,6 +15,7 @@
 #define SSP_POW2            (1u<<0)
 #define SSP_PROJ            (1u<<1)
 #define SSP_PATTERN_SIEVED  (1u<<2)
+#define SSP_SUBLAT_ROWWISE  (1u<<3)
 
 class small_sieve_data {
 public:

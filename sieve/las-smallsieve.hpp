@@ -95,6 +95,7 @@ public:
     bool is_nice() const {return !is_pow2() && !is_proj();}
     bool is_pow() const { return rootp != 0; }
     bool is_pattern_sieved() const {return (flags & SSP_PATTERN_SIEVED) != 0;}
+    bool is_sublat_rowwise() const {return (flags & SSP_SUBLAT_ROWWISE) != 0;}
 
     void set_pow(unsigned int p) { rootp = p; }
     void set_pow2() {flags |= SSP_POW2; rootp=2;}
@@ -104,6 +105,9 @@ public:
      * handle_power_of_2(), which knows about the reduced stride; sieve2357
      * does not. */
     void unset_pattern_sieved() {flags &= ~SSP_PATTERN_SIEVED;}
+    /* Under sublattices, some entries are sieved row by row by
+     * small_sieve::handle_sublat_rowwise(), see there. */
+    void set_sublat_rowwise() {flags |= SSP_SUBLAT_ROWWISE; unset_pattern_sieved();}
 
 private:
     void init_proj(fbprime_t p, fbprime_t r, unsigned char _logp,

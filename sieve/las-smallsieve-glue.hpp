@@ -219,6 +219,76 @@ struct small_sieve_base {/*{{{*/
     }
     /* }}} */
 
+    /* {{{ entries that are sieved row by row under sublattices
+     *
+     * This covers the entries that small_sieve_init() marks with
+     * set_sublat_rowwise(): prime powers whose prime divides the
+     * sublattice modulus (and which are not flat over the class), and
+     * the projective entries that are not pattern-sieved.
+     *
+     * The condition for a hit is
+     *
+     *      ii == T  (mod q)
+     *
+     * where T = r*jj and q = p for an affine entry, and T = (jj/g)*U for
+     * a projective one, which furthermore needs g | jj. With
+     * ii = m*x + sublat.i0, this becomes
+     *
+     *      m*x == T - sublat.i0  (mod q)
+     *
+     * which, with d = gcd(m, q), is solvable iff d divides the right
+     * hand side, and then reads
+     *
+     *      x == ((T - sublat.i0)/d) * (m/d)^-1  (mod q/d).
+     *
+     * (m/d is coprime to q/d because m is squarefree.) This is the
+     * statement of sublat_reduced_modulus() above, with the row
+     * condition of projective entries on top.
+     *
+     * There are few such entries, so we simply do this row by row. We
+     * do not bother with skipping the positions where ii and jj are both
+     * even (the survivor search skips them anyway).
+     *
+     * f is called with the row index relative to j0, the first position
+     * in that row, and the stride.
+     */
+    template<typename F>
+    void foreach_sublat_rowwise_row(ssp_t const & ssp, F && f) const
+    {
+        bool const proj = ssp.is_proj();
+        uint64_t const q = proj ? ssp.get_q() : ssp.get_p();
+        uint64_t const g = proj ? ssp.get_g() : 1;
+        uint64_t const U = proj ? ssp.get_U() : ssp.get_r();
+        uint64_t const m = sublat.m;
+        uint64_t const d = gcd_ul(q, m);
+        uint64_t const s = q / d;
+        uint64_t const md = m / d;
+        /* (m/d)^-1 mod s. m/d is 1, 2 or 3, so one of s+1 and 2*s+1 is
+         * a multiple of it. */
+        uint64_t minv = 0;
+        for (uint64_t t = 0; t < md; t++) {
+            if ((t * s + 1) % md == 0) {
+                minv = ((t * s + 1) / md) % s;
+                break;
+            }
+        }
+        uint64_t const si0 = sublat.i0 % q;
+        for (unsigned int j = j0; j < j1; j++) {
+            uint64_t const jj = uint64_t(j) * m + sublat.j0;
+            if (jj % g)
+                continue;
+            uint64_t const c = ((jj / g) % q * U + q - si0) % q;
+            if (c % d)
+                continue;
+            int64_t const x = int64_t((c / d) * minv % s);
+            int64_t pos = (x - i0) % int64_t(s);
+            if (pos < 0)
+                pos += s;
+            f(j - j0, pos, (int64_t) s);
+        }
+    }
+    /* }}} */
+
     /* Returns (ii - sublat.i0 + k*q) / sublat.m with k >= 0 minimal so that
        result is an integer */
     int fix_sublat_i(int64_t ii, const fbprime_t q) const {
@@ -567,6 +637,18 @@ struct small_sieve : public small_sieve_base {/*{{{*/
     using super::skip_line_jj0;
 
     void handle_projective_prime(ssp_t const & ssp, where_am_I & w);
+    void handle_sublat_rowwise(ssp_t const & ssp, where_am_I & w MAYBE_UNUSED) {/*{{{*/
+        WHERE_AM_I_UPDATE(w, p, ssp.is_proj() ? ssp.get_g() * ssp.get_q() : ssp.get_p());
+        const unsigned char logp = ssp.logp;
+        super::foreach_sublat_rowwise_row(ssp,
+                [&](unsigned int dj, int64_t pos, int64_t s) {
+                    unsigned char * S_ptr = S + ((size_t) dj << logI);
+                    for ( ; pos < F() ; pos += s) {
+                        WHERE_AM_I_UPDATE(w, x, ((size_t) dj << logI) + pos);
+                        sieve_increase (S_ptr + pos, logp, w);
+                    }
+                });
+    }/*}}}*/
     void handle_power_of_2(ssp_t const & ssp, where_am_I & w MAYBE_UNUSED) {/*{{{*/
         /* Powers of 2 are treated separately */
         /* Don't sieve powers of 2 again that were pattern-sieved */
@@ -900,7 +982,9 @@ struct small_sieve : public small_sieve_base {/*{{{*/
          * start positions *only* for the primes in the ssps array. */
 
         for(auto const & ssp : not_nice_primes) {
-            if (ssp.is_pattern_sieved()) {
+            if (ssp.is_sublat_rowwise()) {
+                handle_sublat_rowwise(ssp, w);
+            } else if (ssp.is_pattern_sieved()) {
                 /* This ssp is pattern-sieved, nothing to do here */
             } else if (ssp.is_proj()) {
                 handle_projective_prime(ssp, w);
