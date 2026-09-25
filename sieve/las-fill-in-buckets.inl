@@ -260,6 +260,13 @@ static void fill_in_buckets_toplevel_impl(
             handle_one_lattice(pli, psl.get_hint());
         }
     } else {
+        if constexpr (M > 1) {
+            /* This is an upper bound (exact for fixed-root entries), and
+             * it avoids the slack of a geometric growth, which the
+             * memory estimate does not count. */
+            p_precomp_slice->reserve(slice.size() *
+                    std::max(1, int(FB_ENTRY_TYPE::fixed_nr_roots)));
+        }
         typename FB_ENTRY_TYPE::transformed_entry_t transformed;
         slice_offset_t i_entry = 0;
         for (auto const & e: slice) {
