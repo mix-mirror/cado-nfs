@@ -164,7 +164,12 @@ void bucket_array_t<LEVEL, HINT>::allocate_memory(
                 LEVEL, HINT::rtti[0], new_big_size * sizeof(update_t),
                 new_n_bucket, bs_even, sizeof(update_t));
         }
-        big_data = memory.make_unique_physical_array<update_t>(new_big_size, true);
+        /* We cannot use this call to do the allocation+touch in an
+         * way that keeps RSS to the max (vs the sum). touching the area
+         * must come next.
+         */
+        big_data = memory.make_unique_physical_array<update_t>(new_big_size);
+        memory.touch(big_data.get(), new_big_size);
     }
 
     if (!big_data)
