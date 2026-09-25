@@ -313,7 +313,7 @@ void process_bucket_region_run::init_norms(int side)/*{{{*/
 
     int const N = first_region0_index + already_done + bucket_relative_index;
 
-    ws.sides[side].lognorms.fill(S[side], N);
+    ws.sides[side].lognorms.fill(S[side], N, Q.sublat);
 
 #if defined(TRACE_K) 
     if (trace_on_spot_N(w->N))
