@@ -509,6 +509,7 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
                         fib_level,
                         side, nprimes,
                         size_disp(more = nprimes * sizeof(plattice_enumerator)));
+                memory += more;
             }
             {
                 /* Count the slice_start pointers as well. We need to know
