@@ -55,6 +55,7 @@
 #include "las-forwardtypes.hpp"
 #include "las-globals.hpp"
 #include "las-info.hpp"
+#include "las-memory.hpp"
 #include "las-multiobj-globals.hpp"
 #include "las-norms.hpp"
 #include "las-output.hpp"
@@ -290,6 +291,19 @@ static size_t expected_memory_usage_per_binding_zone(siever_config const & sc,/*
     }
     return memory;
 }/*}}}*/
+/* What narrays bucket arrays that hold `bytes` of updates in total
+ * occupy: each has some slack at its end (see
+ * bucket_array_t::allocate_memory), and is rounded up to large pages.
+ * With many threads, there are many small arrays, and this is far from
+ * negligible. */
+static size_t bucket_arrays_footprint(double bytes, size_t narrays)/*{{{*/
+{
+    if (!narrays || bytes <= 0)
+        return 0;
+    size_t const per_array = bytes / narrays + (1 << 20);
+    return narrays * las_memory_accessor::physical_footprint(per_array);
+}/*}}}*/
+
 /* This does not count the footprint per binding zone */
 static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
         las_info const & las,
@@ -505,7 +519,8 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
                         fib_level, side, nprimes, nupdates,
                         fib_level, fib_level,
                         nba,
-                        size_disp(more = ms[fib_level] * nupdates * ss[fib_level]));
+                        size_disp(more = bucket_arrays_footprint(
+                                ms[fib_level] * nupdates * ss[fib_level], nba)));
                 memory += more;
             }
             if (use_precomputed_lattices) {
@@ -570,7 +585,8 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
                             level,
                             side, nupdates_D,
                             level, level,
-                            size_disp(more = ml[level] * nupdates_D * sl[level]));
+                            size_disp(more = bucket_arrays_footprint(
+                                    ml[level] * nupdates_D * sl[level], nba)));
                     memory += more;
                 }
                 {
