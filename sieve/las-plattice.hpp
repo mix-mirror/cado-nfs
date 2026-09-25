@@ -385,13 +385,6 @@ struct plattice_enumerator_base {
             return plattice_x_t(UMAX(plattice_x_t));
         }
 
-        // If j0 or j1 reaches 20 bits, then it was saturated during the
-        // dense storage. Let's skip this prime for which the FK basis is
-        // very skewed. (only a few hits are missed)
-        if ((j0 == ((1 << 20) - 1)) || (j1 == ((1 << 20) - 1))) {
-            return plattice_x_t(UMAX(plattice_x_t));
-        }
-
         // Look for alpha and beta such that
         //   alpha*a + beta*b == (sublat.i0,sublat.j0) mod m
         // This is a 2x2 system of determinant p, coprime to m.
@@ -625,79 +618,73 @@ class plattice_enumerator_coprime : public plattice_enumerator
 
 struct plattice_info_dense_t {
     uint32_t pack[3];
-    // This pack of 96 bits is enough to contain
-    //   mi0, i1, j0, j1
-    // as 20-bit unsigned integers and
-    //   hint
-    // as a 16-bit integer.
+    // This pack of 96 bits holds, without any loss:
+    //   mi0 and i1, as 20-bit unsigned integers,
+    //   the hint, as a 16-bit integer,
+    //   a flag byte,
+    //   j1, as a 32-bit integer.
+    // j0 is not stored: it is recovered from the determinant
+    // mi0*j1 + j0*i1, which is q (the caller knows q from the hint).
     //
-    // Note that mi0 and i1 are less than I, so this is ok, but
-    // j0 and j1 could be larger. However, this is for very skewed
-    // plattices, and we lose only a few hits by skipping those primes.
-    // So we saturate them at 2^20-1 for later detection.
+    // For a reduced lattice, mi0 < I, and i1 < I unless the lattice is
+    // a vertical line, in which case mi0 == 0 and i1 may be as large as
+    // q. For those, we store j0 instead of j1, and recover i1 as q/j0.
+    // j1 is lost, but the step vector of a vertical line is never used.
     //
-    // uint16_t hint; // FIXME: this could be recovered for free...
+    // (This used to store j0 and j1 on 20 bits each, saturated. At
+    // logI=15 and q around 2^31, that is wrong for about one lattice
+    // in ten, and the replays for the sublattices other than the first
+    // one lost a few percent of the relations.)
 
-    plattice_info_dense_t(plattice_info const & pli, uint16_t _hint)
+    static constexpr uint32_t vertical_flag = 1;
+
+    plattice_info_dense_t(plattice_info const & pli, uint16_t hint,
+                          uint32_t MAYBE_UNUSED q)
     {
-        uint32_t mi0;
-        uint32_t i1;
-        uint32_t j0;
-        uint32_t j1;
-        uint16_t hint;
-        hint = _hint;
-        // Handle orthogonal lattices (proj and r=0 cases)
-        if (pli.i1 == 1 && pli.j1 == 0) {
-            i1 = 1;
-            j1 = 0;
-            mi0 = UMAX(uint32_t);
-            j0 = pli.j0;
-        } else if (pli.i1 == 0 && pli.j1 == 1) {
-            i1 = 0;
-            j1 = 1;
-            mi0 = UMAX(uint32_t);
-            j0 = pli.j0;
-        } else {
-            // generic case: true FK-basis
-            mi0 = pli.mi0;
-            j0 = pli.j0;
-            i1 = pli.i1;
-            j1 = pli.j1;
-        }
         constexpr uint32_t mask8 = (1 << 8) - 1;
-        constexpr uint32_t mask16 = (1 << 16) - 1;
         constexpr uint32_t mask20 = (1 << 20) - 1;
 
-        // Saturate skewed lattices, for later detection and skipping.
-        j0 = std::min(j0, mask20);
-        j1 = std::min(j1, mask20);
+        ASSERT(pli.determinant() == q);
 
-        pack[0] = (mi0 & mask20) | (i1 << 20);
-        pack[1] = ((i1 >> 12) & mask8) | ((j0 & mask20) << 8) | (j1 << 28);
-        pack[2] = ((j1 >> 4) & mask16) | (hint << 16);
+        uint32_t flags = 0;
+        uint32_t mi0 = pli.mi0;
+        uint32_t i1 = pli.i1;
+        uint32_t j = pli.j1;
+
+        if (mi0 == 0) {
+            flags |= vertical_flag;
+            i1 = 0;
+            j = pli.j0;
+        }
+        ASSERT_ALWAYS(mi0 <= mask20 && i1 <= mask20);
+
+        pack[0] = mi0 | (i1 << 20);
+        pack[1] = ((i1 >> 12) & mask8) | (uint32_t(hint) << 8) | (flags << 24);
+        pack[2] = j;
     }
 
-    plattice_info unpack(int const logI) const
+    plattice_info unpack(uint32_t const q) const
     {
         plattice_info pli;
         constexpr uint32_t mask8 = (1 << 8) - 1;
-        constexpr uint32_t mask16 = (1 << 16) - 1;
         constexpr uint32_t mask20 = (1 << 20) - 1;
         pli.mi0 = pack[0] & mask20;
         pli.i1 = (pack[0] >> 20) | ((pack[1] & mask8) << 12);
-        pli.j0 = (pack[1] >> 8) & mask20;
-        pli.j1 = (pack[1] >> 28) | ((pack[2] & mask16) << 4);
-
-        // Orthogonal bases
-        if (pli.i1 == 1 && pli.j1 == 0) {
-            pli.mi0 = ((int32_t)1 << logI) - 1;
-        } else if (pli.i1 == 0 && pli.j1 == 1) {
-            pli.j0 = ((int32_t)1 << logI) + 1;
+        if ((pack[1] >> 24) & vertical_flag) {
+            pli.j0 = pack[2];
+            pli.i1 = q / pli.j0;
+            pli.j1 = 0;
+        } else {
+            pli.j1 = pack[2];
+            /* i1 > 0, since i1 + mi0 >= I and mi0 < I. Everything fits
+             * in 32 bits, and a 32-bit division is notably cheaper than
+             * a 64-bit one on some microarchitectures. */
+            pli.j0 = (q - pli.mi0 * pli.j1) / pli.i1;
         }
         return pli;
     }
 
-    uint16_t get_hint() const { return pack[2] >> 16; }
+    uint16_t get_hint() const { return pack[1] >> 8; }
 };
 
 class plattices_dense_vector_t : public std::vector<plattice_info_dense_t>

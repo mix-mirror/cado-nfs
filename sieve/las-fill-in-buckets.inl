@@ -256,8 +256,9 @@ static void fill_in_buckets_toplevel_impl(
 
     if (!is_first_sublat) {
         for (auto const & psl: *p_precomp_slice) {
-            plattice_info const pli(psl.unpack(logI));
-            handle_one_lattice(pli, psl.get_hint());
+            slice_offset_t const hint = psl.get_hint();
+            plattice_info const pli(psl.unpack(slice.begin()[hint].get_q()));
+            handle_one_lattice(pli, hint);
         }
     } else {
         if constexpr (M > 1) {
@@ -295,7 +296,8 @@ static void fill_in_buckets_toplevel_impl(
                 if constexpr (M > 1) {
                     // In sublat mode, save it for later use
                     p_precomp_slice->push_back(
-                        plattice_info_dense_t(pli, i_entry));
+                        plattice_info_dense_t(pli, i_entry,
+                                              transformed.get_q()));
                 }
 
                 handle_one_lattice(pli, i_entry);
