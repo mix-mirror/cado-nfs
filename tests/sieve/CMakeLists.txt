@@ -208,6 +208,14 @@ cado_divert_test(F9_sieve reuse_foreign_fbc
 )
 
 cado_divert_test(F9_sieve 2_levels APPEND_ARGUMENTS bkthresh1=600000)
+# With two levels, -Bi defaults to 12, so the test above has a single
+# level-2 bucket. Check the former default too, and a case with several
+# level-2 buckets (8 here), in which the level-1 fill goes through each
+# of them in turn, as it does on large sieve areas.
+cado_divert_test(F9_sieve 2_levels_Bi8 APPEND_ARGUMENTS
+    bkthresh1=600000 -Bi 8)
+cado_divert_test(F9_sieve 2_levels_multibucket APPEND_ARGUMENTS
+    bkthresh1=600000 -Bi 4)
 
 # The top-level fill goes in windows (-bucket-pass-log-updates), which
 # must not change the relations: check it without windows, and with all

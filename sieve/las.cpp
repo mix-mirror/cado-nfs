@@ -142,7 +142,7 @@ static void declare_usage(cxx_param_list & pl)/*{{{*/
     pl.declare_usage("sublat", "modulus for sublattice sieving");
 
     pl.declare_usage("log-bucket-region", "set bucket region to 2^x");
-    pl.declare_usage("log-bucket-region-step", "set the number of level-(n-1) buckets inside a level-n bucket to 2^x");
+    pl.declare_usage("log-bucket-region-step", "set the number of level-(n-1) buckets inside a level-n bucket to 2^x (default 8, or 12 with two bucket levels)");
     pl.declare_usage("bucket-pass-log-updates", "fill the top-level buckets in windows sized so that each prime writes about 2^x updates per window (default 7; 0 = one pass over all buckets)");
     pl.declare_usage("bucket-pass-ratio", "ratio between the primes that get two consecutive window sizes with -bucket-pass-log-updates (default 2)");
     pl.declare_usage("bucket-pass-max-window", "cap the windows of -bucket-pass-log-updates at 2^x buckets (default -1: a quarter of the buckets when there are at least 2^15; 0: no cap)");
@@ -1511,6 +1511,18 @@ static int las_main (int argc0, char const * argv0[])/*{{{*/
     if (dlp_descent)
         pl.parse("grace-time-ratio", general_grace_time_ratio);
     pl.parse("log-bucket-region", LOG_BUCKET_REGION);
+    /* With two bucket levels, the level-1 primes are filled once per
+     * level-2 bucket, so that the size of a level-2 bucket is also the
+     * window of the level-1 fill. With the default step of 8, that is
+     * 256 level-1 buckets, over which the primes near bkthresh1 write a
+     * fraction of an update, and the fixed cost of each pass dominates.
+     * With a step of 12, two-level sieving costs about half as much with
+     * the RSA-240 and RSA-250 parameters. With three levels, level-3
+     * buckets would then be 2^40 positions, so the default stays there.
+     */
+    if (!pl.lookup_old("log-bucket-region-step")
+            && pl.lookup_old("bkthresh1") && !pl.lookup_old("bkthresh2"))
+        LOG_BUCKET_REGION_step = 12;
     pl.parse("log-bucket-region-step", LOG_BUCKET_REGION_step);
     pl.parse("bucket-pass-log-updates", BUCKET_PASS_LOG_UPDATES);
     pl.parse("bucket-pass-ratio", BUCKET_PASS_RATIO);
