@@ -175,9 +175,13 @@ template <int LEVEL, class FB_ENTRY_TYPE>
 static uint32_t bucket_pass_window(nfs_work const & ws, int side,
         fb_slice<FB_ENTRY_TYPE> const & slice)
 {
-    uint32_t const nb = ws.nb_buckets[LEVEL];
+    uint32_t nb = ws.nb_buckets[LEVEL];
     if (!BUCKET_PASS_LOG_UPDATES || slice.begin() == slice.end())
         return nb;
+    if (BUCKET_PASS_MAX_LOG_WINDOW > 0)
+        nb = std::min(nb, UINT32_C(1) << BUCKET_PASS_MAX_LOG_WINDOW);
+    else if (BUCKET_PASS_MAX_LOG_WINDOW < 0 && nb >= (UINT32_C(1) << 15))
+        nb /= 4;
     double const p0 = ws.sides[side].fbK.thresholds[LEVEL - 1];
     double const pmin = std::max(p0, double(slice.begin()->get_q()));
     double const R = BUCKET_PASS_RATIO;

@@ -45,6 +45,18 @@ extern int NB_DEVIATIONS_BUCKET_REGIONS;
 extern int BUCKET_PASS_LOG_UPDATES;
 extern double BUCKET_PASS_RATIO;
 
+/* The windows above are capped at 2^BUCKET_PASS_MAX_LOG_WINDOW buckets,
+ * so that the largest primes, whose window would be the whole sieve
+ * area, write to fewer buckets at a time too, at the price of fewer
+ * than 2^K updates per window. The default (-1) caps the windows at a
+ * quarter of the buckets when there are at least 2^15 of them, which
+ * with one bucket level at -A 31 and -A 32 takes a fifth to a half off
+ * the cost of the fill on a dual EPYC 9754, and up to a tenth on a Xeon
+ * Gold 6130; with fewer buckets (the level-2 buckets of two-level sieving,
+ * small sieve areas) there is no cap. 0 means no cap.
+ */
+extern int BUCKET_PASS_MAX_LOG_WINDOW;
+
 #define DESCENT_DEFAULT_GRACE_TIME_RATIO 0.2 /* default value */
 
 /* (Re-)define this to support larger q. This is almost mandatory for the

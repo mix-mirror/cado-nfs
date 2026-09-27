@@ -208,6 +208,15 @@ cado_divert_test(F9_sieve reuse_foreign_fbc
 )
 
 cado_divert_test(F9_sieve 2_levels APPEND_ARGUMENTS bkthresh1=600000)
+
+# The top-level fill goes in windows (-bucket-pass-log-updates), which
+# must not change the relations: check it without windows, and with all
+# windows capped at 4 buckets, which is below the smallest window of
+# this test (8 buckets), so that every slice goes through several
+# windows, and the largest primes through capped ones.
+cado_divert_test(F9_sieve no_windows APPEND_ARGUMENTS -bkpass 0)
+cado_divert_test(F9_sieve capped_windows APPEND_ARGUMENTS
+    -bucket-pass-max-window 2)
 cado_divert_test(F9_sieve 3_levels APPEND_ARGUMENTS
     bkthresh1=600000 bkthresh2=1100000 -Bi 5)
 
