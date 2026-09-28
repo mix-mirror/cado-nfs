@@ -103,15 +103,11 @@ reservation_group::allocate_buckets(
    * hints".
    */
 
-  using s = typename hints_proxy<with_hints>::s;
-  using l = typename hints_proxy<with_hints>::l;
-
   /* Short hint updates are generated only by fill_in_buckets(), so each BA
      gets filled only by its respective FB part */
-  for(auto & r1s : get_all_slots<1, s>()) {
-      using T1s = bucket_update_t<1, s>;
-      r1s.allocate_buckets(memory, n_bucket[1], mult.get<T1s>()*fill_ratio[1], logI, parity_skip, aux, pool);
-  }
+  auto & r1s = get<1, typename hints_proxy<with_hints>::s>();
+  using T1s = bucket_update_t<1, typename hints_proxy<with_hints>::s>;
+  r1s.allocate_buckets(memory, n_bucket[1], mult.get<T1s>()*fill_ratio[1], logI, parity_skip, aux, pool);
 
   /* Long hint bucket arrays get filled by downsorting. The level-2
    * longhint array gets the shorthint updates from level 3 sieving,
@@ -120,34 +116,30 @@ reservation_group::allocate_buckets(
    * updates from level 3 sieving. */
 
 #if MAX_TOPLEVEL >= 2
-  for(auto & r2s : get_all_slots<2, s>()) {
-      using T2s = bucket_update_t<2, s>;
-      r2s.allocate_buckets(memory, n_bucket[2], mult.get<T2s>()*fill_ratio[2], logI, parity_skip, aux, pool);
-  }
-  for(auto & r1l : get_all_slots<1, l>()) {
-      using T1l = bucket_update_t<1, l>;
-      {
-          double s = 0;
-          for(int level = 2 ; level <= MAX_TOPLEVEL ; level++)
-              s += fill_ratio[level];
-          r1l.allocate_buckets(memory, n_bucket[1], mult.get<T1l>() * s, logI, parity_skip, aux, pool);
-      }
+  auto & r2s = get<2, typename hints_proxy<with_hints>::s>();
+  auto & r1l = get<1, typename hints_proxy<with_hints>::l>(); 
+  using T2s = bucket_update_t<2, typename hints_proxy<with_hints>::s>;
+  using T1l = bucket_update_t<1, typename hints_proxy<with_hints>::l>;
+  r2s.allocate_buckets(memory, n_bucket[2], mult.get<T2s>()*fill_ratio[2], logI, parity_skip, aux, pool);
+  {
+      double s = 0;
+      for(int level = 2 ; level <= MAX_TOPLEVEL ; level++)
+          s += fill_ratio[level];
+      r1l.allocate_buckets(memory, n_bucket[1], mult.get<T1l>() * s, logI, parity_skip, aux, pool);
   }
 #endif
 
 #if MAX_TOPLEVEL >= 3
-  for(auto & r3s : get_all_slots<3, s>()) {
-      using T3s = bucket_update_t<3, s>;
-      r3s.allocate_buckets(memory, n_bucket[3], mult.get<T3s>()*fill_ratio[3], logI, parity_skip, aux, pool);
-  }
-  for(auto & r2l : get_all_slots<2, l>()) {
-      using T2l = bucket_update_t<2, l>;
-      {
-          double s = 0;
-          for(int level = 3 ; level <= MAX_TOPLEVEL ; level++)
-              s += fill_ratio[level];
-          r2l.allocate_buckets(memory, n_bucket[2], mult.get<T2l>() * s, logI, parity_skip, aux, pool);
-      }
+  auto & r3s = get<3, typename hints_proxy<with_hints>::s>();
+  auto & r2l = get<2, typename hints_proxy<with_hints>::l>(); 
+  using T3s = bucket_update_t<3, typename hints_proxy<with_hints>::s>;
+  using T2l = bucket_update_t<2, typename hints_proxy<with_hints>::l>;
+  r3s.allocate_buckets(memory, n_bucket[3], mult.get<T3s>()*fill_ratio[3], logI, parity_skip, aux, pool);
+  {
+      double s = 0;
+      for(int level = 3 ; level <= MAX_TOPLEVEL ; level++)
+          s += fill_ratio[level];
+      r2l.allocate_buckets(memory, n_bucket[2], mult.get<T2l>() * s, logI, parity_skip, aux, pool);
   }
 #endif
   static_assert(MAX_TOPLEVEL <= 3);

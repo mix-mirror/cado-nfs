@@ -176,44 +176,31 @@ class nfs_work {
          * unfortunately.
          */
         template<sieve_method Algo>
-        side_data(int multiplex, int nr_workspaces, Algo)
-            : group(multiplex, nr_workspaces)
+        side_data(int nr_workspaces, Algo)
+            : group(nr_workspaces)
             , ssd(std::make_unique<typename Algo::smallsieve>())
         {
         }
 
-        template <int LEVEL, hint_type HINT>
-        void reset_all_pointers(int slot = 0)
+        template <int LEVEL, hint_type HINT> void reset_all_pointers()
         {
-            if constexpr (LEVEL == 1)
-                group.get<LEVEL, HINT>(slot).reset_all_pointers();
-            else
-                group.get<LEVEL, HINT>().reset_all_pointers();
+            group.get<LEVEL, HINT>().reset_all_pointers();
         }
         template <int LEVEL, hint_type HINT>
             requires (!HINT::is_long_v)
-            auto reserve_BA(int slot = 0) {
-                if constexpr (LEVEL == 1)
-                    return group.get<LEVEL, HINT>(slot).reserve();
-                else
-                    return group.get<LEVEL, HINT>().reserve();
+            auto reserve_BA() {
+                return group.get<LEVEL, HINT>().reserve();
             }
         template <int LEVEL, hint_type HINT>
             requires HINT::is_long_v
             bucket_array_t<LEVEL, HINT> &
-            acquire_BA(size_t rank, int slot = 0) {
-                if constexpr (LEVEL == 1)
-                    return group.get<LEVEL, HINT>(slot).acquire(rank);
-                else
-                    return group.get<LEVEL, HINT>().acquire(rank);
+            acquire_BA(size_t rank) {
+                return group.get<LEVEL, HINT>().acquire(rank);
             }
 
         template <int LEVEL, hint_type HINT>
-            size_t rank_BA(bucket_array_t<LEVEL, HINT> const & BA, int slot = 0) {
-                if constexpr (LEVEL == 1)
-                    return group.get<LEVEL, HINT>(slot).rank(BA);
-                else
-                    return group.get<LEVEL, HINT>().rank(BA);
+            size_t rank_BA(bucket_array_t<LEVEL, HINT> const & BA) {
+                return group.get<LEVEL, HINT>().rank(BA);
             }
 
         /*
@@ -225,11 +212,8 @@ class nfs_work {
 
         template <int LEVEL, hint_type HINT>
             std::vector<bucket_array_t<LEVEL, HINT>> const &
-            bucket_arrays(int slot = 0) const {
-                if constexpr (LEVEL == 1)
-                    return group.get<LEVEL, HINT>(slot).bucket_arrays();
-                else
-                    return group.get<LEVEL, HINT>().bucket_arrays();
+            bucket_arrays() const {
+                return group.get<LEVEL, HINT>().bucket_arrays();
             }
 
         dumpfile_t dumpfile;
