@@ -52,6 +52,7 @@
 #include "las-downsort.hpp"
 #include "las-duplicate.hpp"
 #include "las-fill-in-buckets.hpp"
+#include "las-forwardtypes.hpp"
 #include "las-globals.hpp"
 #include "las-info.hpp"
 #include "las-multiobj-globals.hpp"
@@ -600,6 +601,38 @@ static size_t expected_memory_usage_per_subjob(siever_config const & sc,/*{{{*/
 
     return memory;
 }/*}}}*/
+/* The small sieve start positions: one per region and per prime below
+ * the first threshold, for the regions of one level-2 bucket
+ * (2^LOG_BUCKET_REGION_step of them, or all the sieve area if it is
+ * smaller), plus w more, in two sets (the second is filled while pbr
+ * uses the first). See small_sieve_prepare_many_start_positions.
+ * siqs_pos_t has the same size as spos_t.
+ */
+static size_t expected_memory_usage_start_positions(siever_config const & sc,/*{{{*/
+        las_info const & las,
+        int print)
+{
+    int const hush = print ? 0 : 3;
+    size_t memory = 0;
+    size_t more;
+    for(int side = 0 ; side < las.cpoly.nsides() ; side++) {
+        if (!sc.sides[side].lim) continue;
+        size_t const nsmall = nprimes_interval(2,
+                sc.instantiate_thresholds(side).thresholds[0]);
+        size_t const nregions = std::min(
+                size_t(1) << LOG_BUCKET_REGION_step,
+                iceildiv(size_t(1) << sc.logA, BUCKET_REGIONS[1]));
+        int const v = sc.logI - LOG_BUCKET_REGION;
+        size_t const w = v > 0 ? size_t(1) << v : 1;
+        verbose_fmt_print(0, 3 + hush,
+                "# side {}: small sieve start positions"
+                " for {} primes in {} regions: {}\n",
+                side, nsmall, nregions + w,
+                size_disp(more = 2 * (nregions + w) * nsmall * sizeof(spos_t)));
+        memory += more;
+    }
+    return memory;
+}/*}}}*/
 static size_t expected_memory_usage_per_subjob_worst_logI(siever_config const & sc0, las_info const & las, int nthreads, int print, bkmult_specifier const * hypothetical_bkmult = nullptr)/*{{{*/
 {
     /* We're not getting number_of_threads_per_subjob() from las, because
@@ -638,6 +671,14 @@ static size_t expected_memory_usage_per_subjob_worst_logI(siever_config const & 
             max_memory = memory;
         }
     }
+    /* The start positions are allocated anew for each special-q, but
+     * what they take at the largest logI stays with the process, next
+     * to the bucket arrays of the logI that needs the most. */
+    sc.logI = logImax;
+    verbose_fmt_print(0, 3 + hush,
+            "# Expected memory usage per subjob for logI={},"
+            " small sieve start positions:\n", sc.logI);
+    max_memory += expected_memory_usage_start_positions(sc, las, print);
     if (logImin != logImax || main_output->verbose < 2 + hush)
         verbose_fmt_print(0, 0 + hush,
                 "# Expected memory use per subjob (max reached for logI={}):"
